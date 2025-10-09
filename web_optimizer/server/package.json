@@ -1,0 +1,27 @@
+{
+  "name": "dfs-optimizer-server",
+  "version": "1.0.0",
+  "description": "Backend server for DFS Optimizer web app",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "keywords": [
+    "fantasy",
+    "sports",
+    "optimizer",
+    "dfs"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "csv-parser": "^3.0.0",
+    "express": "^4.17.0",
+    "json2csv": "^5.0.7",
+    "multer": "^1.4.3",
+    "uuid": "^8.3.2",
+    "ws": "^8.18.3"
+  }
+}

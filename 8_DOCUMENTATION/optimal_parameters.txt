@@ -1,0 +1,18 @@
+OPTIMAL HYPERPARAMETERS FOR MLB DRAFTKINGS MODEL
+==================================================
+
+Best Parameters:
+  final_estimator__subsample: 0.9
+  final_estimator__n_estimators: 100
+  final_estimator__max_depth: 3
+  final_estimator__learning_rate: 0.1
+
+Best CV Score: 1.2500
+
+Code to copy:
+HARDCODED_OPTIMAL_PARAMS = {
+    'final_estimator__subsample': 0.9,
+    'final_estimator__n_estimators': 100,
+    'final_estimator__max_depth': 3,
+    'final_estimator__learning_rate': 0.1,
+}

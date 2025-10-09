@@ -1,0 +1,11 @@
+G
+PA
+HR
+R
+RBI
+SB
+BB%
+K%
+AVG
+OBP
+SLG

@@ -1,0 +1,24 @@
+OPTIMAL CV PARAMETERS FOR MLB DRAFTKINGS MODEL
+==================================================
+
+Best Configuration: Fast (2-fold)
+
+Parameters:
+  cv_folds: 2
+  n_iter: 6
+  test_size: 0.15
+  scoring: neg_mean_squared_error
+  random_state: 42
+  verbose: 1
+
+Efficiency Score: 380.50
+
+Code to copy:
+HARDCODED_CV_PARAMS = {
+    'cv_folds': 2,
+    'n_iter': 6,
+    'test_size': 0.15,
+    'scoring': 'neg_mean_squared_error',
+    'random_state': 42,
+    'verbose': 1,
+}

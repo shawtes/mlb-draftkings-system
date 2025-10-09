@@ -1,0 +1,32 @@
+
+TEST INSTRUCTIONS FOR 60 LINEUP FIX
+===================================
+
+1. SETUP:
+   ✅ Load your player CSV
+   ✅ Check "Disable Kelly Sizing" 
+   ✅ Set Min Unique to 0 or 1
+   ✅ Go to Team Combinations tab
+
+2. CREATE TEST COMBINATION:
+   ✅ Add combination: e.g., LAD(4) + SF(2)
+   ✅ Set lineups to 60 (or whatever you want)
+   ✅ Check the combination checkbox
+   ✅ Click "Generate Combination Lineups"
+
+3. LOOK FOR DEBUG MESSAGES:
+   ✅ "🔍 DEBUG: COMBINATION MODE ACTIVATED for 60 lineups"
+   ✅ "🔍 GENETIC ENGINE CHECK" with details
+   ✅ "🧬 COMBINATION MODE: FORCING 60 lineups"
+   ✅ "🧬 DUPLICATING lineup X as lineup Y" (if needed)
+
+4. EXPECTED RESULT:
+   ✅ Should get exactly 60 lineups
+   ✅ May see duplication messages if not enough unique lineups
+   ✅ Final count should match requested count
+
+5. IF STILL NOT WORKING:
+   ✅ Check that "Disable Kelly Sizing" is actually checked
+   ✅ Verify Min Unique is 0 or 1
+   ✅ Look for any error messages in logs
+   ✅ Report what debug messages you see

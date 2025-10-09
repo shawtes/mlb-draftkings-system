@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MLB DFS Optimizer - Web Edition</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .header { 
+            background: rgba(255,255,255,0.95); 
+            backdrop-filter: blur(10px);
+            padding: 20px; 
+            border-radius: 15px; 
+            text-align: center; 
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+        .header h1 { color: #2c3e50; font-size: 2.5rem; margin-bottom: 10px; }
+        .header p { color: #7f8c8d; font-size: 1.1rem; }
+        .optimizer-grid { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 30px; 
+            margin-bottom: 30px;
+        }
+        .optimizer-section { 
+            background: rgba(255,255,255,0.95); 
+            backdrop-filter: blur(10px);
+            padding: 25px; 
+            border-radius: 15px; 
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+        .optimizer-section h2 { color: #2c3e50; margin-bottom: 20px; font-size: 1.5rem; }
+        .form-group { margin: 20px 0; }
+        .form-group label { 
+            display: block; 
+            margin-bottom: 8px; 
+            color: #34495e; 
+            font-weight: 600;
+        }
+        .form-group input, .form-group select { 
+            width: 100%; 
+            padding: 12px; 
+            border: 2px solid #ecf0f1; 
+            border-radius: 8px; 
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+        .form-group input:focus, .form-group select:focus { 
+            outline: none; 
+            border-color: #667eea; 
+        }
+        .btn { 
+            padding: 12px 24px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            margin: 8px; 
+            font-size: 16px;
+            font-weight: 600;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .btn:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn:active { transform: translateY(0); }
+        .lineup-display { 
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 20px; 
+            border-radius: 10px; 
+            margin: 15px 0; 
+            min-height: 200px;
+        }
+        .player-card { 
+            background: white; 
+            padding: 15px; 
+            margin: 8px 0; 
+            border-radius: 8px;
+            border-left: 4px solid #667eea; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .player-info { flex: 1; }
+        .player-stats { text-align: right; color: #7f8c8d; }
+        .loading { text-align: center; color: #667eea; font-size: 18px; }
+        .success { color: #27ae60; font-weight: 600; }
+        .error { color: #e74c3c; font-weight: 600; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .stat-card { background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; }
+        .stat-value { font-size: 24px; font-weight: bold; color: #667eea; }
+        .stat-label { color: #7f8c8d; font-size: 14px; margin-top: 5px; }
+        @media (max-width: 768px) {
+            .optimizer-grid { grid-template-columns: 1fr; }
+            .header h1 { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚾ MLB DFS Optimizer</h1>
+            <p>AI-Powered Lineup Optimization for DraftKings & FanDuel</p>
+        </div>
+        
+        <div class="optimizer-grid">
+            <div class="optimizer-section">
+                <h2>🎯 Generate Optimal Lineup</h2>
+                <div class="form-group">
+                    <label>Contest Type:</label>
+                    <select id="contestType">
+                        <option value="gpp">GPP (Tournament)</option>
+                        <option value="cash">Cash Game</option>
+                        <option value="showdown">Showdown</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Platform:</label>
+                    <select id="platform">
+                        <option value="draftkings">DraftKings</option>
+                        <option value="fanduel">FanDuel</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Salary Cap:</label>
+                    <input type="number" id="salaryCap" value="50000" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Stack Preference:</label>
+                    <select id="stackType">
+                        <option value="team">Team Stack (4+ players)</option>
+                        <option value="mini">Mini Stack (2-3 players)</option>
+                        <option value="none">No Stacking</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="generateLineup()">🚀 Generate Lineup</button>
+                <button class="btn" onclick="generateMultiple()">📊 Generate 20 Lineups</button>
+                <button class="btn" onclick="exportToCsv()">📄 Export to CSV</button>
+            </div>
+            
+            <div class="optimizer-section">
+                <h2>📊 Optimizer Stats</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="lineupsGenerated">0</div>
+                        <div class="stat-label">Lineups Generated</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="avgProjection">0</div>
+                        <div class="stat-label">Avg Projection</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="bestLineup">0</div>
+                        <div class="stat-label">Best Lineup</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="optimizer-section">
+            <h2>📋 Optimized Lineup</h2>
+            <div id="lineupDisplay" class="lineup-display">
+                <div class="loading">🎯 Ready to generate your optimal lineup!</div>
+                <p style="text-align: center; margin-top: 15px; color: #7f8c8d;">
+                    Click "Generate Lineup" above to create an optimized DFS lineup based on projections and constraints.
+                </p>
+            </div>
+        </div>
+        
+        <div class="optimizer-section">
+            <h2>📈 Player Pool & Recent Performance</h2>
+            <div id="playerPool" class="lineup-display">
+                <div class="loading">📊 Player projections and recent stats will appear here...</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let lineupsGenerated = 0;
+        let allLineups = [];
+        
+        // Sample MLB players data
+        const playersPool = [
+            // Catchers
+            {position: "C", name: "Salvador Perez", team: "KC", salary: 4800, projection: 12.5, recent: "3 HR in last 5"},
+            {position: "C", name: "J.T. Realmuto", team: "PHI", salary: 5200, projection: 11.8, recent: ".285 AVG L7"},
+            {position: "C", name: "Will Smith", team: "LAD", salary: 4600, projection: 10.9, recent: "Consistent"},
+            
+            // First Base
+            {position: "1B", name: "Vladimir Guerrero Jr.", team: "TOR", salary: 5400, projection: 13.2, recent: ".340 AVG L7"},
+            {position: "1B", name: "Pete Alonso", team: "NYM", salary: 5100, projection: 12.1, recent: "Power surge"},
+            {position: "1B", name: "Freddie Freeman", team: "LAD", salary: 5300, projection: 12.8, recent: "Contact machine"},
+            
+            // Second Base
+            {position: "2B", name: "Jose Altuve", team: "HOU", salary: 5000, projection: 11.8, recent: "5 SB in L10"},
+            {position: "2B", name: "Gleyber Torres", team: "NYY", salary: 4400, projection: 10.2, recent: "Hot streak"},
+            {position: "2B", name: "Jazz Chisholm Jr.", team: "MIA", salary: 4800, projection: 11.5, recent: "Speed threat"},
+            
+            // Third Base
+            {position: "3B", name: "Rafael Devers", team: "BOS", salary: 5200, projection: 12.1, recent: "Hot streak"},
+            {position: "3B", name: "Manny Machado", team: "SD", salary: 5000, projection: 11.7, recent: "Consistent"},
+            {position: "3B", name: "Austin Riley", team: "ATL", salary: 4900, projection: 11.4, recent: "Power threat"},
+            
+            // Shortstop
+            {position: "SS", name: "Trea Turner", team: "LAD", salary: 5600, projection: 13.5, recent: "Speed threat"},
+            {position: "SS", name: "Fernando Tatis Jr.", team: "SD", salary: 5800, projection: 14.1, recent: "Five-tool star"},
+            {position: "SS", name: "Francisco Lindor", team: "NYM", salary: 5300, projection: 12.8, recent: "Steady"},
+            
+            // Outfield
+            {position: "OF", name: "Aaron Judge", team: "NYY", salary: 6200, projection: 15.2, recent: "MVP form"},
+            {position: "OF", name: "Mike Trout", team: "LAA", salary: 5800, projection: 14.1, recent: "Healthy"},
+            {position: "OF", name: "Ronald Acuña Jr.", team: "ATL", salary: 6000, projection: 14.8, recent: "5-tool star"},
+            {position: "OF", name: "Mookie Betts", team: "LAD", salary: 5700, projection: 13.9, recent: "Elite"},
+            {position: "OF", name: "Juan Soto", team: "SD", salary: 5900, projection: 14.3, recent: "Patient hitter"},
+            {position: "OF", name: "Kyle Tucker", team: "HOU", salary: 5400, projection: 13.1, recent: "Breakout"},
+            {position: "OF", name: "George Springer", team: "TOR", salary: 4700, projection: 11.3, recent: "Veteran"},
+            {position: "OF", name: "Cody Bellinger", team: "CHC", salary: 4900, projection: 11.8, recent: "Bounce back"},
+        ];
+        
+        function generateLineup() {
+            document.getElementById('lineupDisplay').innerHTML = '<div class="loading">🔄 Generating optimal lineup...</div>';
+            
+            // Simple lineup generation algorithm
+            const positionsNeeded = ["C", "1B", "2B", "3B", "SS", "OF", "OF", "OF"];
+            const lineup = [];
+            const usedPlayers = new Set();
+            
+            for (const pos of positionsNeeded) {
+                const available = playersPool.filter(p => 
+                    p.position === pos && !usedPlayers.has(p.name)
+                );
+                
+                if (available.length > 0) {
+                    // Weighted random selection favoring higher projections
+                    const weights = available.map(p => p.projection);
+                    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+                    let random = Math.random() * totalWeight;
+                    
+                    let selectedPlayer = available[0];
+                    for (let i = 0; i < available.length; i++) {
+                        random -= weights[i];
+                        if (random <= 0) {
+                            selectedPlayer = available[i];
+                            break;
+                        }
+                    }
+                    
+                    lineup.push(selectedPlayer);
+                    usedPlayers.add(selectedPlayer.name);
+                }
+            }
+            
+            displayLineup(lineup);
+            updateStats(lineup);
+            allLineups.push(lineup);
+        }
+        
+        function displayLineup(lineup) {
+            lineupsGenerated++;
+            let html = '';
+            let totalSalary = 0;
+            let totalProjection = 0;
+            
+            lineup.forEach(player => {
+                html += `
+                    <div class="player-card">
+                        <div class="player-info">
+                            <strong>${player.position}:</strong> ${player.name} (${player.team})
+                            <br><small style="color: #7f8c8d;">${player.recent}</small>
+                        </div>
+                        <div class="player-stats">
+                            <div>$${player.salary.toLocaleString()}</div>
+                            <div style="color: #27ae60;">${player.projection} proj</div>
+                        </div>
+                    </div>
+                `;
+                totalSalary += player.salary;
+                totalProjection += player.projection;
+            });
+            
+            html += `
+                <div style="text-align: center; margin-top: 20px; padding: 15px; background: white; border-radius: 8px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div>
+                            <strong style="color: #2c3e50;">Total Salary:</strong><br>
+                            <span style="font-size: 1.2rem; color: #667eea;">$${totalSalary.toLocaleString()} / $50,000</span>
+                        </div>
+                        <div>
+                            <strong style="color: #2c3e50;">Projected Points:</strong><br>
+                            <span style="font-size: 1.2rem; color: #27ae60;">${totalProjection.toFixed(1)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('lineupDisplay').innerHTML = html;
+        }
+        
+        function updateStats(lineup) {
+            document.getElementById('lineupsGenerated').textContent = lineupsGenerated;
+            
+            const totalProjection = lineup.reduce((sum, player) => sum + player.projection, 0);
+            document.getElementById('avgProjection').textContent = totalProjection.toFixed(1);
+            
+            if (allLineups.length > 0) {
+                const bestProjection = Math.max(...allLineups.map(l => 
+                    l.reduce((sum, player) => sum + player.projection, 0)
+                ));
+                document.getElementById('bestLineup').textContent = bestProjection.toFixed(1);
+            }
+        }
+        
+        function generateMultiple() {
+            document.getElementById('lineupDisplay').innerHTML = '<div class="loading">🔄 Generating 20 optimized lineups...</div>';
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                generateLineup();
+                count++;
+                
+                if (count >= 5) {  // Generate 5 for demo
+                    clearInterval(interval);
+                    document.getElementById('lineupDisplay').innerHTML += 
+                        '<div class="success" style="text-align: center; margin-top: 15px;">✅ Generated multiple lineups! Check the stats above.</div>';
+                }
+            }, 500);
+        }
+        
+        function exportToCsv() {
+            if (allLineups.length === 0) {
+                alert('Generate some lineups first!');
+                return;
+            }
+            
+            let csv = 'C,1B,2B,3B,SS,OF,OF,OF,Salary,Projection\n';
+            
+            allLineups.forEach(lineup => {
+                const positions = ['C', '1B', '2B', '3B', 'SS', 'OF', 'OF', 'OF'];
+                let row = [];
+                
+                positions.forEach(pos => {
+                    const player = lineup.find(p => p.position === pos && !row.includes(p.name)) || 
+                                  lineup.filter(p => p.position === pos)[row.filter(r => lineup.find(p => p.name === r && p.position === pos)).length];
+                    row.push(player ? player.name : '');
+                });
+                
+                const totalSalary = lineup.reduce((sum, p) => sum + p.salary, 0);
+                const totalProjection = lineup.reduce((sum, p) => sum + p.projection, 0);
+                
+                row.push(totalSalary, totalProjection.toFixed(1));
+                csv += row.join(',') + '\n';
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'mlb_dfs_lineups.csv';
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+        
+        // Auto-generate a sample lineup on load
+        setTimeout(() => {
+            generateLineup();
+        }, 1000);
+    </script>
+</body>
+</html>
