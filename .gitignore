@@ -1,36 +1,62 @@
-﻿# Large Data Files - PERMANENTLY EXCLUDED
-*.csv
-*.CSV
-*.pkl
-*.joblib
-*.parquet
-*.h5
-*.dat
-*.db
-*.model
+﻿# Dependencies
+node_modules/
+.pnp
+.pnp.js
 
-# Large data directories
-4_DATA/
-7_ANALYSIS/
-9_BACKUP/
-3_MODELS/
+# Testing
+coverage/
+
+# Production builds
+build/
+dist/
+*.tsbuildinfo
+
+# Misc
+.DS_Store
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Editor directories
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Cache
+.cache/
+.eslintcache
+*.cache
 
 # Python
 __pycache__/
 *.py[cod]
-*.class
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
 
-# Node.js
-node_modules/
-npm-debug.log*
+# Uploads
+uploads/
+*.csv
+*.xlsx
 
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
+# Firebase
+.firebase/
+firebase-debug.log

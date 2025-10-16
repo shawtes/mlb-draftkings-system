@@ -743,13 +743,11 @@ function MainApp() {
                               case 1: // Team Stacks tab
                                 return (
                                   <TeamStacksTab 
-                                    teams={[]}
-                                    stackSizes={[2, 3, 4, 5]}
-                                    teamSelections={{}}
-                                    onTeamSelectionsUpdate={(selections) => {
-                                      console.log('Team selections updated:', selections);
+                                    players={playersData}
+                                    teamStacks={[]}
+                                    onTeamStacksUpdate={(stacks) => {
+                                      console.log('Team stacks updated:', stacks);
                                     }}
-                                    onTeamStacksUpdate={() => {}}
                                   />
                                 );
                               case 2: // Stack Exposure tab

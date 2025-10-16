@@ -46,29 +46,12 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
-// WebSocket server for real-time updates
-const wss = new WebSocket.Server({ port: 8080 });
+// WebSocket server for real-time updates (will be initialized after HTTP server)
 
 // Global state
 let playersData = [];
 let optimizationResults = [];
 let activeConnections = new Set();
-
-// WebSocket connection handler
-wss.on('connection', (ws) => {
-  activeConnections.add(ws);
-  console.log('Client connected. Total connections:', activeConnections.size);
-  
-  ws.on('close', () => {
-    activeConnections.delete(ws);
-    console.log('Client disconnected. Total connections:', activeConnections.size);
-  });
-  
-  ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
-    activeConnections.delete(ws);
-  });
-});
 
 // Broadcast to all connected clients
 function broadcast(message) {
@@ -819,8 +802,27 @@ app.use((error, req, res, next) => {
 // Start server
 const server = app.listen(PORT, () => {
   console.log(`🚀 DFS Optimizer Server running on port ${PORT}`);
-  console.log(`📊 WebSocket server running on port 8080`);
+  console.log(`📊 WebSocket server running on port ${PORT}/ws`);
   console.log(`🌐 Access the app at http://localhost:${PORT}`);
+});
+
+// Initialize WebSocket server on the same port as HTTP server
+const wss = new WebSocket.Server({ server });
+
+// WebSocket connection handler
+wss.on('connection', (ws) => {
+  activeConnections.add(ws);
+  console.log('✅ WebSocket client connected. Total connections:', activeConnections.size);
+  
+  ws.on('close', () => {
+    activeConnections.delete(ws);
+    console.log('❌ WebSocket client disconnected. Total connections:', activeConnections.size);
+  });
+  
+  ws.on('error', (error) => {
+    console.error('⚠️  WebSocket error:', error);
+    activeConnections.delete(ws);
+  });
 });
 
 // Graceful shutdown
