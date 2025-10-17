@@ -101,14 +101,12 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
   });
 
   return (
-    <div className="h-full flex flex-col bg-black relative overflow-hidden">
-      {/* Background */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#0a0a0a_1px,transparent_1px),linear-gradient(to_bottom,#0a0a0a_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-40 pointer-events-none" />
-      <div className="absolute top-0 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-0 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
-
-      {/* Content */}
-      <div className="relative z-10 flex flex-col h-full p-6">
+    <div className="h-full overflow-auto p-6">
+      {/* Main Card Container */}
+      <div className="bg-slate-800 backdrop-blur-sm rounded-2xl border border-cyan-500/20 shadow-2xl relative overflow-hidden min-h-full flex flex-col">
+        
+        {/* Content */}
+        <div className="relative z-10 flex flex-col h-full p-6">
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">
@@ -116,7 +114,7 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
               <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
                 Prop Betting Center
               </h1>
-              <p className="text-slate-400">Find edges, build parlays, and maximize value</p>
+              <p className="text-white">Find edges, build parlays, and maximize value</p>
             </div>
             <Badge className="bg-cyan-500/20 border-cyan-500">
               <Flame className="w-3 h-3 mr-1" />
@@ -127,7 +125,7 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
           {/* Filters */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
               <Input
                 placeholder="Search players or teams..."
                 value={searchQuery}
@@ -137,22 +135,22 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
             </div>
 
             <Select value={propTypeFilter} onValueChange={setPropTypeFilter}>
-              <SelectTrigger className="bg-black/60 border-cyan-500/20">
+              <SelectTrigger className="bg-black/60 border-cyan-500/20 text-white">
                 <SelectValue placeholder="Prop Type" />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Props</SelectItem>
-                <SelectItem value="passing">Passing</SelectItem>
-                <SelectItem value="rushing">Rushing</SelectItem>
-                <SelectItem value="receiving">Receiving</SelectItem>
-                <SelectItem value="yards">Yards</SelectItem>
-                <SelectItem value="tds">Touchdowns</SelectItem>
+              <SelectContent className="bg-slate-900 border-cyan-500/20 text-white">
+                <SelectItem value="all" className="text-white focus:text-white">All Props</SelectItem>
+                <SelectItem value="passing" className="text-white focus:text-white">Passing</SelectItem>
+                <SelectItem value="rushing" className="text-white focus:text-white">Rushing</SelectItem>
+                <SelectItem value="receiving" className="text-white focus:text-white">Receiving</SelectItem>
+                <SelectItem value="yards" className="text-white focus:text-white">Yards</SelectItem>
+                <SelectItem value="tds" className="text-white focus:text-white">Touchdowns</SelectItem>
               </SelectContent>
             </Select>
 
             <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-slate-400" />
-              <span className="text-sm text-slate-400 whitespace-nowrap">Min Edge: {minEdge[0]}%</span>
+              <Filter className="w-4 h-4 text-slate-300" />
+              <span className="text-sm text-white whitespace-nowrap">Min Edge: {minEdge[0]}%</span>
             </div>
 
             <Slider
@@ -179,9 +177,9 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
                       <Badge variant="outline" className="border-cyan-500/30 text-xs">
                         {prop.position}
                       </Badge>
-                      <span className="text-slate-400 text-sm">{prop.team} {prop.opponent}</span>
+                      <span className="text-slate-200 text-sm">{prop.team} {prop.opponent}</span>
                     </div>
-                    <p className="text-slate-400 text-sm">{prop.prop}</p>
+                    <p className="text-slate-200 text-sm">{prop.prop}</p>
                   </div>
                   {prop.trend && (
                     <Badge className={
@@ -203,7 +201,7 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
                     className="border-green-500/30 hover:bg-green-500/10 hover:border-green-500"
                   >
                     <div className="flex flex-col items-start w-full">
-                      <span className="text-xs text-slate-400">OVER {prop.line}</span>
+                      <span className="text-xs text-slate-200">OVER {prop.line}</span>
                       <span className="text-green-400 font-semibold">
                         {prop.overOdds > 0 ? '+' : ''}{prop.overOdds}
                       </span>
@@ -216,7 +214,7 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
                     className="border-red-500/30 hover:bg-red-500/10 hover:border-red-500"
                   >
                     <div className="flex flex-col items-start w-full">
-                      <span className="text-xs text-slate-400">UNDER {prop.line}</span>
+                      <span className="text-xs text-slate-200">UNDER {prop.line}</span>
                       <span className="text-red-400 font-semibold">
                         {prop.underOdds > 0 ? '+' : ''}{prop.underOdds}
                       </span>
@@ -245,7 +243,7 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
                   </div>
                   <div className="flex items-center gap-2">
                     {prop.confidence && (
-                      <span className="text-xs text-slate-400">
+                      <span className="text-xs text-slate-200">
                         {prop.confidence}% Confidence
                       </span>
                     )}
@@ -261,9 +259,9 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
 
             {filteredProps.length === 0 && (
               <Card className="p-12 bg-black/60 border-cyan-500/20 text-center">
-                <Target className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-slate-400 mb-2">No Props Found</h3>
-                <p className="text-slate-500">Try adjusting your filters</p>
+                <Target className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-white mb-2">No Props Found</h3>
+                <p className="text-white">Try adjusting your filters</p>
               </Card>
             )}
           </div>
@@ -277,6 +275,7 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
             />
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

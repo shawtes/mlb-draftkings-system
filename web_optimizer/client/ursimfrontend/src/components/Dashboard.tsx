@@ -1,4 +1,4 @@
-import { useState, useMemo, lazy, Suspense } from 'react';
+import { useState, useMemo, useCallback, lazy, Suspense } from 'react';
 import { Button } from './ui/button';
 import { 
   TrendingUp, 
@@ -40,6 +40,11 @@ const AccountSettings = lazy(() => import('./AccountSettings'));
 export default function Dashboard({ onLogout }: DashboardProps) {
   const [activeView, setActiveView] = useState('games');
 
+  // Memoize navigation handlers to prevent unnecessary re-renders
+  const handleNavigation = useCallback((view: string) => {
+    setActiveView(view);
+  }, []);
+
   const renderMainContent = useMemo(() => {
     switch (activeView) {
       case 'games':
@@ -77,7 +82,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
               <h2 className="text-slate-300 mb-2">Coming Soon</h2>
-              <p className="text-slate-500">This feature is under development</p>
+              <p className="text-slate-300">This feature is under development</p>
             </div>
           </div>
         );
@@ -85,19 +90,19 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   }, [activeView]);
 
   return (
-    <div className="min-h-screen bg-black relative overflow-hidden flex flex-col">
+    <div className="min-h-screen bg-slate-900 relative overflow-hidden flex flex-col">
       {/* Animated Grid Background */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#0a0a0a_1px,transparent_1px),linear-gradient(to_bottom,#0a0a0a_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-40" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-30" />
       
       {/* Gradient Orb - Top Left */}
-      <div className="absolute top-0 -left-40 w-96 h-96 bg-cyan-500/20 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute top-0 -left-40 w-96 h-96 bg-cyan-500/15 rounded-full blur-[120px] pointer-events-none" />
       
       {/* Gradient Orb - Right */}
-      <div className="absolute top-1/3 -right-40 w-96 h-96 bg-blue-600/15 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute top-1/3 -right-40 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
 
       {/* Top Navigation Header */}
-      <header className="bg-black/80 backdrop-blur-xl border-b border-cyan-500/20 shadow-2xl relative z-10">
-        {/* Top Bar - Logo, Quick Stats, and User Section */}
+      <header className="bg-slate-800/95 backdrop-blur-xl border-b border-slate-700/50 shadow-2xl relative z-10">
+        {/* Top Bar - Logo and User Section */}
         <div className="flex items-center justify-between px-8 py-4 border-b border-cyan-500/10">
           {/* Left: Logo */}
           <div className="flex items-center gap-4">
@@ -112,23 +117,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               <div className="text-xs text-cyan-400/70 font-medium">DFS Lineup Optimizer</div>
             </div>
           </div>
-
-          {/* Center: Quick Stats */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 px-3 py-2 bg-cyan-500/5 border border-cyan-500/20 rounded-lg">
-              <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
-              <span className="text-cyan-400 text-sm font-medium">Live Contests</span>
-            </div>
-            <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg px-4 py-2 hover:bg-cyan-500/10 transition-colors">
-              <div className="text-cyan-400/80 text-xs font-medium">Active Contests</div>
-              <div className="text-white text-lg font-bold text-center">12</div>
-            </div>
-            <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg px-4 py-2 hover:bg-cyan-500/10 transition-colors">
-              <div className="text-cyan-400/80 text-xs font-medium">Win Rate</div>
-              <div className="text-white text-lg font-bold text-center">64%</div>
-            </div>
-          </div>
-
+          
           {/* Right: User Actions */}
           <div className="flex items-center gap-3">
             <Button 
@@ -136,7 +125,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               size="icon" 
               className="text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all"
               title="Help & Support"
-              onClick={() => setActiveView('how-to-use')}
+              onClick={() => handleNavigation('how-to-use')}
             >
               <HelpCircle className="w-5 h-5" />
             </Button>
@@ -162,7 +151,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56 bg-slate-900 border-cyan-500/20">
-                <DropdownMenuItem onClick={() => setActiveView('settings')} className="text-slate-300 hover:text-cyan-400">
+                <DropdownMenuItem onClick={() => handleNavigation('settings')} className="text-slate-300 hover:text-cyan-400">
                   <Settings className="w-4 h-4 mr-2" />
                   Settings
                 </DropdownMenuItem>
@@ -185,7 +174,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           <div className="flex items-center gap-2">
             {/* Research Section */}
             <button
-              onClick={() => setActiveView('games')}
+              onClick={() => handleNavigation('games')}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all group ${
                 activeView === 'games' 
                   ? 'bg-gradient-to-r from-cyan-500/10 to-blue-500/10 text-cyan-400 border border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.15)]' 
@@ -202,7 +191,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
             {/* Betting Section */}
             <button
-              onClick={() => setActiveView('prop-betting')}
+              onClick={() => handleNavigation('prop-betting')}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all group ${
                 activeView === 'prop-betting' 
                   ? 'bg-gradient-to-r from-cyan-500/10 to-blue-500/10 text-cyan-400 border border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.15)]' 
@@ -219,7 +208,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
             {/* DFS Tools Section */}
             <button
-              onClick={() => setActiveView('dfs-optimizer')}
+              onClick={() => handleNavigation('dfs-optimizer')}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all group ${
                 activeView === 'dfs-optimizer' 
                   ? 'bg-gradient-to-r from-cyan-500/10 to-blue-500/10 text-cyan-400 border border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.15)]' 
@@ -230,14 +219,48 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               <span className="font-medium">DFS Optimizer</span>
               {activeView === 'dfs-optimizer' && <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]" />}
             </button>
+
+            {/* Separator */}
+            <div className="h-8 w-px bg-cyan-500/10" />
+
+            {/* How To Section */}
+            <button
+              onClick={() => handleNavigation('how-to-use')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all group ${
+                activeView === 'how-to-use' 
+                  ? 'bg-gradient-to-r from-cyan-500/10 to-blue-500/10 text-cyan-400 border border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.15)]' 
+                  : 'text-slate-400 hover:bg-cyan-500/5 hover:text-cyan-400 border border-transparent hover:border-cyan-500/20'
+              }`}
+            >
+              <HelpCircle className={`w-5 h-5 ${activeView === 'how-to-use' ? 'text-cyan-400' : 'group-hover:text-cyan-400'} transition-colors`} />
+              <span className="font-medium">How To</span>
+              {activeView === 'how-to-use' && <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]" />}
+            </button>
+
+            {/* Separator */}
+            <div className="h-8 w-px bg-cyan-500/10" />
+
+            {/* Settings Section */}
+            <button
+              onClick={() => handleNavigation('settings')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all group ${
+                activeView === 'settings' 
+                  ? 'bg-gradient-to-r from-cyan-500/10 to-blue-500/10 text-cyan-400 border border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.15)]' 
+                  : 'text-slate-400 hover:bg-cyan-500/5 hover:text-cyan-400 border border-transparent hover:border-cyan-500/20'
+              }`}
+            >
+              <User className={`w-5 h-5 ${activeView === 'settings' ? 'text-cyan-400' : 'group-hover:text-cyan-400'} transition-colors`} />
+              <span className="font-medium">Settings</span>
+              {activeView === 'settings' && <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]" />}
+            </button>
           </div>
         </nav>
-      </header>
+        </header>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto bg-black p-8 relative z-10">
-        {renderMainContent}
-      </main>
+        {/* Main Content */}
+      <main className="flex-1 overflow-auto p-8 relative z-10">
+          {renderMainContent}
+        </main>
     </div>
   );
 }
