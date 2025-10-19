@@ -6828,7 +6828,9 @@ class FantasyFootballApp(QMainWindow):
                         'EAGLES': 'PHI', 'PATRIOTS': 'NE', 'CHIEFS': 'KC', 
                         'DOLPHINS': 'MIA', 'BEARS': 'CHI', 'BROWNS': 'CLE',
                         'JETS': 'NYJ', 'VIKINGS': 'MIN', 'SAINTS': 'NO',
-                        'PANTHERS': 'CAR', 'TITANS': 'TEN', 'RAIDERS': 'LV'
+                        'PANTHERS': 'CAR', 'TITANS': 'TEN', 'RAIDERS': 'LV',
+                        'SEAHAWKS': 'SEA', 'LIONS': 'DET', '49ERS': 'SF',
+                        'FALCONS': 'ATL', 'TEXANS': 'HOU', 'BUCCANEERS': 'TB'
                     }
                     name_upper = name.upper().replace(' ', '')
                     
