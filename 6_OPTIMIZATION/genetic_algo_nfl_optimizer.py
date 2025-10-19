@@ -697,7 +697,7 @@ def optimize_single_lineup(args):
                 logging.warning(f"No valid teams for {stack_type} stack")
             else:
                 # Create stacking constraints
-                # For QB-WR-TE stack: ensure QB, at least 1 WR, and TE are from same team
+                # For QB-WR-TE stack: ensure EXACTLY the required positions from same team
                 if len(valid_teams) == 1:
                     # Single team - direct constraint
                     team = valid_teams[0]
@@ -709,9 +709,16 @@ def optimize_single_lineup(args):
                                 problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) >= 2
                                 logging.info(f"✅ ENFORCING: At least 2 {pos} from {team}")
                             else:
-                                # Need at least 1 of this position
+                                # Need exactly 1 of this position from this team
                                 problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) >= 1
                                 logging.info(f"✅ ENFORCING: At least 1 {pos} from {team}")
+                    
+                    # CRITICAL: Prevent other teams from filling the same positions
+                    for pos in same_team_positions:
+                        other_team_pos_players = df[(df['Team'] != team) & (df['Position'] == pos)].index
+                        if len(other_team_pos_players) > 0:
+                            problem += pulp.lpSum([player_vars[idx] for idx in other_team_pos_players]) == 0
+                            logging.info(f"🚫 PREVENTING: No {pos} from teams other than {team}")
                 else:
                     # Multiple teams - create binary variables to select one team
                     team_binary_vars = {team: pulp.LpVariable(f"stack_team_{team}", cat='Binary') for team in valid_teams}
@@ -730,6 +737,18 @@ def optimize_single_lineup(args):
                                 else:
                                     # Need at least 1 of this position when this team is selected
                                     problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) >= 1 * team_binary_vars[team]
+                    
+                    # CRITICAL: Prevent non-selected teams from filling stack positions
+                    for pos in same_team_positions:
+                        for team in valid_teams:
+                            team_pos_players = df[(df['Team'] == team) & (df['Position'] == pos)].index
+                            if len(team_pos_players) > 0:
+                                if pos == 'WR' and '2wr' in stack_type:
+                                    # Allow 2 WRs only if this team is selected
+                                    problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) <= 2 * team_binary_vars[team]
+                                else:
+                                    # Allow 1 of this position only if this team is selected
+                                    problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) <= 1 * team_binary_vars[team]
                     
                     logging.info(f"✅ ENFORCING: {stack_info.get('name', stack_type)} from one of: {valid_teams}")
     else:
