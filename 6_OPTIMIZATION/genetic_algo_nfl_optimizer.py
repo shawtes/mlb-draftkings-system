@@ -2598,19 +2598,26 @@ class FantasyFootballApp(QMainWindow):
                             if combo_item and lineups_item:
                                 try:
                                     combo_text = combo_item.text()
-                                    # Parse the combination text like "LAD(4) + SF(2)"
+                                    # Parse the combination text like "LAD(4) + SF(2)" or "CHI(QB-WR-TE)"
                                     team_parts = combo_text.split(' + ')
                                     teams = []
                                     stack_sizes = []
                                     for part in team_parts:
                                         if '(' in part and ')' in part:
                                             team = part.split('(')[0].strip()
-                                            stack_size = int(part.split('(')[1].split(')')[0])
+                                            stack_size_str = part.split('(')[1].split(')')[0].strip()
+                                            # Try to convert to int, if it fails keep as string (for named stacks)
+                                            try:
+                                                stack_size = int(stack_size_str)
+                                            except ValueError:
+                                                # It's a named stack like "QB-WR-TE", convert back to backend format
+                                                stack_size = stack_size_str.lower().replace('-', '_')
                                             teams.append(team)
                                             stack_sizes.append(stack_size)
                                     lineups_count = int(lineups_item.text())
                                     selected_combinations.append((teams, stack_sizes, lineups_count))
-                                except ValueError:
+                                except Exception as e:
+                                    logging.warning(f"Failed to parse combination {combo_text}: {e}")
                                     pass
             print(f"[DEBUG] selected_combinations: {selected_combinations}")
             
