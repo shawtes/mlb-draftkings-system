@@ -1,0 +1,18 @@
+ 2, available: 15
+2025-10-17 23:51:03,051 - DEBUG - optimize_single_lineup: Position WR needs 3, available: 23
+2025-10-17 23:51:03,051 - DEBUG - optimize_single_lineup: Position TE needs 1, available: 11
+2025-10-17 23:51:03,051 - DEBUG - optimize_single_lineup: Starting with stack type 4|2|2, min_salary=45000
+2025-10-17 23:51:03,051 - DEBUG - optimize_single_lineup: Position FLEX needs 1, available: 0
+2025-10-17 23:51:03,053 - DEBUG - optimize_single_lineup: Added minimum salary constraint >= 45000
+2025-10-17 23:51:03,053 - ERROR - optimize_single_lineup: INSUFFICIENT PLAYERS for FLEX: need 1, have 0
+2025-10-17 23:51:03,053 - DEBUG - optimize_single_lineup: Position QB needs 1, available: 10
+2025-10-17 23:51:03,054 - DEBUG - optimize_single_lineup: Position RB needs 2, available: 15
+2025-10-17 23:51:03,054 - DEBUG - optimize_single_lineup: Position WR needs 3, available: 23
+2025-10-17 23:51:03,054 - DEBUG - optimize_single_lineup: Position TE needs 1, available: 11
+2025-10-17 23:51:03,054 - DEBUG - optimize_single_lineup: Position FLEX needs 1, available: 0
+2025-10-17 23:51:03,054 - ERROR - optimize_single_lineup: INSUFFICIENT PLAYERS for FLEX: need 1, have 0
+2025-10-17 23:51:03,055 - INFO - ✅ Generated 0 lineups for 4|2|2-stack
+2025-10-17 23:51:03,055 - INFO - 🏆 Advanced PuLP optimization complete: 0 lineups generated
+2025-10-17 23:51:03,055 - INFO - 🎲 NOISE GENERATION: Created 0 unique lineups from 5 attempts
+2025-10-17 23:51:03,055 - INFO - 🔍 DEBUG: Requested 5 lineups, got 0 results
+2025-10-17 23:51:03,055 - WARNING - No lineups generated for combination: TB(4)

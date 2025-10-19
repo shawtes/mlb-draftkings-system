@@ -84,18 +84,49 @@ except ImportError as e:
     PROBABILITY_OPTIMIZER_AVAILABLE = False
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# NFL DraftKings Settings
+# ============================================================================
+# NFL STACK TYPE MAPPING - Convert GUI names to backend logic
+# ============================================================================
+def map_nfl_stack_to_backend(stack_type):
+    """
+    Map new NFL stack names from GUI to backend processing format
+    
+    For now, we map to a simplified format until full nfl_stack_engine integration
+    """
+    stack_mapping = {
+        "QB + WR": "No Stacks",  # Temporary: treat as no stack until backend integrated
+        "QB + 2 WR": "No Stacks",
+        "QB + WR + TE": "No Stacks",
+        "QB + WR + RB": "No Stacks",
+        "QB + 2 WR + TE": "No Stacks",
+        "Game Stack": "No Stacks",
+        "Bring-Back": "No Stacks",
+        "No Stack": "No Stacks"
+    }
+    
+    # Return mapped value or original if not found
+    return stack_mapping.get(stack_type, stack_type)
+
 SALARY_CAP = 50000
-MIN_SALARY_DEFAULT = 45000  # Default minimum salary requirement
+MIN_SALARY_DEFAULT = 48000  # NFL minimum salary requirement (higher than MLB)
+
+# NFL DraftKings Classic Lineup Positions
+# QB (1), RB (2), WR (3), TE (1), FLEX (1), DST (1) = 9 players
 POSITION_LIMITS = {
-    'P': 2,
-    'C': 1,
-    '1B': 1,
-    '2B': 1,
-    '3B': 1,
-    'SS': 1,
-    'OF': 3
+    'QB': 1,   # Quarterback
+    'RB': 2,   # Running Back
+    'WR': 3,   # Wide Receiver
+    'TE': 1,   # Tight End
+    'FLEX': 1, # RB/WR/TE
+    'DST': 1   # Defense/Special Teams
 }
-REQUIRED_TEAM_SIZE = 10
+
+REQUIRED_TEAM_SIZE = 9  # NFL lineups have 9 players
+
+# Flex eligible positions
+FLEX_POSITIONS = ['RB', 'WR', 'TE']
 
 # GENETIC ALGORITHM DIVERSITY ENGINE FOR MULTIPLE UNIQUE LINEUPS
 class GeneticDiversityEngine:
@@ -401,6 +432,10 @@ class GeneticDiversityEngine:
 
 def optimize_single_lineup(args):
     df, stack_type, team_projected_runs, team_selections, min_salary = args
+    
+    # MAP NEW NFL STACK NAMES TO BACKEND FORMAT
+    stack_type = map_nfl_stack_to_backend(stack_type)
+    
     logging.debug(f"optimize_single_lineup: Starting with stack type {stack_type}, min_salary={min_salary}")
     
     # INJECT DIVERSITY: Add aggressive random noise to projections to get truly different optimal solutions
@@ -452,14 +487,26 @@ def optimize_single_lineup(args):
             
     else:
         # Standard objective function with diversity noise
-        # Add aggressive noise for lineup diversity - ENHANCED for maximum diversity
-        diversity_factor = random.uniform(0.20, 0.50)  # Increased to 20-50% noise for better diversity
-        noise = np.random.normal(1.0, diversity_factor, len(df))
+        # Add MASSIVE noise for lineup diversity - MAXIMUM VARIANCE for unique lineups
+        diversity_factor = random.uniform(0.35, 0.70)  # MASSIVE 35-70% noise for extreme diversity
+        noise = np.random.lognormal(0, diversity_factor, len(df))  # Lognormal for more variance
         
         # Add additional randomness to prevent identical lineups
-        player_boost = np.random.choice(df.index, size=random.randint(1, 3), replace=False)
+        # Boost 3-7 random players significantly
+        num_boosts = random.randint(3, 7)
+        player_boost = np.random.choice(df.index, size=num_boosts, replace=False)
         for idx in player_boost:
-            noise[df.index.get_loc(idx)] *= random.uniform(1.1, 1.3)
+            noise[df.index.get_loc(idx)] *= random.uniform(1.2, 1.8)  # Bigger boost range
+        
+        # Randomly penalize 2-4 players to create more variety
+        num_penalties = random.randint(2, 4)
+        player_penalty = np.random.choice(
+            [i for i in df.index if i not in player_boost], 
+            size=min(num_penalties, len(df) - num_boosts), 
+            replace=False
+        )
+        for idx in player_penalty:
+            noise[df.index.get_loc(idx)] *= random.uniform(0.6, 0.9)  # Penalize some players
         
         df['Predicted_DK_Points'] = df['Predicted_DK_Points'] * noise
         
@@ -478,12 +525,31 @@ def optimize_single_lineup(args):
         logging.debug(f"optimize_single_lineup: Added minimum salary constraint >= {min_salary}")
     
     for position, limit in POSITION_LIMITS.items():
-        available_for_position = [idx for idx in df.index if position in df.at[idx, 'Position']]
-        logging.debug(f"optimize_single_lineup: Position {position} needs {limit}, available: {len(available_for_position)}")
-        if len(available_for_position) < limit:
-            logging.error(f"optimize_single_lineup: INSUFFICIENT PLAYERS for {position}: need {limit}, have {len(available_for_position)}")
-            return pd.DataFrame(), stack_type
-        problem += pulp.lpSum([player_vars[idx] for idx in df.index if position in df.at[idx, 'Position']]) == limit
+        # Special handling for FLEX position (can be filled by RB, WR, or TE)
+        if position == 'FLEX':
+            # FLEX doesn't need a separate constraint
+            # It's handled by requiring total RB+WR+TE = 7
+            # We'll add this constraint after the loop
+            available_for_position = [idx for idx in df.index if df.at[idx, 'Position'] in FLEX_POSITIONS]
+            logging.debug(f"optimize_single_lineup: Position {position} (RB/WR/TE) needs total 7 (2+3+1+FLEX), available: {len(available_for_position)}")
+            continue
+        else:
+            available_for_position = [idx for idx in df.index if position in df.at[idx, 'Position']]
+            logging.debug(f"optimize_single_lineup: Position {position} needs {limit}, available: {len(available_for_position)}")
+            if len(available_for_position) < limit:
+                logging.error(f"optimize_single_lineup: INSUFFICIENT PLAYERS for {position}: need {limit}, have {len(available_for_position)}")
+                return pd.DataFrame(), stack_type
+            
+            # For RB, WR, TE: minimum requirement (FLEX makes it at least X)
+            # For QB, DST: exact requirement
+            if position in FLEX_POSITIONS:
+                problem += pulp.lpSum([player_vars[idx] for idx in df.index if position in df.at[idx, 'Position']]) >= limit
+            else:
+                problem += pulp.lpSum([player_vars[idx] for idx in df.index if position in df.at[idx, 'Position']]) == limit
+    
+    # Ensure total of RB + WR + TE equals 7 (which accounts for the FLEX)
+    problem += pulp.lpSum([player_vars[idx] for idx in df.index if df.at[idx, 'Position'] in FLEX_POSITIONS]) == 7
+    logging.debug("optimize_single_lineup: Added constraint: RB + WR + TE = 7 (includes FLEX)")
 
     # Handle different stack types
     if stack_type == "No Stacks":
@@ -533,26 +599,26 @@ def optimize_single_lineup(args):
             available_teams = df['Team'].unique().tolist()
             logging.warning(f"🚨 FALLBACK: Using ALL {len(available_teams)} teams for {stack_size}-stack!")
         
-        # Filter available teams to only those with enough batters
+        # Filter available teams to only those with enough offensive players (exclude DST)
         valid_teams = []
         for team in available_teams:
-            team_batters = df[(df['Team'] == team) & (~df['Position'].str.contains('P', na=False))].index
-            if len(team_batters) >= stack_size:
+            team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
+            if len(team_offense) >= stack_size:
                 valid_teams.append(team)
-                logging.debug(f"optimize_single_lineup: Team {team} has {len(team_batters)} batters (need {stack_size}) - VALID")
+                logging.debug(f"optimize_single_lineup: Team {team} has {len(team_offense)} offensive players (need {stack_size}) - VALID")
             else:
-                logging.debug(f"optimize_single_lineup: Team {team} has {len(team_batters)} batters (need {stack_size}) - INSUFFICIENT")
+                logging.debug(f"optimize_single_lineup: Team {team} has {len(team_offense)} offensive players (need {stack_size}) - INSUFFICIENT")
                 
         if not valid_teams:
-            logging.warning(f"optimize_single_lineup: No valid teams with enough batters for {stack_size}-stack")
+            logging.warning(f"optimize_single_lineup: No valid teams with enough offensive players for {stack_size}-stack")
             logging.warning(f"Available teams: {available_teams}")
         else:
             # Enforce constraint for the selected teams
             if len(valid_teams) == 1:
                 # If only one team selected for this stack size, enforce it directly
                 selected_team = valid_teams[0]
-                team_batters = df[(df['Team'] == selected_team) & (~df['Position'].str.contains('P', na=False))].index
-                problem += pulp.lpSum([player_vars[idx] for idx in team_batters]) >= stack_size
+                team_offense = df[(df['Team'] == selected_team) & (df['Position'] != 'DST')].index
+                problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) >= stack_size
                 logging.info(f"✅ ENFORCING: Must have at least {stack_size} players from {selected_team}")
                 
             else:
@@ -567,10 +633,10 @@ def optimize_single_lineup(args):
                 
                 # If a team is selected, enforce the stack constraint
                 for team in valid_teams:
-                    team_batters = df[(df['Team'] == team) & (~df['Position'].str.contains('P', na=False))].index
-                    if len(team_batters) >= stack_size:
+                    team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
+                    if len(team_offense) >= stack_size:
                         # If team is selected (binary = 1), enforce at least 'stack_size' players
-                        problem += pulp.lpSum([player_vars[idx] for idx in team_batters]) >= stack_size * team_binary_vars[team]
+                        problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) >= stack_size * team_binary_vars[team]
                 
                 logging.info(f"✅ ENFORCING: Must have at least {stack_size} players from ANY of: {valid_teams}")
             
@@ -658,18 +724,18 @@ def optimize_single_lineup(args):
                 logging.warning(f"optimize_single_lineup: No teams available for stack size {size}, skipping")
                 continue
             
-            # Filter available teams to only those with enough batters
+            # Filter available teams to only those with enough offensive players (exclude DST)
             valid_teams = []
             for team in available_teams:
-                team_batters = df[(df['Team'] == team) & (~df['Position'].str.contains('P', na=False))].index
-                if len(team_batters) >= size:
+                team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
+                if len(team_offense) >= size:
                     valid_teams.append(team)
-                    logging.debug(f"optimize_single_lineup: Team {team} has {len(team_batters)} batters (need {size}) - VALID")
+                    logging.debug(f"optimize_single_lineup: Team {team} has {len(team_offense)} offensive players (need {size}) - VALID")
                 else:
-                    logging.debug(f"optimize_single_lineup: Team {team} has {len(team_batters)} batters (need {size}) - INSUFFICIENT")
+                    logging.debug(f"optimize_single_lineup: Team {team} has {len(team_offense)} offensive players (need {size}) - INSUFFICIENT")
                     
             if not valid_teams:
-                logging.warning(f"optimize_single_lineup: No valid teams with enough batters for stack size {size}")
+                logging.warning(f"optimize_single_lineup: No valid teams with enough offensive players for stack size {size}")
                 logging.warning(f"Available teams: {available_teams}")
                 continue
                 
@@ -679,8 +745,8 @@ def optimize_single_lineup(args):
             if len(valid_teams) == 1:
                 # If only one team selected for this stack size, enforce it directly
                 selected_team = valid_teams[0]
-                team_batters = df[(df['Team'] == selected_team) & (~df['Position'].str.contains('P', na=False))].index
-                problem += pulp.lpSum([player_vars[idx] for idx in team_batters]) >= size
+                team_offense = df[(df['Team'] == selected_team) & (df['Position'] != 'DST')].index
+                problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) >= size
                 logging.info(f"✅ ENFORCING: Must have at least {size} players from {selected_team}")
                 
             else:
@@ -688,9 +754,9 @@ def optimize_single_lineup(args):
                 # This means: at least 'size' players from ANY of the selected teams
                 team_constraints = []
                 for team in valid_teams:
-                    team_batters = df[(df['Team'] == team) & (~df['Position'].str.contains('P', na=False))].index
-                    if len(team_batters) >= size:
-                        team_constraints.append(pulp.lpSum([player_vars[idx] for idx in team_batters]))
+                    team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
+                    if len(team_offense) >= size:
+                        team_constraints.append(pulp.lpSum([player_vars[idx] for idx in team_offense]))
                 
                 if team_constraints:
                     # At least one of the selected teams must contribute 'size' players
@@ -704,10 +770,10 @@ def optimize_single_lineup(args):
                     
                     # If a team is selected, enforce the stack constraint
                     for team in valid_teams:
-                        team_batters = df[(df['Team'] == team) & (~df['Position'].str.contains('P', na=False))].index
-                        if len(team_batters) >= size:
+                        team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
+                        if len(team_offense) >= size:
                             # If team is selected (binary = 1), enforce at least 'size' players
-                            problem += pulp.lpSum([player_vars[idx] for idx in team_batters]) >= size * team_binary_vars[team]
+                            problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) >= size * team_binary_vars[team]
                     
                     logging.info(f"✅ ENFORCING: Must have at least {size} players from ANY of: {valid_teams}")
                 else:
@@ -1018,10 +1084,17 @@ class OptimizationWorker(QThread):
             print(f"   ✅ FILTERING to {len(self.included_players)} specifically selected players")
             logging.info(f"✅ Filtering to {len(self.included_players)} specifically selected players")
             original_count = len(df_filtered)
-            df_filtered = df_filtered[df_filtered['Name'].isin(self.included_players)]
+            
+            # IMPORTANT: Always include ALL DST players (they're usually not in manual selections)
+            # Users select offensive players for stacking, but DST should always be available
+            dst_players = df_filtered[df_filtered['Position'] == 'DST']
+            selected_players = df_filtered[df_filtered['Name'].isin(self.included_players)]
+            df_filtered = pd.concat([selected_players, dst_players]).drop_duplicates()
+            
             final_count = len(df_filtered)
-            print(f"   ✅ RESULT: {final_count}/{original_count} players remain after filtering")
-            logging.info(f"✅ After filtering by selected players: {final_count}/{original_count} players remain")
+            dst_count = len(dst_players)
+            print(f"   ✅ RESULT: {final_count}/{original_count} players remain after filtering ({dst_count} DST added automatically)")
+            logging.info(f"✅ After filtering by selected players: {final_count}/{original_count} players remain ({dst_count} DST auto-included)")
             
             # Additional debug: show which selected players were found/not found
             if final_count == 0:
@@ -1400,8 +1473,9 @@ class OptimizationWorker(QThread):
             results = {}
         
             # CRITICAL FIX: Distribute lineups across stack types instead of multiplying
-            total_candidates_needed = self.num_lineups * 2  # Generate 2x candidates for better performance
-            lineups_per_stack = max(1, total_candidates_needed // len(self.stack_settings))
+            # SPEED OPTIMIZED: Generate 5x candidates (reduced from 20x for faster optimization)
+            total_candidates_needed = self.num_lineups * 5  # Generate 5x candidates for speed (was 20x)
+            lineups_per_stack = max(5, total_candidates_needed // len(self.stack_settings))  # Minimum 5 per stack (was 10)
             extra_lineups = total_candidates_needed % len(self.stack_settings)
             
             logging.info(f"🎯 Advanced PuLP optimization: {total_candidates_needed} candidates across {len(self.stack_settings)} stack types")
@@ -1452,8 +1526,9 @@ class OptimizationWorker(QThread):
                 # Sort by risk-adjusted score
                 stack_results.sort(key=lambda x: x['risk_adjusted_points'], reverse=True)
                 
-                # Take top lineups for this stack type
-                top_lineups = stack_results[:min(len(stack_results), self.num_lineups // len(self.stack_settings))]
+                # Take ALL successful lineups for this stack type (no artificial limit)
+                # We already generated the right number above, so keep them all
+                top_lineups = stack_results  # Keep all generated lineups, not just a subset
                 
                 for j, lineup_data in enumerate(top_lineups):
                     key = f"{stack_type}_{j}"
@@ -1791,7 +1866,7 @@ class OptimizationWorker(QThread):
             logging.warning(f"🚨 FALLBACK: Returning {len(selected_lineups)} lineups without position sizing due to error")
             return selected_lineups[:self.num_lineups]
 
-class FantasyBaseballApp(QMainWindow):
+class FantasyFootballApp(QMainWindow):
     def enforce_player_exposure(self, lineups, max_exposure):
         """
         Enforce player exposure limits across generated lineups.
@@ -1824,8 +1899,28 @@ class FantasyBaseballApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Advanced MLB DFS Optimizer")
-        self.setGeometry(100, 100, 1600, 1000)
+        self.setWindowTitle("Advanced NFL DFS Optimizer - Genetic Algorithm")
+        
+        # Get screen size and set window to 85% of screen size (works on Mac and Windows)
+        screen = QApplication.primaryScreen().geometry()
+        screen_width = screen.width()
+        screen_height = screen.height()
+        
+        # Calculate window size (85% of screen, but with reasonable limits)
+        window_width = min(int(screen_width * 0.85), 1600)
+        window_height = min(int(screen_height * 0.85), 1000)
+        
+        # Center the window on screen
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        
+        self.setGeometry(x, y, window_width, window_height)
+        
+        # Set minimum size to ensure usability on small screens
+        self.setMinimumSize(1200, 700)
+        
+        # Make window resizable
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint)
         
         # Initialize enhanced checkbox managers
         if ENHANCED_CHECKBOX_AVAILABLE:
@@ -1993,7 +2088,7 @@ class FantasyBaseballApp(QMainWindow):
 
         self.player_tables = {}
 
-        positions = ["All Batters", "C", "1B", "2B", "3B", "SS", "OF", "P"]
+        positions = ["All Offense", "QB", "RB", "WR", "TE", "DST"]
         for position in positions:
             sub_tab = QWidget()
             position_tabs.addTab(sub_tab, position)
@@ -2220,10 +2315,19 @@ class FantasyBaseballApp(QMainWindow):
                 return
             
             # Get stack pattern and parse it
-            stack_pattern = self.combinations_stack_combo.currentText()
-            stack_sizes = [int(x) for x in stack_pattern.split('|')]
-            teams_needed = len(stack_sizes)
-            print(f"[DEBUG] Stack pattern: {stack_pattern}, stack_sizes: {stack_sizes}, teams_needed: {teams_needed}")
+            stack_pattern_raw = self.combinations_stack_combo.currentText()
+            # Map new NFL stack names to backend format
+            stack_pattern = map_nfl_stack_to_backend(stack_pattern_raw)
+            print(f"[DEBUG] Stack pattern (raw): {stack_pattern_raw}, mapped to: {stack_pattern}")
+            
+            # Parse stack pattern
+            if stack_pattern == "No Stacks":
+                stack_sizes = [1]  # Treat as single team selection
+                teams_needed = 1
+            else:
+                stack_sizes = [int(x) for x in stack_pattern.split('|')]
+                teams_needed = len(stack_sizes)
+            print(f"[DEBUG] Stack sizes: {stack_sizes}, teams_needed: {teams_needed}")
             
             if len(selected_teams) < teams_needed:
                 QMessageBox.warning(self, "Warning", f"Need at least {teams_needed} teams selected for {stack_pattern} stack pattern.")
@@ -2377,8 +2481,28 @@ class FantasyBaseballApp(QMainWindow):
             # Generate lineups for each combination
             all_lineups = []
             
-            for teams, stack_sizes, lineups_count in selected_combinations:
-                if lineups_count <= 0:
+            # Get TOTAL requested lineups from GUI (not per combination)
+            total_requested = self.get_requested_lineups()
+            logging.info(f"🎯 TOTAL LINEUPS REQUESTED: {total_requested} across all combinations")
+            
+            # Distribute lineups across combinations
+            num_combinations = len(selected_combinations)
+            lineups_per_combo = max(1, total_requested // num_combinations)
+            extra_lineups = total_requested % num_combinations
+            logging.info(f"📊 DISTRIBUTION: {lineups_per_combo} lineups per combo, {extra_lineups} extra")
+            
+            for combo_idx, (teams, stack_sizes, lineups_count) in enumerate(selected_combinations):
+                # Use distributed count instead of per-combo table value
+                current_combo_count = lineups_per_combo
+                if combo_idx < extra_lineups:
+                    current_combo_count += 1  # Give extra lineup to first N combos
+                
+                # Stop if we've reached the total requested
+                if len(all_lineups) >= total_requested:
+                    logging.info(f"✅ Reached total requested lineups ({total_requested}), stopping")
+                    break
+                
+                if current_combo_count <= 0:
                     continue
                 
                 # Create team selections for this combination
@@ -2409,7 +2533,8 @@ class FantasyBaseballApp(QMainWindow):
                     
                     # AGGRESSIVE APPROACH: Generate multiple lineups by running worker multiple times with noise
                     all_combo_results = {}
-                    for attempt in range(max(lineups_count, 5)):  # At least 5 attempts
+                    max_attempts = 3  # Reduced since each attempt now generates 10+ lineups
+                    for attempt in range(max_attempts):  # 3 attempts x 10+ lineups = 30+ total
                         # Add noise to player projections for diversity
                         df_noisy = self.df_players.copy()
                         if 'Predicted_DK_Points' in df_noisy.columns:
@@ -2427,9 +2552,9 @@ class FantasyBaseballApp(QMainWindow):
                             max_exposure={},
                             min_points=1,
                             monte_carlo_iterations=50,  # Reduced for speed
-                            num_lineups=1,  # Generate one lineup per attempt
+                            num_lineups=max(current_combo_count, 5),  # Generate lineups for THIS combo only
                             team_selections=team_selections,
-                            min_unique=0,
+                            min_unique=1,  # Require at least 1 different player for diversity
                             bankroll=1000,
                             risk_tolerance='medium',
                             disable_kelly=True,
@@ -2454,15 +2579,15 @@ class FantasyBaseballApp(QMainWindow):
                                                               for existing in all_combo_results.values()]:
                                         all_combo_results[len(all_combo_results)] = result
                         
-                        # Stop if we have enough unique lineups
-                        if len(all_combo_results) >= lineups_count:
+                        # Stop if we have enough unique lineups for THIS combination
+                        if len(all_combo_results) >= current_combo_count:
                             break
                     
                     combo_results = all_combo_results
                     logging.info(f"🎲 NOISE GENERATION: Created {len(combo_results)} unique lineups from {attempt + 1} attempts")
                     
                     # ADD DEBUG LOGGING
-                    logging.info(f"🔍 DEBUG: Requested {lineups_count} lineups, got {len(combo_results) if combo_results else 0} results")
+                    logging.info(f"🔍 DEBUG: Requested {current_combo_count} lineups for this combo, got {len(combo_results) if combo_results else 0} results")
                     if combo_results:
                         logging.info(f"🔍 DEBUG: combo_results type: {type(combo_results)}")
                         if isinstance(combo_results, dict):
@@ -2484,15 +2609,17 @@ class FantasyBaseballApp(QMainWindow):
                             # Handle any other format
                             combo_lineups = [combo_results] if combo_results is not None else []
                         
-                        # Ensure requested count per combination
-                        if len(combo_lineups) < lineups_count and len(combo_lineups) > 0:
-                            deficit = lineups_count - len(combo_lineups)
-                            logging.warning(f"🧬 COMBINATION FILL: Only {len(combo_lineups)} unique lineups, duplicating {deficit} to reach {lineups_count}")
-                            idx = 0
-                            while len(combo_lineups) < lineups_count:
-                                combo_lineups.append(combo_lineups[idx % len(combo_lineups)].copy())
-                                idx += 1
-                        all_lineups.extend(combo_lineups)
+                        # Limit to requested count for THIS combination (no duplication)
+                        combo_lineups = combo_lineups[:current_combo_count]
+                        
+                        # Only add if we haven't exceeded total
+                        remaining_slots = total_requested - len(all_lineups)
+                        if remaining_slots > 0:
+                            lineups_to_add = combo_lineups[:remaining_slots]
+                            all_lineups.extend(lineups_to_add)
+                            logging.info(f"✅ Added {len(lineups_to_add)} lineups (total now: {len(all_lineups)}/{total_requested})")
+                        else:
+                            logging.info(f"⏸️ Skipping combo - already at total requested ({len(all_lineups)}/{total_requested})")
                         combo_display = " + ".join([f"{team}({size})" for team, size in zip(teams, stack_sizes)])
                         logging.info(f"Generated {len(combo_lineups)} lineups for combination: {combo_display}")
                     else:
@@ -2505,6 +2632,10 @@ class FantasyBaseballApp(QMainWindow):
                     continue
             
             if all_lineups and len(all_lineups) > 0:
+                # FINAL SAFETY: Limit to exact requested count
+                all_lineups = all_lineups[:total_requested]
+                logging.info(f"🎯 FINAL COUNT: Storing exactly {len(all_lineups)} lineups (requested: {total_requested})")
+                
                 # Store the results
                 self.optimized_lineups = all_lineups
                 
@@ -2563,7 +2694,17 @@ class FantasyBaseballApp(QMainWindow):
         self.stack_exposure_table.setHorizontalHeaderLabels(["Select", "Stack Type", "Min Exp", "Max Exp", "Lineup Exp", "Pool Exp", "Entry Exp"])
         layout.addWidget(self.stack_exposure_table)
     
-        stack_types = ["5", "4", "3", "No Stacks", "4|2|2", "4|2", "3|3|2", "3|2|2", "2|2|2", "5|3", "5|2"]
+        # NFL-specific stack types based on proper DFS theory
+        stack_types = [
+            "QB + WR",               # Most common - QB with top WR
+            "QB + 2 WR",             # Double stack - aggressive
+            "QB + WR + TE",          # Triple stack - contrarian
+            "QB + WR + RB",          # Total offense
+            "QB + 2 WR + TE",        # Full passing game
+            "Game Stack",            # QB + WR + Opp WR
+            "Bring-Back",            # QB + WR + Opp RB
+            "No Stack"               # No correlation
+        ]
         for stack_type in stack_types:
             row_position = self.stack_exposure_table.rowCount()
             self.stack_exposure_table.insertRow(row_position)
@@ -2647,9 +2788,24 @@ class FantasyBaseballApp(QMainWindow):
         settings_section.addWidget(stack_label)
         
         self.combinations_stack_combo = QComboBox()
-        self.combinations_stack_combo.addItems(["5", "4", "3", "No Stacks", "5|2", "4|2", "4|2|2", "3|3|2", "3|2|2", "2|2|2", "5|3"])
-        self.combinations_stack_combo.setCurrentText("4")
-        self.combinations_stack_combo.setToolTip("Stack pattern: Simple stacks (5, 4, 3, No Stacks) or complex patterns (e.g., '4|2' means 4 players from one team, 2 from another)")
+        # NFL-specific stack types - focus on QB-WR correlation
+        self.combinations_stack_combo.addItems([
+            "QB + WR",               # Most common
+            "QB + 2 WR",             # Aggressive double stack
+            "QB + WR + TE",          # Contrarian triple
+            "QB + WR + RB",          # Total offense
+            "QB + 2 WR + TE",        # Full passing
+            "Game Stack",            # QB+WR + Opp WR
+            "Bring-Back",            # QB+WR + Opp RB
+            "No Stack"               # Independent selection
+        ])
+        self.combinations_stack_combo.setCurrentText("QB + WR")
+        self.combinations_stack_combo.setToolTip("NFL Stack Types:\n"
+                                                  "• QB + WR: QB with his top WR target (safe)\n"
+                                                  "• QB + 2 WR: QB with 2 WRs (aggressive ceiling)\n"
+                                                  "• QB + WR + TE: QB with WR and TE (contrarian)\n"
+                                                  "• Game Stack: Your QB+WR + opponent WR (shootout)\n"
+                                                  "• Bring-Back: Your QB+WR + opponent RB (hedge)")
         settings_section.addWidget(self.combinations_stack_combo)
         
         # Default lineups per combination
@@ -4234,7 +4390,9 @@ class FantasyBaseballApp(QMainWindow):
         self.optimized_lineups = []
         for _, lineup_data in sorted_results:
             self.add_lineup_to_results(lineup_data, total_lineups, has_risk_info)
-            self.optimized_lineups.append(lineup_data['lineup'])
+            # CRITICAL FIX: Reorder players within lineup to fix position assignments
+            fixed_lineup = self.fix_lineup_position_order(lineup_data['lineup'])
+            self.optimized_lineups.append(fixed_lineup)
 
         self.update_exposure_in_all_tabs(total_lineups, team_exposure, stack_exposure)
         self.refresh_team_stacks()
@@ -4635,16 +4793,14 @@ class FantasyBaseballApp(QMainWindow):
         # Clear existing player exposure data
         self.player_exposure = {}
         
-        # Group players by position
+        # Group players by position (NFL)
         position_groups = {
-            'All Batters': self.df_players[~self.df_players['Position'].str.contains('P', na=False)],
-            'C': self.df_players[self.df_players['Position'].str.contains('C', na=False)],
-            '1B': self.df_players[self.df_players['Position'].str.contains('1B', na=False)],
-            '2B': self.df_players[self.df_players['Position'].str.contains('2B', na=False)],
-            '3B': self.df_players[self.df_players['Position'].str.contains('3B', na=False)],
-            'SS': self.df_players[self.df_players['Position'].str.contains('SS', na=False)],
-            'OF': self.df_players[self.df_players['Position'].str.contains('OF', na=False)],
-            'P': self.df_players[self.df_players['Position'].str.contains('P', na=False)]
+            'All Offense': self.df_players[self.df_players['Position'] != 'DST'],
+            'QB': self.df_players[self.df_players['Position'] == 'QB'],
+            'RB': self.df_players[self.df_players['Position'] == 'RB'],
+            'WR': self.df_players[self.df_players['Position'] == 'WR'],
+            'TE': self.df_players[self.df_players['Position'] == 'TE'],
+            'DST': self.df_players[self.df_players['Position'] == 'DST']
         }
         
         # Populate each table
@@ -4863,8 +5019,8 @@ class FantasyBaseballApp(QMainWindow):
                 logging.error(f"Error saving lineups: {e}")
 
     def save_lineups_to_dk_format(self, output_path):
-        """Save lineups in DraftKings format"""
-        dk_positions = ['P', 'P', 'C', '1B', '2B', '3B', 'SS', 'OF', 'OF', 'OF']
+        """Save lineups in DraftKings NFL format"""
+        dk_positions = ['QB', 'RB', 'RB', 'WR', 'WR', 'WR', 'TE', 'FLEX', 'DST']
 
         with open(output_path, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
@@ -4874,57 +5030,91 @@ class FantasyBaseballApp(QMainWindow):
                 dk_lineup = self.format_lineup_for_dk(lineup, dk_positions)
                 writer.writerow(dk_lineup)
 
+    def fix_lineup_position_order(self, lineup):
+        """
+        CRITICAL FIX: Reorder players within lineup so highest-value players fill main slots first.
+        This ensures RB1+RB2 get best RBs, WR1+WR2+WR3 get best WRs, then FLEX gets remainder.
+        
+        Args:
+            lineup: DataFrame with player data
+            
+        Returns:
+            DataFrame with same players but reordered by position and projection
+        """
+        if lineup.empty:
+            return lineup
+        
+        # Find projection column
+        projection_cols = ['Fantasy_Points', 'FantasyPoints', 'Predicted_DK_Points', 'Projection', 'Points']
+        proj_col = None
+        for col in projection_cols:
+            if col in lineup.columns:
+                proj_col = col
+                break
+        
+        if not proj_col:
+            # No projection column found, return as-is
+            return lineup
+        
+        # Sort entire lineup by projection (descending)
+        lineup_sorted = lineup.sort_values(by=proj_col, ascending=False).copy()
+        
+        return lineup_sorted
+    
     def format_lineup_for_dk(self, lineup, dk_positions):
-        """Group players by position and assign to DraftKings positions"""
+        """Group players by position and assign to DraftKings NFL positions"""
         position_players = {
-            'P': [],
-            'C': [],
-            '1B': [],
-            '2B': [],
-            '3B': [],
-            'SS': [],
-            'OF': []
+            'QB': [],
+            'RB': [],
+            'WR': [],
+            'TE': [],
+            'DST': []
         }
         
-        for _, player in lineup.iterrows():
+        # CRITICAL FIX: Sort lineup by projection DESCENDING before grouping
+        # This ensures best RBs fill RB slots, best WRs fill WR slots, THEN FLEX gets remaining
+        projection_cols = ['Fantasy_Points', 'FantasyPoints', 'Predicted_DK_Points', 'Projection', 'Points']
+        proj_col = None
+        for col in projection_cols:
+            if col in lineup.columns:
+                proj_col = col
+                break
+        
+        if proj_col:
+            lineup_sorted = lineup.sort_values(by=proj_col, ascending=False)
+        else:
+            lineup_sorted = lineup  # If no projection column, use original order
+        
+        for _, player in lineup_sorted.iterrows():
             pos = str(player['Position']).upper()
             name = str(player['Name'])
             
-            # Handle pitcher designations
-            if 'P' in pos or 'SP' in pos or 'RP' in pos:
-                position_players['P'].append(name)
-            elif 'C' in pos:
-                position_players['C'].append(name)
-            elif '1B' in pos:
-                position_players['1B'].append(name)
-            elif '2B' in pos:
-                position_players['2B'].append(name)
-            elif '3B' in pos:
-                position_players['3B'].append(name)
-            elif 'SS' in pos:
-                position_players['SS'].append(name)
-            elif 'OF' in pos:
-                position_players['OF'].append(name)
+            # Group players by NFL position (now in descending order by projection)
+            if pos in position_players:
+                position_players[pos].append(name)
         
-        # Assign players to DK positions
+        # NFL DraftKings Classic lineup: QB, RB, RB, WR, WR, WR, TE, FLEX, DST
         dk_lineup = []
         position_usage = {pos: 0 for pos in position_players.keys()}
         
         for dk_pos in dk_positions:
-            if dk_pos in position_players and position_usage[dk_pos] < len(position_players[dk_pos]):
-                dk_lineup.append(position_players[dk_pos][position_usage[dk_pos]])
-                position_usage[dk_pos] += 1
-            else:
-                # Find any remaining player that can fill this position
+            if dk_pos == 'FLEX':
+                # FLEX can be RB, WR, or TE - pick best remaining
                 assigned = False
-                for pos, players in position_players.items():
-                    if position_usage[pos] < len(players):
-                        dk_lineup.append(players[position_usage[pos]])
-                        position_usage[pos] += 1
+                for flex_pos in ['RB', 'WR', 'TE']:
+                    if position_usage[flex_pos] < len(position_players[flex_pos]):
+                        dk_lineup.append(position_players[flex_pos][position_usage[flex_pos]])
+                        position_usage[flex_pos] += 1
                         assigned = True
                         break
                 if not assigned:
-                    dk_lineup.append("")
+                    dk_lineup.append("")  # Empty FLEX slot
+            elif dk_pos in position_players and position_usage[dk_pos] < len(position_players[dk_pos]):
+                # Assign player to their position
+                dk_lineup.append(position_players[dk_pos][position_usage[dk_pos]])
+                position_usage[dk_pos] += 1
+            else:
+                dk_lineup.append("")  # Empty slot if no player available
 
         return dk_lineup
 
@@ -5364,7 +5554,7 @@ class FantasyBaseballApp(QMainWindow):
                 if not base_contest_info:
                     base_contest_info = {
                         'entry_id': '4763920000',
-                        'contest_name': 'MLB Main Slate',
+                        'contest_name': 'NFL Main Slate',
                         'contest_id': '999999999',
                         'entry_fee': '$1'
                     }
@@ -6107,12 +6297,25 @@ class FantasyBaseballApp(QMainWindow):
         return player_map
 
     def format_lineup_positions_only(self, lineup, player_name_to_id_map):
-        """Format a lineup to return only the position assignments with player IDs in DK format (P, P, C, 1B, 2B, 3B, SS, OF, OF, OF)"""
+        """Format a lineup to return only the position assignments with player IDs in DK format (QB, RB, RB, WR, WR, WR, TE, FLEX, DST)"""
         # Create position mapping from lineup
-        position_players = {'P': [], 'C': [], '1B': [], '2B': [], '3B': [], 'SS': [], 'OF': []}
+        position_players = {'QB': [], 'RB': [], 'WR': [], 'TE': [], 'DST': []}
+        
+        # CRITICAL FIX: Sort lineup by projection DESCENDING before grouping
+        projection_cols = ['Fantasy_Points', 'FantasyPoints', 'Predicted_DK_Points', 'Projection', 'Points']
+        proj_col = None
+        for col in projection_cols:
+            if col in lineup.columns:
+                proj_col = col
+                break
+        
+        if proj_col:
+            lineup_sorted = lineup.sort_values(by=proj_col, ascending=False)
+        else:
+            lineup_sorted = lineup
         
         # Group players by position with numeric IDs only
-        for _, player in lineup.iterrows():
+        for _, player in lineup_sorted.iterrows():
             pos = str(player['Position']).upper()
             name = str(player['Name'])
             
@@ -6155,85 +6358,80 @@ class FantasyBaseballApp(QMainWindow):
                 player_id = str(39200000 + len([p for sublist in position_players.values() for p in sublist]))
                 logging.warning(f"No valid ID found for {name}, using fallback ID: {player_id}")
             
-            # Handle multi-position players and pitcher designations
-            if 'P' in pos or 'SP' in pos or 'RP' in pos:
-                position_players['P'].append(player_id)
-            elif 'C' in pos:
-                position_players['C'].append(player_id)
-            elif '1B' in pos:
-                position_players['1B'].append(player_id)
-            elif '2B' in pos:
-                position_players['2B'].append(player_id)
-            elif '3B' in pos:
-                position_players['3B'].append(player_id)
-            elif 'SS' in pos:
-                position_players['SS'].append(player_id)
-            elif 'OF' in pos:
-                position_players['OF'].append(player_id)
+            # Handle NFL positions
+            if pos in ['QB', 'RB', 'WR', 'TE', 'DST']:
+                position_players[pos].append(player_id)
+            elif 'DEF' in pos or 'D/ST' in pos:
+                position_players['DST'].append(player_id)
             else:
-                # If position is unclear, try to guess based on common patterns
-                if any(p_term in pos for p_term in ['P', 'PITCH']):
-                    position_players['P'].append(player_id)
-                elif any(of_term in pos for of_term in ['OF', 'LF', 'CF', 'RF', 'OUTFIELD']):
-                    position_players['OF'].append(player_id)
-                else:
-                    # Default to OF if we can't determine position
-                    position_players['OF'].append(player_id)
-                    logging.warning(f"Unclear position '{pos}' for {name}, defaulting to OF")
+                # If position is unclear, try to guess
+                logging.warning(f"Unclear position '{pos}' for {name}, skipping")
         
-        # Create the position assignments in DK format: [P, P, C, 1B, 2B, 3B, SS, OF, OF, OF]
+        # Create the position assignments in DK NFL format: [QB, RB, RB, WR, WR, WR, TE, FLEX, DST]
         position_assignments = []
         
-        # Add two pitchers (ensure we have at least 2, use same pitcher twice if needed)
-        if len(position_players['P']) >= 2:
-            position_assignments.append(position_players['P'][0])
-            position_assignments.append(position_players['P'][1])
-        elif len(position_players['P']) == 1:
-            position_assignments.append(position_players['P'][0])
-            position_assignments.append(position_players['P'][0])  # Use same pitcher twice
-            logging.warning("Only one pitcher found, using same pitcher for both P slots")
+        # Add QB (1)
+        if len(position_players['QB']) >= 1:
+            position_assignments.append(position_players['QB'][0])
         else:
-            position_assignments.append("")  # Empty P slot
-            position_assignments.append("")  # Empty P slot
-            logging.error("No pitchers found in lineup!")
+            position_assignments.append("")
+            logging.error("No QB found in lineup!")
         
-        # Add catcher
-        position_assignments.append(position_players['C'][0] if len(position_players['C']) > 0 else "")
+        # Add RBs (2)
+        for i in range(2):
+            if len(position_players['RB']) > i:
+                position_assignments.append(position_players['RB'][i])
+            else:
+                position_assignments.append("")
+                logging.warning(f"Missing RB at position {i+1}")
         
-        # Add infielders
-        position_assignments.append(position_players['1B'][0] if len(position_players['1B']) > 0 else "")
-        position_assignments.append(position_players['2B'][0] if len(position_players['2B']) > 0 else "")
-        position_assignments.append(position_players['3B'][0] if len(position_players['3B']) > 0 else "")
-        position_assignments.append(position_players['SS'][0] if len(position_players['SS']) > 0 else "")
+        # Add WRs (3)
+        for i in range(3):
+            if len(position_players['WR']) > i:
+                position_assignments.append(position_players['WR'][i])
+            else:
+                position_assignments.append("")
+                logging.warning(f"Missing WR at position {i+1}")
         
-        # Add three outfielders (ensure we have at least 3, reuse if needed)
-        if len(position_players['OF']) >= 3:
-            position_assignments.append(position_players['OF'][0])
-            position_assignments.append(position_players['OF'][1])
-            position_assignments.append(position_players['OF'][2])
-        elif len(position_players['OF']) == 2:
-            position_assignments.append(position_players['OF'][0])
-            position_assignments.append(position_players['OF'][1])
-            position_assignments.append(position_players['OF'][0])  # Reuse first OF
-            logging.warning("Only 2 outfielders found, reusing first OF for third slot")
-        elif len(position_players['OF']) == 1:
-            position_assignments.append(position_players['OF'][0])
-            position_assignments.append(position_players['OF'][0])  # Reuse
-            position_assignments.append(position_players['OF'][0])  # Reuse
-            logging.warning("Only 1 outfielder found, using same OF for all three slots")
+        # Add TE (1)
+        if len(position_players['TE']) >= 1:
+            position_assignments.append(position_players['TE'][0])
         else:
-            position_assignments.append("")  # Empty OF slots
             position_assignments.append("")
-            position_assignments.append("")
-            logging.error("No outfielders found in lineup!")
+            logging.warning("No TE found in lineup!")
         
-        # Final validation - ensure exactly 10 positions
-        while len(position_assignments) < 10:
+        # Add FLEX (1) - use remaining RB/WR/TE
+        flex_added = False
+        for pos in ['RB', 'WR', 'TE']:
+            used_count = sum(1 for p in position_assignments if p in position_players[pos])
+            if len(position_players[pos]) > used_count:
+                # Find next unused player from this position
+                for player_id in position_players[pos]:
+                    if player_id not in position_assignments:
+                        position_assignments.append(player_id)
+                        flex_added = True
+                        break
+                if flex_added:
+                    break
+        
+        if not flex_added:
             position_assignments.append("")
-        position_assignments = position_assignments[:10]
+            logging.warning("No FLEX player found!")
+        
+        # Add DST (1)
+        if len(position_players['DST']) >= 1:
+            position_assignments.append(position_players['DST'][0])
+        else:
+            position_assignments.append("")
+            logging.error("No DST found in lineup!")
+        
+        # Final validation - ensure exactly 9 positions (NFL)
+        while len(position_assignments) < 9:
+            position_assignments.append("")
+        position_assignments = position_assignments[:9]
         
         # CRITICAL FIX: Fill any empty positions with fallback IDs
-        for i in range(10):
+        for i in range(9):  # NFL has 9 positions
             if not position_assignments[i] or position_assignments[i].strip() == '':
                 # Generate fallback ID for empty position
                 fallback_id = str(39200000 + i)
@@ -6309,7 +6507,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     
     # Create and show the main window
-    window = FantasyBaseballApp()
+    window = FantasyFootballApp()
     window.show()
     
     # Start the application event loop

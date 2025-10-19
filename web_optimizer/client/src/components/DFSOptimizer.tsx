@@ -124,7 +124,7 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, on
             </div>
           </div>
           <h3 className="text-xl font-semibold text-white mb-2">No Player Data</h3>
-          <p className="text-slate-300 mb-4">Load a CSV file to view and select players</p>
+          <p className="text-white mb-4">Load a CSV file to view and select players</p>
           <Button variant="outline" className="border-cyan-500/30 hover:bg-cyan-500/10 text-white">
             <Upload className="w-4 h-4 mr-2" />
             Load CSV
@@ -154,7 +154,7 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, on
             className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
               positionFilter === pos.id
                 ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
-                : 'bg-slate-700/40 text-slate-300 border border-slate-600/30 hover:bg-slate-700 hover:text-white'
+                : 'bg-slate-700/40 text-white border border-slate-600/30 hover:bg-slate-700 hover:text-white'
             }`}
           >
             {pos.label} <span className="text-xs opacity-70">({pos.count})</span>
@@ -186,7 +186,7 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, on
         </div>
 
         <div className="flex items-center gap-2">
-          <Label className="text-sm text-slate-300">Sort by:</Label>
+          <Label className="text-sm text-white">Sort by:</Label>
           <Select value={sortBy} onValueChange={setSortBy}>
             <SelectTrigger className="w-40 bg-slate-700 border-slate-600 text-white text-sm h-9">
               <SelectValue />
@@ -202,7 +202,7 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, on
       </div>
 
       {/* Player Table */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto max-h-96 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
         <table className="w-full text-sm">
           <thead className="bg-slate-700 sticky top-0 z-10">
             <tr className="border-b border-slate-600">
@@ -240,10 +240,10 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, on
                     />
                   </td>
                   <td className="px-3 py-2 text-white font-medium">{player.name}</td>
-                  <td className="px-3 py-2 text-slate-300">{player.team}</td>
-                  <td className="px-3 py-2 text-slate-300">{player.position}</td>
+                  <td className="px-3 py-2 text-white">{player.team}</td>
+                  <td className="px-3 py-2 text-white">{player.position}</td>
                   <td className="px-3 py-2 text-right text-white">${player.salary.toLocaleString()}</td>
-                  <td className="px-3 py-2 text-right text-green-400 font-medium">{player.projectedPoints.toFixed(1)}</td>
+                  <td className="px-3 py-2 text-right text-white font-medium">{player.projectedPoints.toFixed(1)}</td>
                   <td className="px-3 py-2 text-right text-cyan-400 font-medium">{value}</td>
                   <td className="px-3 py-2">
                     <Input
@@ -278,7 +278,7 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, on
       {/* Status Bar */}
       <div className="bg-slate-700/40 border border-slate-600/50 rounded-lg p-3">
         <div className="flex items-center justify-between text-sm">
-          <div className="text-slate-300">
+          <div className="text-white">
             <span className="font-semibold text-cyan-400">{selectedPlayers.length}</span> / {playerData.length} players selected
             <span className="text-slate-500 ml-2">({((selectedPlayers.length / playerData.length) * 100).toFixed(1)}%)</span>
             </div>
@@ -407,7 +407,7 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
                     </div>
                   </div>
           <h3 className="text-xl font-semibold text-white mb-2">No Team Data</h3>
-          <p className="text-slate-300 mb-4">Load players first to configure team stacks</p>
+          <p className="text-white mb-4">Load players first to configure team stacks</p>
                 </div>
       </div>
     );
@@ -432,7 +432,7 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
             className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
               activeStackSize === stack.id
                 ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
-                : 'bg-slate-700/40 text-slate-300 border border-slate-600/30 hover:bg-slate-700 hover:text-white'
+                : 'bg-slate-700/40 text-white border border-slate-600/30 hover:bg-slate-700 hover:text-white'
             }`}
           >
             {stack.label} <span className="text-xs opacity-70">({stack.count})</span>
@@ -520,17 +520,17 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
                   <td className="px-3 py-2 text-white font-bold">{team.abbr}</td>
                   <td className="px-3 py-2">
                     <span className={`px-2 py-1 rounded text-xs ${
-                      team.status === 'Active' ? 'bg-green-500/20 text-green-400' :
+                      team.status === 'Active' ? 'bg-green-500/20 text-white' :
                       team.status === 'Postponed' ? 'bg-red-500/20 text-red-400' :
                       'bg-slate-500/20 text-slate-400'
                     }`}>
                       {team.status}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-slate-300">{team.gameTime}</td>
+                  <td className="px-3 py-2 text-white">{team.gameTime}</td>
                   <td className="px-3 py-2 text-right">
                     <span className={`font-medium ${
-                      team.projRuns > 5.0 ? 'text-green-400' :
+                      team.projRuns > 5.0 ? 'text-white' :
                       team.projRuns > 4.0 ? 'text-yellow-400' :
                       'text-slate-400'
                     }`}>
@@ -571,7 +571,7 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
       {/* Status Bar */}
       <div className="bg-slate-700/40 border border-slate-600/50 rounded-lg p-3">
         <div className="flex items-center justify-between text-sm flex-wrap gap-2">
-          <div className="text-slate-300">
+          <div className="text-white">
             <span className="font-semibold text-cyan-400">
               {activeStackSize === 'all' ? 'All Stacks' : `${activeStackSize}-Stack`}:
             </span>
@@ -663,7 +663,7 @@ const StackExposureTab: React.FC<StackExposureTabProps> = ({ stackSettings, onSt
         {enabledStacks.length > 0 && (
           <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-4 py-2">
             <div className="text-cyan-400 font-semibold">{enabledStacks.length} Active</div>
-            <div className="text-slate-300 text-xs">Stack Type{enabledStacks.length !== 1 ? 's' : ''}</div>
+            <div className="text-white text-xs">Stack Type{enabledStacks.length !== 1 ? 's' : ''}</div>
           </div>
         )}
       </div>
@@ -675,7 +675,7 @@ const StackExposureTab: React.FC<StackExposureTabProps> = ({ stackSettings, onSt
             <div className="text-red-400 text-lg">⚠</div>
             <div>
               <h3 className="text-red-400 font-semibold mb-1">No Stack Types Selected</h3>
-              <p className="text-slate-300 text-sm">
+              <p className="text-white text-sm">
                 You must enable at least one stack type to run optimization.
               </p>
             </div>
@@ -689,7 +689,7 @@ const StackExposureTab: React.FC<StackExposureTabProps> = ({ stackSettings, onSt
             <div className="text-yellow-400 text-lg">⚠</div>
             <div>
               <h3 className="text-yellow-400 font-semibold mb-1">Conflicting Constraints</h3>
-              <p className="text-slate-300 text-sm mb-2">
+              <p className="text-white text-sm mb-2">
                 Total minimum exposure is <span className="font-bold text-yellow-400">{totalMinExp}%</span> (exceeds 100%)
               </p>
               <p className="text-slate-400 text-xs">
@@ -809,14 +809,14 @@ const StackExposureTab: React.FC<StackExposureTabProps> = ({ stackSettings, onSt
                 </div>
               <div>
                 <span className="text-slate-400">Total Max Exp:</span>
-                <span className="ml-2 font-bold text-slate-300">
+                <span className="ml-2 font-bold text-white">
                   {totalMaxExp}%
                 </span>
             </div>
           </div>
             
             {!hasNoSelection && !hasConflict && (
-              <div className="flex items-center gap-2 text-green-400">
+              <div className="flex items-center gap-2 text-white">
                 <div className="w-2 h-2 bg-green-400 rounded-full" />
                 <span className="text-xs font-medium">Ready to optimize</span>
               </div>
@@ -828,7 +828,7 @@ const StackExposureTab: React.FC<StackExposureTabProps> = ({ stackSettings, onSt
         <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
           <div className="flex items-start gap-2">
             <div className="text-blue-400 text-sm">💡</div>
-            <p className="text-slate-300 text-xs">
+            <p className="text-white text-xs">
               <span className="font-semibold text-blue-400">Tip:</span> Selected stack types will be distributed across generated lineups. 
               Exposure percentages are calculated after optimization completes.
             </p>
@@ -856,8 +856,10 @@ interface TeamCombinationsTabProps {
 }
 
 const TeamCombinationsTab: React.FC<TeamCombinationsTabProps> = ({ playerData }) => {
+  console.log('TeamCombinationsTab rendered with playerData:', playerData.length, 'players');
+  
   const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
-  const [stackPattern, setStackPattern] = useState('4|2');
+  const [stackPattern, setStackPattern] = useState('4');
   const [defaultLineupsPerCombo, setDefaultLineupsPerCombo] = useState(5);
   const [combinations, setCombinations] = useState<TeamCombination[]>([]);
 
@@ -974,189 +976,183 @@ const TeamCombinationsTab: React.FC<TeamCombinationsTabProps> = ({ playerData })
             </div>
           </div>
           <h3 className="text-xl font-semibold text-white mb-2">No Team Data</h3>
-          <p className="text-slate-300 mb-4">Load players first to generate team combinations</p>
+          <p className="text-white mb-4">Load players first to generate team combinations</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full space-y-4">
-      {/* Configuration Panel */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div className="flex flex-col h-full space-y-4 p-4">
+      {/* Header - Clean Style */}
+      <div className="border-b border-slate-700 pb-4">
+        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          🔥 Team Combination Generator
+        </h2>
+        <p className="text-sm text-slate-300 mt-2">
+          Select teams and stack type to generate all possible combinations
+        </p>
+        <p className="text-xs text-green-400 mt-1">
+          ✅ Loaded {playerData.length} players, {teams.length} teams
+        </p>
+      </div>
+
+      {/* Controls Section - Clean Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Team Selection */}
-        <Card className="bg-slate-700/40 border-slate-600/50 p-4">
-          <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-            <Users className="w-5 h-5 text-cyan-400" />
-            Team Selection
+        <div className="bg-slate-800 border border-slate-700 p-6 rounded-lg">
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            📋 Select Teams
           </h3>
           
           {/* Select All/Deselect All */}
-          <div className="flex gap-2 mb-3">
+          <div className="flex gap-3 mb-4">
             <Button
               variant="outline"
               size="sm"
               onClick={selectAllTeams}
-              className="flex-1 border-green-500/30 hover:bg-green-500/10 text-white text-xs"
+              className="px-4 py-2 border-green-500/30 hover:bg-green-500/10 text-green-400 text-sm"
             >
-              <CheckSquare className="w-3 h-3 mr-1" />
-              Select All
+              ✅ Select All Teams
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={deselectAllTeams}
-              className="flex-1 border-red-500/30 hover:bg-red-500/10 text-white text-xs"
+              className="px-4 py-2 border-red-500/30 hover:bg-red-500/10 text-red-400 text-sm"
             >
-              <XSquare className="w-3 h-3 mr-1" />
-              Deselect All
+              ❌ Deselect All Teams
             </Button>
           </div>
 
-          {/* Team Checkboxes */}
-          <div className="max-h-64 overflow-auto space-y-2 mb-3">
-            {teams.map(team => (
-              <div key={team} className="flex items-center gap-2">
-                <Checkbox
-                  checked={selectedTeams.includes(team)}
-                  onCheckedChange={() => toggleTeam(team)}
-                  className="border-slate-500"
-                />
-                <Label className="text-white cursor-pointer" onClick={() => toggleTeam(team)}>
-                  {team}
-                </Label>
-              </div>
-            ))}
+          {/* Team Checkboxes - Clean Grid */}
+          <div className="max-h-64 overflow-auto mb-4 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
+            <div className="grid grid-cols-3 gap-3">
+              {teams.map(team => (
+                <div key={team} className="flex items-center gap-3 p-3 bg-slate-700 rounded-lg hover:bg-slate-600 transition-colors">
+                  <Checkbox
+                    checked={selectedTeams.includes(team)}
+                    onCheckedChange={() => toggleTeam(team)}
+                    className="h-4 w-4 border-slate-500"
+                  />
+                  <Label className="text-white cursor-pointer text-sm font-medium" onClick={() => toggleTeam(team)}>
+                    {team}
+                  </Label>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Selection Counter */}
-          <div className="text-sm text-slate-300 pt-2 border-t border-slate-600">
-            Selected: <span className="font-bold text-cyan-400">{selectedTeams.length}</span> / {teams.length} teams
+          <div className="text-sm text-slate-300 bg-slate-700 p-3 rounded-lg">
+            <span className="font-semibold text-green-400">{selectedTeams.length}</span> of <span className="font-semibold">{teams.length}</span> teams selected
           </div>
-        </Card>
+        </div>
 
-        {/* Right: Configuration */}
-        <Card className="bg-slate-700/40 border-slate-600/50 p-4">
-          <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-            <Settings className="w-5 h-5 text-cyan-400" />
-            Configuration
+        {/* Right: Stack Settings - Clean */}
+        <div className="bg-slate-800 border border-slate-700 p-6 rounded-lg">
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            🏗️ Stack Settings
           </h3>
 
           <div className="space-y-4">
-            {/* Stack Pattern */}
             <div>
-              <Label className="text-white block mb-2">Stack Pattern</Label>
+              <Label className="text-sm text-white block mb-2 font-medium">Stack Pattern</Label>
               <Select value={stackPattern} onValueChange={setStackPattern}>
-                <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
+                <SelectTrigger className="w-full bg-slate-700 border-slate-600 text-white text-sm h-10">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-slate-900 border-cyan-500/20">
-                  <SelectItem value="5" className="text-white">5</SelectItem>
-                  <SelectItem value="4" className="text-white">4</SelectItem>
-                  <SelectItem value="3" className="text-white">3</SelectItem>
-                  <SelectItem value="2" className="text-white">2</SelectItem>
-                  <SelectItem value="no-stacks" className="text-white">No Stacks</SelectItem>
-                  <SelectItem value="5|2" className="text-white">5|2</SelectItem>
-                  <SelectItem value="4|2" className="text-white">4|2</SelectItem>
-                  <SelectItem value="4|2|2" className="text-white">4|2|2</SelectItem>
-                  <SelectItem value="3|3|2" className="text-white">3|3|2</SelectItem>
-                  <SelectItem value="3|2|2" className="text-white">3|2|2</SelectItem>
-                  <SelectItem value="2|2|2" className="text-white">2|2|2</SelectItem>
-                  <SelectItem value="5|3" className="text-white">5|3</SelectItem>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectItem value="5">5</SelectItem>
+                  <SelectItem value="4">4</SelectItem>
+                  <SelectItem value="3">3</SelectItem>
+                  <SelectItem value="No Stacks">No Stacks</SelectItem>
+                  <SelectItem value="5|2">5|2</SelectItem>
+                  <SelectItem value="4|2">4|2</SelectItem>
+                  <SelectItem value="4|2|2">4|2|2</SelectItem>
+                  <SelectItem value="3|3|2">3|3|2</SelectItem>
+                  <SelectItem value="3|2|2">3|2|2</SelectItem>
+                  <SelectItem value="2|2|2">2|2|2</SelectItem>
+                  <SelectItem value="5|3">5|3</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Default Lineups per Combo */}
             <div>
-              <Label className="text-white block mb-2">Default Lineups per Combo</Label>
-              <Input
+              <Label className="text-sm text-white block mb-2 font-medium">Lineups per Combination</Label>
+              <input
                 type="number"
                 min="1"
-                max="100"
+                max="50"
                 value={defaultLineupsPerCombo}
                 onChange={(e) => setDefaultLineupsPerCombo(parseInt(e.target.value) || 5)}
-                className="bg-slate-700 border-slate-600 text-white"
+                className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm"
+                placeholder="e.g., 5"
               />
-              <p className="text-xs text-slate-400 mt-1">Range: 1-100</p>
             </div>
 
-            {/* Generate Button */}
             <Button
               onClick={generateCombinations}
-              disabled={selectedTeams.length < 2}
-              className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white"
+              className="w-full bg-orange-600 hover:bg-orange-700 text-white text-sm h-10 font-bold rounded-lg"
             >
-              <Target className="w-4 h-4 mr-2" />
-              Generate Combinations
+              🔄 Generate Team Combinations
             </Button>
           </div>
-        </Card>
+        </div>
       </div>
 
-      {/* Combinations Table */}
+      {/* Combinations Table - Clean Style */}
       {combinations.length > 0 && (
-        <>
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-white">
-              Generated Combinations ({combinations.length})
+        <div className="bg-slate-800 border border-slate-700 p-6 rounded-lg">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              🎯 Generated Combinations
             </h3>
             <div className="text-sm text-slate-300">
-              Total Lineups: <span className="font-bold text-cyan-400">{totalLineups}</span>
+              Total Lineups: <span className="font-bold text-orange-500">{totalLineups}</span>
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto">
+          <div className="overflow-auto max-h-64 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
             <table className="w-full text-sm">
-              <thead className="bg-slate-700 sticky top-0 z-10">
-                <tr className="border-b border-slate-600">
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-12">
-                    <Checkbox className="border-slate-500" />
-                  </th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Team Combination</th>
-                  <th className="px-3 py-3 text-center text-xs font-semibold text-cyan-400 uppercase tracking-wider w-40">Lineups/Combo</th>
-                  <th className="px-3 py-3 text-center text-xs font-semibold text-cyan-400 uppercase tracking-wider w-32">Status</th>
+              <thead>
+                <tr className="border-b border-slate-700">
+                  <th className="text-left py-3 px-4 text-slate-300 font-medium">Select</th>
+                  <th className="text-left py-3 px-4 text-slate-300 font-medium">Team Combination</th>
+                  <th className="text-left py-3 px-4 text-slate-300 font-medium">Lineups per Combo</th>
+                  <th className="text-left py-3 px-4 text-slate-300 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {combinations.map((combo, idx) => (
-                  <tr
-                    key={combo.id}
-                    className={`border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors ${
-                      idx % 2 === 0 ? 'bg-slate-800/20' : ''
-                    }`}
-                  >
-                    <td className="px-3 py-2">
+                {combinations.map(combo => (
+                  <tr key={combo.id} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                    <td className="py-3 px-4">
                       <Checkbox
                         checked={combo.enabled}
                         onCheckedChange={() => toggleCombination(combo.id)}
-                        className="border-slate-500"
+                        className="h-4 w-4 border-slate-500"
                       />
                     </td>
-                    <td className="px-3 py-2 text-white font-medium">{combo.display}</td>
-                    <td className="px-3 py-2">
-                      <Input
+                    <td className="py-3 px-4 text-white font-medium">{combo.display}</td>
+                    <td className="py-3 px-4">
+                      <input
                         type="number"
                         min="1"
                         max="100"
                         value={combo.lineupsPerCombo}
-                        onChange={(e) => updateLineupsPerCombo(combo.id, parseInt(e.target.value) || 1)}
-                        disabled={!combo.enabled}
-                        className="bg-slate-700 border-slate-600 text-white text-center h-9 w-24 mx-auto"
+                        onChange={(e) => updateLineupsPerCombo(combo.id, parseInt(e.target.value) || 5)}
+                        className="w-20 bg-slate-700 border border-slate-600 rounded px-3 py-1 text-white text-sm"
                       />
                     </td>
-                    <td className="px-3 py-2 text-center">
-                      <span className={`px-3 py-1 rounded text-xs font-medium ${
-                        combo.status === 'ready' ? 'bg-blue-500/20 text-blue-400' :
-                        combo.status === 'generating' ? 'bg-yellow-500/20 text-yellow-400' :
-                        combo.status === 'complete' ? 'bg-green-500/20 text-green-400' :
-                        'bg-red-500/20 text-red-400'
-                      }`}>
-                        {combo.status === 'ready' ? 'Ready' :
-                         combo.status === 'generating' ? 'Generating...' :
-                         combo.status === 'complete' ? 'Complete' :
-                         'Error'}
-                      </span>
+                    <td className="py-3 px-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="px-3 py-1 text-sm border-slate-600 hover:bg-slate-700 text-white"
+                        onClick={() => toggleCombination(combo.id)}
+                      >
+                        {combo.enabled ? 'Disable' : 'Enable'}
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -1164,44 +1160,15 @@ const TeamCombinationsTab: React.FC<TeamCombinationsTabProps> = ({ playerData })
             </table>
           </div>
 
-          {/* Summary and Generate Button */}
-          <div className="space-y-3">
-            <div className="bg-slate-700/40 border border-slate-600/50 rounded-lg p-4">
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <div className="space-y-1">
-                  <div className="text-sm text-slate-300">
-                    <span className="font-semibold text-cyan-400">{enabledCombos.length}</span> combinations selected
-                  </div>
-                  <div className="text-sm text-slate-300">
-                    Total: <span className="font-bold text-cyan-400">{totalLineups}</span> lineups
-                    <span className="text-slate-500 ml-2">
-                      ({enabledCombos.length} × {defaultLineupsPerCombo} avg)
-                    </span>
-                  </div>
-                </div>
-
-                <Button
-                  disabled={enabledCombos.length === 0}
-                  className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white"
-                >
-                  <Play className="w-4 h-4 mr-2" />
-                  Generate All Combination Lineups
-                </Button>
-              </div>
-            </div>
-
-            {totalLineups > 500 && (
-              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
-                <div className="flex items-start gap-2">
-                  <div className="text-yellow-400 text-sm">⚠</div>
-                  <div className="text-xs text-slate-300">
-                    <span className="font-semibold text-yellow-400">Warning:</span> Generating {totalLineups} lineups may take 5-10 minutes.
-                  </div>
-                </div>
-              </div>
-            )}
+          <div className="mt-4 flex justify-end">
+            <Button
+              className="bg-green-600 hover:bg-green-700 text-white text-sm h-10 px-6 font-bold rounded-lg"
+              disabled={totalLineups === 0}
+            >
+              🚀 Generate All Combination Lineups ({totalLineups})
+            </Button>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
@@ -1270,7 +1237,7 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
             </div>
           </div>
           {settings.enabled && (
-            <div className="flex items-center gap-2 text-green-400">
+            <div className="flex items-center gap-2 text-white">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
               <span className="text-xs font-medium">ENABLED</span>
             </div>
@@ -1548,7 +1515,7 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
       <Card className="bg-slate-700/40 border-slate-600/50 p-4">
         <h3 className="text-sm font-bold text-cyan-400 uppercase tracking-wider mb-3">Status & Information</h3>
         <div className="space-y-3">
-          <div className={`flex items-center gap-2 ${settings.enabled ? 'text-green-400' : 'text-slate-500'}`}>
+          <div className={`flex items-center gap-2 ${settings.enabled ? 'text-white' : 'text-slate-500'}`}>
             {settings.enabled ? '✓' : '○'} 
             <span className="font-medium">
               Advanced quantitative optimization {settings.enabled ? 'ENABLED' : 'DISABLED'}
@@ -1558,18 +1525,18 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
           {settings.enabled && (
             <>
               <div className="border-t border-slate-600 pt-3">
-                <div className="text-sm text-slate-300 mb-2">Library Status:</div>
+                <div className="text-sm text-white mb-2">Library Status:</div>
                 <div className="space-y-1 text-xs">
-                  <div className="flex items-center gap-2 text-green-400">
+                  <div className="flex items-center gap-2 text-white">
                     ✓ <span>ARCH (GARCH): Available</span>
                   </div>
                   <div className="flex items-center gap-2 text-yellow-400">
                     ⚠ <span>Copulas: Optional - limited dependency modeling</span>
                   </div>
-                  <div className="flex items-center gap-2 text-green-400">
+                  <div className="flex items-center gap-2 text-white">
                     ✓ <span>SciPy: Available</span>
                   </div>
-                  <div className="flex items-center gap-2 text-green-400">
+                  <div className="flex items-center gap-2 text-white">
                     ✓ <span>Scikit-learn: Available</span>
                   </div>
                 </div>
@@ -1578,7 +1545,7 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 mt-3">
                 <div className="flex items-start gap-2">
                   <div className="text-blue-400 text-sm">💡</div>
-                  <p className="text-xs text-slate-300">
+                  <p className="text-xs text-white">
                     <span className="font-semibold text-blue-400">Performance Note:</span> Advanced quant adds 30-60 seconds to optimization time. 
                     High Monte Carlo simulations (50K) may use up to 1.5 GB memory.
                   </p>
@@ -1593,7 +1560,7 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
       <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
         <div className="flex items-start gap-2">
           <div className="text-blue-400">💡</div>
-          <p className="text-sm text-slate-300">
+          <p className="text-sm text-white">
             <span className="font-semibold text-blue-400">Tip:</span> These settings enable financial-grade risk modeling 
             for professional DFS portfolio management. Start with default "Combined" strategy and adjust based on contest type.
           </p>
@@ -1746,14 +1713,14 @@ const MyEntriesTab: React.FC<MyEntriesTabProps> = ({ results }) => {
             </div>
           </div>
           <h3 className="text-2xl font-semibold text-white mb-3">No Favorites Yet</h3>
-          <p className="text-slate-300 mb-6 leading-relaxed">
+          <p className="text-white mb-6 leading-relaxed">
             Run optimizations and add your best lineups to favorites. 
             Build a portfolio of lineups from multiple runs, then export when ready.
           </p>
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
             <div className="flex items-start gap-2">
               <div className="text-blue-400">💡</div>
-              <p className="text-sm text-slate-300 text-left">
+              <p className="text-sm text-white text-left">
                 <span className="font-semibold text-blue-400">Tip:</span> Generate lineups using different strategies, 
                 save the best from each run, then export your final portfolio for the contest.
               </p>
@@ -1800,7 +1767,7 @@ const MyEntriesTab: React.FC<MyEntriesTabProps> = ({ results }) => {
           </Button>
         </div>
 
-        <div className="text-sm text-slate-300">
+        <div className="text-sm text-white">
           <span className="font-semibold text-cyan-400">{selectedCount}</span> / {totalFavorites} selected
         </div>
       </div>
@@ -1830,7 +1797,7 @@ const MyEntriesTab: React.FC<MyEntriesTabProps> = ({ results }) => {
               </div>
               <div>
                 <div className="text-xs text-slate-400 mb-1">Avg Points</div>
-                <div className="text-lg font-bold text-green-400">
+                <div className="text-lg font-bold text-white">
                   {(favorites.reduce((sum, f) => sum + f.totalPoints, 0) / favorites.length).toFixed(1)}
                 </div>
               </div>
@@ -1859,7 +1826,7 @@ const MyEntriesTab: React.FC<MyEntriesTabProps> = ({ results }) => {
       {/* Sort and Filter */}
       <div className="flex flex-wrap gap-3">
         <div className="flex items-center gap-2">
-          <Label className="text-sm text-slate-300">Sort by:</Label>
+          <Label className="text-sm text-white">Sort by:</Label>
           <Select value={sortBy} onValueChange={setSortBy}>
             <SelectTrigger className="w-40 bg-slate-700 border-slate-600 text-white text-sm h-9">
               <SelectValue />
@@ -1876,7 +1843,7 @@ const MyEntriesTab: React.FC<MyEntriesTabProps> = ({ results }) => {
         </div>
 
         <div className="flex items-center gap-2">
-          <Label className="text-sm text-slate-300">Filter:</Label>
+          <Label className="text-sm text-white">Filter:</Label>
           <Select value={filterRun.toString()} onValueChange={(v: string) => setFilterRun(v === 'all' ? 'all' : parseInt(v))}>
             <SelectTrigger className="w-32 bg-slate-700 border-slate-600 text-white text-sm h-9">
               <SelectValue />
@@ -1892,7 +1859,7 @@ const MyEntriesTab: React.FC<MyEntriesTabProps> = ({ results }) => {
       </div>
 
       {/* Favorites List */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto max-h-96 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
         <div className="space-y-3">
           {displayedFavorites.map((favorite) => (
             <Card key={favorite.id} className="bg-slate-700/40 border-slate-600/50 p-4 hover:border-cyan-500/40 transition-colors">
@@ -1907,7 +1874,7 @@ const MyEntriesTab: React.FC<MyEntriesTabProps> = ({ results }) => {
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`px-2 py-1 rounded text-xs font-bold ${
                         favorite.runNumber === 1 ? 'bg-blue-500/20 text-blue-400' :
-                        favorite.runNumber === 2 ? 'bg-green-500/20 text-green-400' :
+                        favorite.runNumber === 2 ? 'bg-green-500/20 text-white' :
                         favorite.runNumber === 3 ? 'bg-yellow-500/20 text-yellow-400' :
                         favorite.runNumber === 4 ? 'bg-orange-500/20 text-orange-400' :
                         'bg-purple-500/20 text-purple-400'
@@ -1919,7 +1886,7 @@ const MyEntriesTab: React.FC<MyEntriesTabProps> = ({ results }) => {
                     <div className="flex items-center gap-4 text-sm">
                       <div>
                         <span className="text-slate-400">Total Points:</span>
-                        <span className="ml-2 font-bold text-green-400">{favorite.totalPoints.toFixed(1)}</span>
+                        <span className="ml-2 font-bold text-white">{favorite.totalPoints.toFixed(1)}</span>
                       </div>
                       <div>
                         <span className="text-slate-400">Total Salary:</span>
@@ -1959,7 +1926,7 @@ const MyEntriesTab: React.FC<MyEntriesTabProps> = ({ results }) => {
       {/* Summary Bar */}
       <div className="bg-slate-700/40 border border-slate-600/50 rounded-lg p-3">
         <div className="flex items-center justify-between text-sm flex-wrap gap-2">
-          <div className="text-slate-300">
+          <div className="text-white">
             Showing <span className="font-semibold text-cyan-400">{displayedFavorites.length}</span> of {totalFavorites} favorites
             {filterRun !== 'all' && <span className="text-slate-500 ml-2">(Run #{filterRun} only)</span>}
           </div>
@@ -1979,8 +1946,34 @@ interface DFSOptimizerProps {
 }
 
 const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
-  const [activeTab, setActiveTab] = useState('players');
-  const [playerData, setPlayerData] = useState<Player[]>([]);
+  const [activeTab, setActiveTab] = useState('team-combos'); // Set to team-combos for testing
+  const [playerData, setPlayerData] = useState<Player[]>([
+    { id: '1', name: 'Josh Allen', team: 'BUF', position: 'QB', salary: 8500, projectedPoints: 25.5, minExp: 0, maxExp: 100, selected: false },
+    { id: '2', name: 'Stefon Diggs', team: 'BUF', position: 'WR', salary: 7500, projectedPoints: 18.2, minExp: 0, maxExp: 100, selected: false },
+    { id: '3', name: 'Travis Kelce', team: 'KC', position: 'TE', salary: 7000, projectedPoints: 15.8, minExp: 0, maxExp: 100, selected: false },
+    { id: '4', name: 'Tyreek Hill', team: 'MIA', position: 'WR', salary: 8000, projectedPoints: 20.1, minExp: 0, maxExp: 100, selected: false },
+    { id: '5', name: 'Christian McCaffrey', team: 'SF', position: 'RB', salary: 9000, projectedPoints: 22.3, minExp: 0, maxExp: 100, selected: false },
+    { id: '6', name: 'Lamar Jackson', team: 'BAL', position: 'QB', salary: 8200, projectedPoints: 24.1, minExp: 0, maxExp: 100, selected: false },
+    { id: '7', name: 'Cooper Kupp', team: 'LAR', position: 'WR', salary: 7800, projectedPoints: 19.5, minExp: 0, maxExp: 100, selected: false },
+    { id: '8', name: 'Derrick Henry', team: 'TEN', position: 'RB', salary: 7200, projectedPoints: 18.7, minExp: 0, maxExp: 100, selected: false },
+    { id: '9', name: 'Davante Adams', team: 'LV', position: 'WR', salary: 7600, projectedPoints: 17.9, minExp: 0, maxExp: 100, selected: false },
+    { id: '10', name: 'Patrick Mahomes', team: 'KC', position: 'QB', salary: 8800, projectedPoints: 26.2, minExp: 0, maxExp: 100, selected: false },
+    { id: '11', name: 'Saquon Barkley', team: 'NYG', position: 'RB', salary: 6800, projectedPoints: 16.8, minExp: 0, maxExp: 100, selected: false },
+    { id: '12', name: 'Mike Evans', team: 'TB', position: 'WR', salary: 7100, projectedPoints: 16.5, minExp: 0, maxExp: 100, selected: false },
+    { id: '13', name: 'Joe Burrow', team: 'CIN', position: 'QB', salary: 8100, projectedPoints: 23.8, minExp: 0, maxExp: 100, selected: false },
+    { id: '14', name: 'Ja\'Marr Chase', team: 'CIN', position: 'WR', salary: 7900, projectedPoints: 19.8, minExp: 0, maxExp: 100, selected: false },
+    { id: '15', name: 'Nick Chubb', team: 'CLE', position: 'RB', salary: 7400, projectedPoints: 17.9, minExp: 0, maxExp: 100, selected: false },
+    { id: '16', name: 'Amari Cooper', team: 'CLE', position: 'WR', salary: 6900, projectedPoints: 16.2, minExp: 0, maxExp: 100, selected: false },
+    { id: '17', name: 'Dak Prescott', team: 'DAL', position: 'QB', salary: 8000, projectedPoints: 23.5, minExp: 0, maxExp: 100, selected: false },
+    { id: '18', name: 'CeeDee Lamb', team: 'DAL', position: 'WR', salary: 8200, projectedPoints: 20.5, minExp: 0, maxExp: 100, selected: false },
+    { id: '19', name: 'Tony Pollard', team: 'DAL', position: 'RB', salary: 6500, projectedPoints: 15.8, minExp: 0, maxExp: 100, selected: false },
+    { id: '20', name: 'Russell Wilson', team: 'DEN', position: 'QB', salary: 7200, projectedPoints: 21.2, minExp: 0, maxExp: 100, selected: false },
+    { id: '21', name: 'Courtland Sutton', team: 'DEN', position: 'WR', salary: 6300, projectedPoints: 14.9, minExp: 0, maxExp: 100, selected: false },
+    { id: '22', name: 'Javonte Williams', team: 'DEN', position: 'RB', salary: 6100, projectedPoints: 14.2, minExp: 0, maxExp: 100, selected: false },
+    { id: '23', name: 'Jared Goff', team: 'DET', position: 'QB', salary: 6800, projectedPoints: 20.8, minExp: 0, maxExp: 100, selected: false },
+    { id: '24', name: 'Amon-Ra St. Brown', team: 'DET', position: 'WR', salary: 7700, projectedPoints: 18.6, minExp: 0, maxExp: 100, selected: false },
+    { id: '25', name: 'D\'Andre Swift', team: 'DET', position: 'RB', salary: 6400, projectedPoints: 15.1, minExp: 0, maxExp: 100, selected: false },
+  ]);
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
   const [teamSelections, setTeamSelections] = useState<Record<number | 'all', string[]>>({
     all: [],
@@ -2036,10 +2029,98 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
   const [riskProfile, setRiskProfile] = useState('medium');
   const [enableRiskMgmt, setEnableRiskMgmt] = useState(false);
   
+  // Generated Teams
+  const [generatedTeams, setGeneratedTeams] = useState<any[]>([
+    {
+      id: '1',
+      name: 'BUF + KC Stack',
+      players: ['QB: Allen', 'WR: Diggs', 'TE: Kelce'],
+      type: 'stack'
+    },
+    {
+      id: '2', 
+      name: 'MIA + SF Stack',
+      players: ['WR: Hill', 'RB: McCaffrey'],
+      type: 'stack'
+    },
+    {
+      id: '3',
+      name: 'LAR + TEN Stack', 
+      players: ['WR: Kupp', 'RB: Henry'],
+      type: 'stack'
+    },
+    {
+      id: '4',
+      name: 'CIN + CLE Stack',
+      players: ['QB: Burrow', 'WR: Chase', 'RB: Chubb'],
+      type: 'stack'
+    },
+    {
+      id: '5',
+      name: 'DAL + DEN Stack',
+      players: ['QB: Prescott', 'WR: Lamb', 'QB: Wilson'],
+      type: 'stack'
+    }
+  ]);
+  
   // Results
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<any[]>([
+    {
+      id: '1',
+      players: [
+        { name: 'Josh Allen', position: 'QB', team: 'BUF', salary: 8500 },
+        { name: 'Christian McCaffrey', position: 'RB', team: 'SF', salary: 9000 },
+        { name: 'Tyreek Hill', position: 'WR', team: 'MIA', salary: 8000 },
+        { name: 'Stefon Diggs', position: 'WR', team: 'BUF', salary: 7500 },
+        { name: 'Travis Kelce', position: 'TE', team: 'KC', salary: 7000 },
+        { name: 'Lamar Jackson', position: 'QB', team: 'BAL', salary: 8200 },
+        { name: 'Cooper Kupp', position: 'WR', team: 'LAR', salary: 7800 },
+        { name: 'Derrick Henry', position: 'RB', team: 'TEN', salary: 7200 },
+        { name: 'Davante Adams', position: 'WR', team: 'LV', salary: 7600 }
+      ],
+      points: 185.2,
+      salary: 49800
+    },
+    {
+      id: '2',
+      players: [
+        { name: 'Patrick Mahomes', position: 'QB', team: 'KC', salary: 8800 },
+        { name: 'Saquon Barkley', position: 'RB', team: 'NYG', salary: 6800 },
+        { name: 'Mike Evans', position: 'WR', team: 'TB', salary: 7100 },
+        { name: 'Ja\'Marr Chase', position: 'WR', team: 'CIN', salary: 7900 },
+        { name: 'Nick Chubb', position: 'RB', team: 'CLE', salary: 7400 },
+        { name: 'Amari Cooper', position: 'WR', team: 'CLE', salary: 6900 },
+        { name: 'Dak Prescott', position: 'QB', team: 'DAL', salary: 8000 },
+        { name: 'CeeDee Lamb', position: 'WR', team: 'DAL', salary: 8200 },
+        { name: 'Tony Pollard', position: 'RB', team: 'DAL', salary: 6500 }
+      ],
+      points: 178.9,
+      salary: 49600
+    },
+    {
+      id: '3',
+      players: [
+        { name: 'Russell Wilson', position: 'QB', team: 'DEN', salary: 7200 },
+        { name: 'Courtland Sutton', position: 'WR', team: 'DEN', salary: 6300 },
+        { name: 'Javonte Williams', position: 'RB', team: 'DEN', salary: 6100 },
+        { name: 'Jared Goff', position: 'QB', team: 'DET', salary: 6800 },
+        { name: 'Amon-Ra St. Brown', position: 'WR', team: 'DET', salary: 7700 },
+        { name: 'D\'Andre Swift', position: 'RB', team: 'DET', salary: 6400 },
+        { name: 'Joe Burrow', position: 'QB', team: 'CIN', salary: 8100 },
+        { name: 'Ja\'Marr Chase', position: 'WR', team: 'CIN', salary: 7900 },
+        { name: 'Nick Chubb', position: 'RB', team: 'CLE', salary: 7400 }
+      ],
+      points: 172.3,
+      salary: 49900
+    }
+  ]);
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [isRunningCombinations, setIsRunningCombinations] = useState(false);
   const [dkEntriesLoaded, setDkEntriesLoaded] = useState(false);
+  
+  // Resizable panels
+  const [controlPanelWidth, setControlPanelWidth] = useState(240); // Smaller default
+  const [isResizing, setIsResizing] = useState(false);
 
   const tabs = [
     { id: 'players', label: 'Players', icon: Users },
@@ -2105,32 +2186,107 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
     }, 3000);
   };
 
+  const handleRunCombinations = () => {
+    if (generatedTeams.length === 0) {
+      alert('No teams available to run combinations. Generate teams first.');
+      return;
+    }
+    
+    setIsRunningCombinations(true);
+    console.log('Running combinations for teams:', generatedTeams);
+    
+    // TODO: Call backend API to run combinations
+    setTimeout(() => {
+      setIsRunningCombinations(false);
+      console.log('Combinations complete');
+      // TODO: Update results with combination lineups
+    }, 2000);
+  };
+
+  // Function to update generated teams (called by backend)
+  const updateGeneratedTeams = (teams: any[]) => {
+    setGeneratedTeams(teams);
+  };
+
+  // Function to run combinations (called by backend)
+  const runCombinations = () => {
+    handleRunCombinations();
+  };
+
+  // Expose functions globally for backend access
+  React.useEffect(() => {
+    (window as any).updateGeneratedTeams = updateGeneratedTeams;
+    (window as any).runCombinations = runCombinations;
+    return () => {
+      delete (window as any).updateGeneratedTeams;
+      delete (window as any).runCombinations;
+    };
+  }, []);
+
+  // Resize handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsResizing(true);
+    e.preventDefault();
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isResizing) return;
+    
+    const newWidth = window.innerWidth - e.clientX;
+    const minWidth = 200;
+    const maxWidth = 400;
+    
+    if (newWidth >= minWidth && newWidth <= maxWidth) {
+      setControlPanelWidth(newWidth);
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsResizing(false);
+  };
+
+  // Add event listeners
+  React.useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+    
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
   return (
-    <div className="h-full w-full flex gap-4 p-3 sm:p-4 lg:p-6">
-      {/* MAIN CONTENT AREA - Left Side Tabs */}
-      <div className="flex-1 bg-slate-800 backdrop-blur-sm rounded-2xl border border-cyan-500/20 shadow-2xl overflow-hidden flex flex-col">
+    <div className="h-full w-full flex p-2">
+      {/* MAIN CONTENT AREA - Desktop-Style Tabs (matches PyQt x.py) */}
+      <div 
+        className="bg-slate-900 border border-slate-700 overflow-hidden flex flex-col"
+        style={{ width: `calc(100% - ${controlPanelWidth}px - 8px)` }}
+      >
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col h-full">
-            {/* Tab Headers */}
-            <TabsList className="bg-slate-700 border-b border-cyan-500/20 w-full rounded-none h-auto overflow-x-auto overflow-y-hidden flex flex-nowrap scrollbar-thin scrollbar-thumb-cyan-500/20 scrollbar-track-transparent">
+            {/* Tab Headers - Desktop Style */}
+            <TabsList className="bg-slate-800 border-b border-slate-700 w-full rounded-none h-auto flex flex-nowrap">
               {tabs.map((tab) => {
                   const Icon = tab.icon;
                   return (
                   <TabsTrigger
                     key={tab.id}
                     value={tab.id}
-                    className="data-[state=active]:bg-cyan-500/10 data-[state=active]:text-cyan-400 flex items-center gap-2 px-4 py-3 whitespace-nowrap flex-shrink-0"
+                    className="data-[state=active]:bg-slate-700 data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-blue-500 flex items-center gap-1.5 px-3 py-2 text-sm whitespace-nowrap flex-shrink-0 text-white hover:text-white hover:bg-slate-700/50 transition-colors"
                   >
-                    <Icon className="w-4 h-4" />
-                    <span className="font-medium">{tab.label}</span>
+                    <Icon className="w-3.5 h-3.5" />
+                    <span className="font-normal">{tab.label}</span>
                   </TabsTrigger>
                   );
                 })}
             </TabsList>
 
-            {/* Tab Content */}
-            <div className="flex-1 overflow-auto p-4 lg:p-6">
+            {/* Tab Content - Compact Padding with Scrolling */}
+            <div className="flex-1 overflow-auto p-3 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
               {/* Players Tab */}
-              <TabsContent value="players" className="mt-0 h-full">
+              <TabsContent value="players" className="mt-0 h-full overflow-auto">
                 <PlayersTab
                   playerData={playerData}
                   selectedPlayers={selectedPlayers}
@@ -2140,7 +2296,7 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
               </TabsContent>
 
               {/* Team Stacks Tab */}
-              <TabsContent value="team-stacks" className="mt-0 h-full">
+              <TabsContent value="team-stacks" className="mt-0 h-full overflow-auto">
                 <TeamStacksTab
                   playerData={playerData}
                   teamSelections={teamSelections}
@@ -2149,7 +2305,7 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
               </TabsContent>
 
               {/* Stack Exposure Tab */}
-              <TabsContent value="stack-exposure" className="mt-0 h-full">
+              <TabsContent value="stack-exposure" className="mt-0 h-full overflow-auto">
                 <StackExposureTab
                   stackSettings={stackSettings}
                   onStackSettingsChange={setStackSettings}
@@ -2157,12 +2313,12 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
               </TabsContent>
 
               {/* Team Combinations Tab */}
-              <TabsContent value="team-combos" className="mt-0 h-full">
+              <TabsContent value="team-combos" className="mt-0 h-full overflow-auto">
                 <TeamCombinationsTab playerData={playerData} />
               </TabsContent>
 
               {/* Advanced Quant Tab */}
-              <TabsContent value="advanced-quant" className="mt-0 h-full">
+              <TabsContent value="advanced-quant" className="mt-0 h-full overflow-auto">
                 <AdvancedQuantTab
                   settings={advancedQuantSettings}
                   onSettingsChange={setAdvancedQuantSettings}
@@ -2170,35 +2326,51 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
               </TabsContent>
 
               {/* My Entries Tab */}
-              <TabsContent value="my-entries" className="mt-0 h-full">
+              <TabsContent value="my-entries" className="mt-0 h-full overflow-auto">
                 <MyEntriesTab results={results} />
               </TabsContent>
             </div>
           </Tabs>
       </div>
 
-      {/* RIGHT SIDEBAR - Control Panel */}
-      <div className="w-80 flex-shrink-0 bg-slate-900 backdrop-blur-sm rounded-2xl border border-cyan-500/20 shadow-2xl overflow-hidden">
-          <div className="p-4 space-y-3 overflow-auto h-full">
-            {/* Header */}
-            <div className="border-b border-cyan-500/20 pb-2">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Settings className="w-4 h-4 text-cyan-400" />
+      {/* RESIZABLE DIVIDER */}
+      <div
+        className={`w-1 bg-slate-600 hover:bg-slate-500 cursor-col-resize flex-shrink-0 transition-colors ${
+          isResizing ? 'bg-blue-500' : ''
+        }`}
+        onMouseDown={handleMouseDown}
+      >
+        <div className="w-full h-full flex items-center justify-center">
+          <div className="w-0.5 h-8 bg-slate-400 rounded-full"></div>
+        </div>
+      </div>
+
+      {/* RIGHT SIDEBAR - Control Panel (Desktop Style) */}
+      <div 
+        className="flex-shrink-0 bg-slate-900 border border-slate-700 overflow-hidden"
+        style={{ width: `${controlPanelWidth}px` }}
+      >
+          <div className="p-1.5 space-y-1 overflow-auto h-full">
+            {/* Header - Ultra Compact */}
+            <div className="border-b border-slate-700 pb-0.5 mb-1">
+              <h3 className="text-[12px] font-bold text-white flex items-center gap-1 uppercase tracking-wide">
+                <Settings className="w-3 h-3 text-blue-400" />
                 Control Panel
               </h3>
             </div>
 
-            {/* File Operations */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-2">File Operations</h4>
-              <div className="space-y-2">
+            {/* File Operations - Ultra Compact */}
+            <div className="space-y-1">
+              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">File Operations</h4>
+              <div className="space-y-0.5">
                 <label htmlFor="csv-upload">
                   <Button
                     variant="outline"
-                    className="w-full border-cyan-500/30 hover:bg-cyan-500/10 text-white text-sm h-9"
+                    size="sm"
+                    className="w-full border-slate-600 hover:bg-slate-800 text-white text-[11px] h-7 justify-start px-2 font-semibold"
                     onClick={() => document.getElementById('csv-upload')?.click()}
                   >
-                    <Upload className="w-3.5 h-3.5 mr-2" />
+                    <Upload className="w-2.5 h-2.5 mr-1" />
                     Load CSV
                   </Button>
                 </label>
@@ -2212,72 +2384,73 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
                 
                 <Button
                   variant="outline"
-                  className="w-full border-cyan-500/30 hover:bg-cyan-500/10 text-white text-sm h-9"
+                  size="sm"
+                  className="w-full border-slate-600 hover:bg-slate-800 text-white text-[10px] h-6 justify-start px-2"
                 >
-                  <FileText className="w-3.5 h-3.5 mr-2" />
-                  Load DK Predictions
+                  <FileText className="w-2.5 h-2.5 mr-1" />
+                  Load Predictions
                 </Button>
                 
                 <Button
                   variant="outline"
-                  className="w-full border-cyan-500/30 hover:bg-cyan-500/10 text-white text-sm h-9"
+                  size="sm"
+                  className="w-full border-slate-600 hover:bg-slate-800 text-white text-[10px] h-6 justify-start px-2"
                   onClick={() => setDkEntriesLoaded(true)}
                 >
-                  <Download className="w-3.5 h-3.5 mr-2" />
-                  Load DK Entries
+                  <Download className="w-2.5 h-2.5 mr-1" />
+                  Load Entries
                 </Button>
               </div>
             </div>
 
-            {/* Optimization Settings */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-2">Optimization Settings</h4>
-              <div className="space-y-2.5">
+            {/* Optimization Settings - Ultra Compact */}
+            <div className="space-y-1">
+              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Optimization</h4>
+              <div className="space-y-1">
                 <div>
-                  <Label className="text-xs text-white block mb-1 font-medium">Number of Lineups</Label>
+                  <Label className="text-[11px] text-white block mb-1 font-semibold">Lineups</Label>
                   <input
                     type="number"
                     min="1"
                     max="500"
                     value={numLineups}
                     onChange={(e) => setNumLineups(parseInt(e.target.value) || 100)}
-                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-sm"
+                    className="w-full bg-white border-2 border-white rounded px-2 py-1 text-black text-[12px] font-bold"
                   />
-                  <span className="text-xs text-slate-400 mt-0.5 block">1-500</span>
                 </div>
                 
                 <div>
-                  <Label className="text-xs text-white block mb-1 font-medium">Min Unique</Label>
+                  <Label className="text-[11px] text-white block mb-1 font-semibold">Min Unique</Label>
                   <input
                     type="number"
                     min="0"
                     max="10"
                     value={minUnique}
                     onChange={(e) => setMinUnique(parseInt(e.target.value) || 3)}
-                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-sm"
+                    className="w-full bg-white border-2 border-white rounded px-2 py-1 text-black text-[12px] font-bold"
                   />
-                  <span className="text-xs text-slate-400 mt-0.5 block">0-10</span>
                 </div>
                 
-                <div className="flex items-center space-x-2 pt-1">
+                <div className="flex items-center space-x-1 pt-0.5">
                   <Checkbox
                     id="disable-kelly"
                     checked={disableKelly}
                     onCheckedChange={(checked: boolean) => setDisableKelly(checked)}
+                    className="h-3 w-3"
                   />
-                  <Label htmlFor="disable-kelly" className="text-xs text-white cursor-pointer font-medium">
-                    Disable Kelly Sizing
+                  <Label htmlFor="disable-kelly" className="text-[11px] text-white cursor-pointer font-semibold">
+                    Disable Kelly
                   </Label>
                 </div>
               </div>
             </div>
 
-            {/* Salary Constraints */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-2">Salary Constraints</h4>
-              <div className="space-y-2.5">
+            {/* Salary Constraints - Ultra Compact */}
+            <div className="space-y-1">
+              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Salary</h4>
+              <div className="space-y-1">
                 <div>
-                  <Label className="text-xs text-white block mb-1 font-medium">Min Salary ($)</Label>
+                  <Label className="text-[11px] text-white block mb-1 font-semibold">Min ($)</Label>
                   <input
                     type="number"
                     min="0"
@@ -2285,52 +2458,52 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
                     step="1000"
                     value={minSalary}
                     onChange={(e) => setMinSalary(parseInt(e.target.value) || 45000)}
-                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-sm"
+                    className="w-full bg-white border-2 border-white rounded px-2 py-1 text-black text-[12px] font-bold"
                   />
                 </div>
                 
                 <div>
-                  <Label className="text-xs text-white block mb-1 font-medium">Max Salary ($)</Label>
+                  <Label className="text-[9px] text-white block mb-0.5">Max ($)</Label>
                   <input
                     type="number"
                     value={50000}
                     disabled
-                    className="w-full bg-slate-600/50 border border-slate-600 rounded-lg px-2 py-1.5 text-slate-400 text-sm cursor-not-allowed"
+                    className="w-full bg-slate-600/50 border border-slate-600 rounded px-1.5 py-0.5 text-slate-400 text-[10px] cursor-not-allowed"
                   />
-                  <span className="text-xs text-slate-400 mt-0.5 block">Fixed by DK</span>
+                  <span className="text-[8px] text-white mt-0.5 block">Fixed by DK</span>
                 </div>
               </div>
             </div>
 
-            {/* Sorting */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-2">Sorting</h4>
+            {/* Sorting - Ultra Compact */}
+            <div className="space-y-1">
+              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Sorting</h4>
               <div>
-                <Label className="text-xs text-white block mb-1 font-medium">Sort By</Label>
                 <Select value={sortMethod} onValueChange={setSortMethod}>
-                  <SelectTrigger className="w-full bg-slate-700 border-slate-600 text-white text-sm h-9">
+                  <SelectTrigger className="w-full bg-slate-700 border-slate-500 text-white text-[10px] h-6">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-cyan-500/20">
-                    <SelectItem value="points" className="text-white">Points ↓</SelectItem>
-                    <SelectItem value="value" className="text-white">Value ↓</SelectItem>
-                    <SelectItem value="salary" className="text-white">Salary ↓</SelectItem>
+                  <SelectContent className="bg-slate-900 border-slate-700">
+                    <SelectItem value="points" className="text-white text-[10px]">Points ↓</SelectItem>
+                    <SelectItem value="value" className="text-white text-[10px]">Value ↓</SelectItem>
+                    <SelectItem value="salary" className="text-white text-[10px]">Salary ↓</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            {/* Risk Management */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-2">Risk Management</h4>
-              <div className="space-y-2.5">
-                <div className="flex items-center space-x-2">
+            {/* Risk Management - Ultra Compact */}
+            <div className="space-y-1">
+              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Risk Management</h4>
+              <div className="space-y-1">
+                <div className="flex items-center space-x-1">
                   <Checkbox
                     id="enable-risk"
                     checked={enableRiskMgmt}
                     onCheckedChange={(checked: boolean) => setEnableRiskMgmt(checked)}
+                    className="h-3 w-3"
                   />
-                  <Label htmlFor="enable-risk" className="text-xs text-white cursor-pointer font-medium">
+                  <Label htmlFor="enable-risk" className="text-[9px] text-white cursor-pointer">
                     Enable Risk Mgmt
                   </Label>
                 </div>
@@ -2338,7 +2511,7 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
                 {enableRiskMgmt && (
                   <>
                     <div>
-                      <Label className="text-xs text-white block mb-1 font-medium">Bankroll ($)</Label>
+                      <Label className="text-[9px] text-white block mb-0.5">Bankroll ($)</Label>
                       <input
                         type="number"
                         min="100"
@@ -2346,20 +2519,20 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
                         step="100"
                         value={bankroll}
                         onChange={(e) => setBankroll(parseInt(e.target.value) || 1000)}
-                        className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-sm"
+                        className="w-full bg-white border-2 border-white rounded px-2 py-1 text-black text-[12px] font-bold"
                       />
                     </div>
                     
                     <div>
-                      <Label className="text-xs text-white block mb-1 font-medium">Risk Profile</Label>
+                      <Label className="text-[9px] text-white block mb-0.5">Risk Profile</Label>
                       <Select value={riskProfile} onValueChange={setRiskProfile}>
-                        <SelectTrigger className="w-full bg-slate-700 border-slate-600 text-white text-sm h-9">
+                        <SelectTrigger className="w-full bg-slate-700 border-slate-500 text-white text-[10px] h-6">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="bg-slate-900 border-cyan-500/20">
-                          <SelectItem value="conservative" className="text-white">Conservative</SelectItem>
-                          <SelectItem value="medium" className="text-white">Medium</SelectItem>
-                          <SelectItem value="aggressive" className="text-white">Aggressive</SelectItem>
+                        <SelectContent className="bg-slate-900 border-slate-700">
+                          <SelectItem value="conservative" className="text-white text-[10px]">Conservative</SelectItem>
+                          <SelectItem value="medium" className="text-white text-[10px]">Medium</SelectItem>
+                          <SelectItem value="aggressive" className="text-white text-[10px]">Aggressive</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -2368,77 +2541,117 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-2">Actions</h4>
-              <div className="space-y-2">
+            {/* Actions - Ultra Compact */}
+            <div className="space-y-1 pt-1 border-t border-slate-700 mt-1">
+              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Actions</h4>
+              <div className="space-y-0.5">
                 <Button
-                  className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white h-10"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white h-6 text-[10px] font-semibold px-2"
                   onClick={handleRunOptimization}
                   disabled={isOptimizing || playerData.length === 0}
                 >
-                  <Play className="w-4 h-4 mr-2" />
-                  {isOptimizing ? 'Optimizing...' : 'Run Contest Sim'}
+                  <Play className="w-2.5 h-2.5 mr-1" />
+                  {isOptimizing ? 'Optimizing...' : 'Optimize'}
                 </Button>
                 
                 <Button
                   variant="outline"
-                  className="w-full border-cyan-500/30 hover:bg-cyan-500/10 text-white text-sm h-9"
+                  size="sm"
+                  className="w-full border-slate-600 hover:bg-slate-800 text-white text-[10px] h-6 justify-start px-2"
                   disabled={results.length === 0}
                 >
-                  <Save className="w-3.5 h-3.5 mr-2" />
-                  Save CSV for DK
+                  <Save className="w-2.5 h-2.5 mr-1" />
+                  Save CSV
                 </Button>
                 
                 <Button
                   variant="outline"
-                  className="w-full border-cyan-500/30 hover:bg-cyan-500/10 text-white text-sm h-9"
+                  size="sm"
+                  className="w-full border-slate-600 hover:bg-slate-800 text-white text-[10px] h-6 justify-start px-2"
                   disabled={!dkEntriesLoaded || results.length === 0}
                 >
-                  <FileText className="w-3.5 h-3.5 mr-2" />
-                  Fill Entries w/ Lineups
+                  <FileText className="w-2.5 h-2.5 mr-1" />
+                  Fill Entries
                 </Button>
               </div>
             </div>
 
-            {/* Favorites */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-2">Favorites</h4>
-              <div className="space-y-2">
+            {/* Generated Teams - Ultra Compact */}
+            <div className="space-y-1">
+              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Generated Teams</h4>
+              
+              {/* Run Combinations Button */}
+              <div className="mb-1">
                 <Button
                   variant="outline"
-                  className="w-full border-green-500/30 hover:bg-green-500/10 text-white text-sm h-9"
+                  size="sm"
+                  className="w-full border-green-500/30 hover:bg-green-500/10 text-white text-[9px] h-5 justify-start px-1.5"
+                  onClick={handleRunCombinations}
+                  disabled={generatedTeams.length === 0 || isOptimizing || isRunningCombinations}
+                >
+                  <Play className="w-2 h-2 mr-1" />
+                  {isRunningCombinations ? 'Running...' : 'Run Combinations'}
+                </Button>
+              </div>
+
+              {/* Teams List */}
+              <div className="bg-slate-800/40 border border-slate-600/50 rounded p-1.5 max-h-28 overflow-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
+                <div className="space-y-1">
+                  {generatedTeams.map((team) => (
+                    <div key={team.id} className="text-[8px] text-white bg-slate-700/50 rounded px-1.5 py-1">
+                      <div className="font-semibold text-white">{team.name}</div>
+                      <div className="text-slate-400">{team.players.join(', ')}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-1 pt-1 border-t border-slate-600/50">
+                  <div className="text-[7px] text-slate-400 text-center">
+                    {generatedTeams.length} teams generated
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Favorites - Ultra Compact */}
+            <div className="space-y-1">
+              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Favorites</h4>
+              <div className="space-y-0.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-slate-600 hover:bg-slate-800 text-white text-[10px] h-6 justify-start px-2"
                   disabled={results.length === 0}
                 >
-                  <Plus className="w-3.5 h-3.5 mr-2" />
-                  Add to Favorites
+                  <Plus className="w-2.5 h-2.5 mr-1" />
+                  Add Favorite
                 </Button>
                 
                 <Button
                   variant="outline"
-                  className="w-full border-cyan-500/30 hover:bg-cyan-500/10 text-white text-sm h-9"
+                  size="sm"
+                  className="w-full border-slate-600 hover:bg-slate-800 text-white text-[10px] h-6 justify-start px-2"
                 >
-                  <Download className="w-3.5 h-3.5 mr-2" />
-                  Export Favorites
+                  <Download className="w-2.5 h-2.5 mr-1" />
+                  Export
                 </Button>
               </div>
             </div>
 
-            {/* Results Summary */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-2">Results Summary</h4>
-              <Card className="bg-slate-700/40 border-slate-600/50 p-3">
+            {/* Results Summary - Ultra Compact */}
+            <div className="space-y-1 pt-1 border-t border-slate-700">
+              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Results</h4>
+              <Card className="bg-slate-800 border-slate-700 p-1.5">
                 {results.length > 0 ? (
                   <div className="space-y-2 text-xs">
-                    <div className="flex justify-between text-slate-200">
+                    <div className="flex justify-between text-white">
                       <span>Lineups Generated:</span>
                       <span className="font-semibold text-cyan-400">{results.length}</span>
                     </div>
-                    <div className="flex justify-between text-slate-200">
+                    <div className="flex justify-between text-white">
                       <span>Avg Points:</span>
                       <span className="font-semibold">125.3</span>
                     </div>
-                    <div className="flex justify-between text-slate-200">
+                    <div className="flex justify-between text-white">
                       <span>Avg Salary:</span>
                       <span className="font-semibold">$48,450</span>
                     </div>
@@ -2453,11 +2666,12 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
 
             {/* Status Bar */}
             <div className="border-t border-cyan-500/20 pt-3">
-              <div className="text-xs text-slate-300 space-y-1">
+              <div className="text-xs text-white space-y-1">
                 <div className="flex justify-between">
                   <span>Status:</span>
                   <span className="text-cyan-400 font-medium">
-                    {isOptimizing ? 'Optimizing...' : 'Ready'}
+                    {isOptimizing ? 'Optimizing...' : 
+                     isRunningCombinations ? 'Running Combinations...' : 'Ready'}
                   </span>
                 </div>
                 <div className="flex justify-between">

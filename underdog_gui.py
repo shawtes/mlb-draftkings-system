@@ -1,6 +1,6 @@
 """
-Underdog Fantasy GUI - Display and Analyze Predictions
-Loads prediction CSV files and displays results in an interactive interface.
+NFL Underdog Fantasy GUI - Display and Analyze NFL Predictions
+Loads NFL prediction CSV files from sportsdata.io and displays results in an interactive interface.
 """
 
 import tkinter as tk
@@ -9,22 +9,24 @@ import pandas as pd
 import os
 from datetime import datetime
 
-class UnderdogFantasyGUI:
+class NFLUnderdogFantasyGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Underdog Fantasy Prediction Viewer")
+        self.root.title("NFL Underdog Fantasy Prediction Viewer - SportsData.io")
         self.root.geometry("1400x900")
         
         # Data storage
         self.predictions_df = None
         self.recommendations_df = None
+        self.nfl_data_df = None
         
         # Team selection storage
         self.available_teams = []
         self.selected_teams = set()
         
-        # Default directory for prediction files
-        self.default_dir = r"c:\Users\smtes\OneDrive\Documents\draftkings project\MLB_DRAFTKINGS_SYSTEM\7_ANALYSIS"
+        # Default directory for NFL data files
+        self.default_dir = "/Users/sineshawmesfintesfaye/mlb-draftkings-system/6_OPTIMIZATION"
+        self.analysis_dir = "/Users/sineshawmesfintesfaye/mlb-draftkings-system/7_ANALYSIS"
         
         self.setup_gui()
         self.load_latest_predictions()

@@ -1,0 +1,438 @@
+CORE
+
+Bye Weeks 
+
+Get bye weeks for the teams during a specified NFL season.
+https://api.sportsdata.io/api/nfl/fantasy/json/Byes/{season}
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season and the season type. If no season type is provided, then the default is regular season
+Examples: 2015REG, 2015PRE, 2015POST.
+Player Details by Available 
+
+Player Details by Available
+https://api.sportsdata.io/api/nfl/fantasy/json/Players
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+Player Details by Free Agents 
+
+Player Details by Free Agents
+https://api.sportsdata.io/api/nfl/fantasy/json/FreeAgents
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+Player Details by Rookie Draft Year 
+
+Player Details by Rookie Draft Year
+https://api.sportsdata.io/api/nfl/fantasy/json/Rookies/{season}
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season.
+Examples: 2018, 2019, etc.
+Standings 
+
+Standings
+https://api.sportsdata.io/api/nfl/fantasy/json/Standings/{season}
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season and the season type. If no season type is provided, then the default is regular season
+Examples: 2015REG, 2015PRE, 2015POST.
+Teams (Active) 
+
+Gets all active teams.
+https://api.sportsdata.io/api/nfl/fantasy/json/Teams
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+Timeframes 
+
+Get detailed information about past, present, and future timeframes.
+https://api.sportsdata.io/api/nfl/fantasy/json/Timeframes/{type}
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+type
+
+string true
+The type of timeframes to return. Valid entries are current or upcoming or completed or recent or all.
+FANTASY
+
+DFS Slates by Date 
+
+DFS Slates by Date
+https://api.sportsdata.io/api/nfl/fantasy/json/DfsSlatesByDate/{date}
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+date
+
+string true
+The date of the slates.
+Examples: 2017-SEP-25, 2017-10-31.
+DFS Slates by Week 
+
+DFS Slates by Week
+https://api.sportsdata.io/api/nfl/fantasy/json/DfsSlatesByWeek/{season}/{week}
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season and the season type. If no season type is provided, then the default is regular season
+Examples: 2015REG, 2015PRE, 2015POST.
+week
+
+integer true
+Week of the season. Valid values are as follows: Preseason 0 to 4, Regular Season 1 to 17, Postseason 1 to 4 Example: 1
+Fantasy Defense Game Stats 
+
+Fantasy Defense Game Stats
+https://api.sportsdata.io/api/nfl/fantasy/json/FantasyDefenseByGame/{season}/{week}
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season and the season type. If no season type is provided, then the default is regular season
+Examples: 2015REG, 2015PRE, 2015POST.
+week
+
+integer true
+Week of the season. Valid values are as follows: Preseason 0 to 4, Regular Season 1 to 17, Postseason 1 to 4 Example: 1
+Fantasy Defense Season Stats 
+
+Fantasy Defense Season Stats
+https://api.sportsdata.io/api/nfl/fantasy/json/FantasyDefenseBySeason/{season}
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season and the season type. If no season type is provided, then the default is regular season
+Examples: 2015REG, 2015PRE, 2015POST.
+Player Game Stats by Week 
+
+Player Game Stats by Week
+https://api.sportsdata.io/api/nfl/fantasy/json/PlayerGameStatsByWeek/{season}/{week}
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season and the season type. If no season type is provided, then the default is regular season
+Examples: 2015REG, 2015PRE, 2015POST.
+week
+
+integer true
+Week of the season. Valid values are as follows: Preseason 0 to 4, Regular Season 1 to 17, Postseason 1 to 4 Example: 1
+Player Season Stats 
+
+Player Season Stats
+https://api.sportsdata.io/api/nfl/fantasy/json/PlayerSeasonStats/{season}
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season and the season type. If no season type is provided, then the default is regular season
+Examples: 2015REG, 2015PRE, 2015POST.
+Projected Fantasy Defense Game Stats 
+
+Projected Fantasy Defense Game Stats
+https://api.sportsdata.io/api/nfl/fantasy/json/FantasyDefenseProjectionsByGame/{season}/{week}
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season and the season type. If no season type is provided, then the default is regular season
+Examples: 2015REG, 2015PRE, 2015POST.
+week
+
+integer true
+Week of the season. Valid values are as follows: Preseason 0 to 4, Regular Season 1 to 17, Postseason 1 to 4 Example: 1
+Projected Fantasy Defense Season Stats (w/ ADP) 
+
+Projected Fantasy Defense Season Stats (w/ ADP)
+https://api.sportsdata.io/api/nfl/fantasy/json/FantasyDefenseProjectionsBySeason/{season}
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season and the season type. If no season type is provided, then the default is regular season
+Examples: 2015REG, 2015PRE, 2015POST.
+Projected Player Game Stats by Week (w/ Injuries) 
+
+Projected Player Game Stats by Week (w/ Injuries)
+https://api.sportsdata.io/api/nfl/fantasy/json/PlayerGameProjectionStatsByWeek/{season}/{week}
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season and the season type. If no season type is provided, then the default is regular season
+Examples: 2015REG, 2015PRE, 2015POST.
+week
+
+integer true
+Week of the season. Valid values are as follows: Preseason 0 to 4, Regular Season 1 to 17, Postseason 1 to 4 Example: 1
+Projected Player Season Stats (w/ ADP) 
+
+Projected Player Season Stats (w/ ADP)
+https://api.sportsdata.io/api/nfl/fantasy/json/PlayerSeasonProjectionStats/{season}
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season and the season type. If no season type is provided, then the default is regular season
+Examples: 2015REG, 2015PRE, 2015POST.
+Fantasy Players with ADP (deprecated) 
+
+This method returns a comprehensive list of draftable fantasy football players, including QB, RB, WR, TE, K and DEF. Players are sorted by ADP (AverageDraftPosition).
+https://api.sportsdata.io/api/nfl/fantasy/json/FantasyPlayers
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+IDP Fantasy Players with ADP (deprecated) 
+
+This method returns the top 300+ IDP Fantasy Players for the current or upcoming season, ordered by AverageDraftPositionIDP.
+https://api.sportsdata.io/api/nfl/fantasy/json/FantasyPlayersIDP
+Request Parameters
+API Key
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+ODDS
+
+Pre-Game Odds by Week 
+
+Pre-Game Odds by Week
+https://api.sportsdata.io/api/nfl/odds/json/GameOddsByWeek/{season}/{week}
+Request Parameters
+API Key
+Subscription required.
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season, with optional season type.
+Examples: 2018, 2018POST, etc.
+week
+
+integer true
+The week of the scores (games).
+Examples: 1, 2, etc.
+Pre-Game Odds Line Movement 
+
+Pre-Game Odds Line Movement
+https://api.sportsdata.io/api/nfl/odds/json/GameOddsLineMovement/{scoreid}
+Request Parameters
+API Key
+Subscription required.
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+scoreid
+
+integer true
+The ScoreID of an NFL score (game). ScoreIDs can be found in the Scores API. Valid entries are 16654 or 16667
+Scores by Season 
+
+Game scores for a specified season.
+https://api.sportsdata.io/api/nfl/odds/json/Scores/{season}
+Request Parameters
+API Key
+Subscription required.
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season (with optional season type).
+Examples: 2018, 2018PRE, 2018POST, 2018STAR, 2019, etc.
+Scores by Week 
+
+Get game scores for a specified week of a season.
+https://api.sportsdata.io/api/nfl/odds/json/ScoresByWeek/{season}/{week}
+Request Parameters
+API Key
+Subscription required.
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season and the season type. If no season type is provided, then the default is regular season
+Examples: 2015REG, 2015PRE, 2015POST.
+week
+
+integer true
+Week of the season. Valid values are as follows: Preseason 0 to 4, Regular Season 1 to 17, Postseason 1 to 4 Example: 1
+Stadiums 
+
+This method returns all stadiums.
+https://api.sportsdata.io/api/nfl/odds/json/Stadiums
+Request Parameters
+API Key
+Subscription required.
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+Team Game Stats 
+
+Team Game Stats
+https://api.sportsdata.io/api/nfl/odds/json/TeamGameStats/{season}/{week}
+Request Parameters
+API Key
+Subscription required.
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season and the season type. If no season type is provided, then the default is regular season
+Examples: 2015REG, 2015PRE, 2015POST.
+week
+
+integer true
+Week of the season. Valid values are as follows: Preseason 0 to 4, Regular Season 1 to 17, Postseason 1 to 4 Example: 1
+Team Season Stats 
+
+Team Season Stats
+https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStats/{season}
+Request Parameters
+API Key
+Subscription required.
+NameValueTypeRequiredDescription
+format
+json change
+string true
+Desired response format. Valid entries are XML or JSON.
+season
+
+string true
+Year of the season and the season type. If no season type is provided, then the default is regular season
+Examples: 2015REG, 2015PRE, 2015POST.
+
+SportsDataIO
+1100 E. Hector St, Ste 393
+Conshohocken, PA 19428
+ (610) 233-1333
+Copyright © 2025 SportsDataIOTM
+Terms of Service
+Privacy Policy

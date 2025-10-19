@@ -1,0 +1,786 @@
+Fantasy Football For Dummies®
+Published by
+Wiley Publishing, Inc.
+111 River St.
+Hoboken, NJ 07030-5774
+www.wiley.com
+Copyright © 2022 by John Wiley & Sons, Inc., Hoboken,
+New Jersey
+Published by Wiley Publishing, Inc., Indianapolis, Indiana
+Published simultaneously in Canada
+No part of this publication may be reproduced, stored in
+a retrieval system, or transmitted in any form or by any
+means, electronic, mechanical, photocopying, recording,
+scanning, or otherwise, except as permitted under
+Sections 107 or 108 of the 1976 United States Copyright
+Act, without either the prior written permission of the
+Publisher, or authorization through payment of the
+appropriate per-copy fee to the Copyright Clearance
+Center, 222 Rosewood Drive, Danvers, MA 01923, 978-
+750-8400, fax 978-646-8600. Requests to the Publisher
+for permission should be addressed to the Legal
+Department, Wiley Publishing, Inc., 10475 Crosspoint
+Blvd., Indianapolis, IN 46256, 317-572-3447, fax 317-
+572-4355, or online at http://www.wiley.com/go/permissions.
+Trademarks: Wiley, the Wiley Publishing logo, For
+Dummies, the Dummies Man logo, A Reference for the
+Rest of Us!, The Dummies Way, Dummies Daily, The Fun
+and Easy Way, Dummies.com and related trade dress are
+trademarks or registered trademarks of John Wiley &
+Sons, Inc. and/or its aﬀiliates in the United States and
+other countries, and may not be used without written
+permission. All other trademarks are the property of
+their respective owners. Wiley Publishing, Inc., is not
+associated with any product or vendor mentioned in this
+book.
+LIMIT OF LIABILITY/DISCLAIMER OF WARRANTY:
+WHILE THE PUBLISHER AND AUTHORS HAVE USED
+THEIR BEST EFFORTS IN PREPARING THIS WORK,
+THEY MAKE NO REPRESENTATIONS OR
+WARRANTIES WITH RESPECT TO THE ACCURACY OR
+COMPLETENESS OF THE CONTENTS OF THIS WORK
+AND SPECIFICALLY DISCLAIM ALL WARRANTIES,
+INCLUDING WITHOUT LIMITATION ANY IMPLIED
+WARRANTIES OF MERCHANTABILITY OR FITNESS
+FOR A PARTICULAR PURPOSE. NO WARRANTY MAY
+BE CREATED OR EXTENDED BY SALES
+REPRESENTATIVES, WRITTEN SALES MATERIALS OR
+PROMOTIONAL STATEMENTS FOR THIS WORK. THE
+FACT THAT AN ORGANIZATION, WEBSITE, OR
+PRODUCT IS REFERRED TO IN THIS WORK AS A
+CITATION AND/OR POTENTIAL SOURCE OF FURTHER
+INFORMATION DOES NOT MEAN THAT THE
+PUBLISHER AND AUTHORS ENDORSE THE
+INFORMATION OR SERVICES THE ORGANIZATION,
+WEBSITE, OR PRODUCT MAY PROVIDE OR
+RECOMMENDATIONS IT MAY MAKE. THIS WORK IS
+SOLD WITH THE UNDERSTANDING THAT THE
+PUBLISHER IS NOT ENGAGED IN RENDERING
+PROFESSIONAL SERVICES. THE ADVICE AND
+STRATEGIES CONTAINED HEREIN MAY NOT BE
+SUITABLE FOR YOUR SITUATION. YOU SHOULD
+CONSULT WITH A SPECIALIST WHERE APPROPRIATE.
+FURTHER, READERS SHOULD BE AWARE THAT
+WEBSITES LISTED IN THIS WORK MAY HAVE
+CHANGED OR DISAPPEARED BETWEEN WHEN THIS
+WORK WAS WRITTEN AND WHEN IT IS READ.
+NEITHER THE PUBLISHER NOR AUTHORS SHALL BE
+LIABLE FOR ANY LOSS OF PROFIT OR ANY OTHER
+COMMERCIAL DAMAGES, INCLUDING BUT NOT
+LIMITED TO SPECIAL, INCIDENTAL,
+CONSEQUENTIAL, OR OTHER DAMAGES.
+For general information on our other products and
+services, please contact our Customer Care Department
+within the U.S. at 800-762-2974, outside the U.S. at 317-
+572-3993, or fax 317-572-4002.
+For technical support, please visit
+www.wiley.com/techsupport.
+Wiley also publishes its books in a variety of electronic
+formats. Some content that appears in print may not be
+available in electronic books.
+Library of Congress Control Number: 2022939059
+ISBN: 978-1-119-88332-6 (pbk); ISBN 978-1-119-88333-3
+(ebk); ISBN 978-1-119-88334-0 (ebk)
+Fantasy Football For
+Dummies®
+To view this book's Cheat Sheet,
+simply go to www.dummies.com and
+search for Fantasy Football For
+Dummies Cheat Sheet” in the Search
+box.
+Table of Contents
+Cover
+Title Page
+Copyright
+Introduction
+About This Book
+Conventions Used in This Book
+What You’re Not to Read
+Foolish Assumptions
+How This Book Is Organized
+Icons Used in This Book
+Where to Go from Here
+Part 1: The Xs and Os of Fantasy Football: Just
+the Basics, Please
+Chapter 1: The Reality of Fantasy Football:
+What’s It All About?
+Understanding Fantasy Football: A Quick Overview
+Recognizing That Fantasy Success Starts with the Draft
+Drafting the Right Players for Your Roster
+Your New Day Job: Managing Your Team Week by Week
+Are You Ready to Play?
+Chapter 2: Just Score, Baby: The Name of
+the Fantasy Game
+Scoring 101: Only the Basics
+The Proof’s in the Points: Oﬀensive Fantasy Scoring
+Shooting for Shutouts: Scoring with Defense
+You versus Who? Knowing the Scoring Format
+Chapter 3: Finding a League Right for You
+Understanding Your League Options: Public or Private
+Identifying Other Important Considerations
+Picking Your League: The How-To
+Starting Your Own League: You Want to Be a
+Commissioner?
+Chapter 4: Preparing for Your Fantasy Draft
+Dissecting the Two Main Draft Types
+Mastering Your Domain: Focus on League Rules and
+Settings
+Identifying and Preparing Your Draft Venue
+Practicing with a Mock Draft
+Joining a Practice League
+Researching the NFL: The Real Key to Fantasy Success
+Part 2: Advanced Scouting and Drafting Secrets
+Chapter 5: Scouting Running Backs and
+Quarterbacks
+Running Backs: Riding the Workhorses of Fantasy Football
+Quarterbacks: Counting on the Arms of the Field Generals
+Chapter 6: Scouting Wide Receivers and
+Tight Ends for Starters and FLEX
+Eyeing the Go-To Guys: Wide Receivers
+Blocking Bore or Big-Time Threat? Picking Tight Ends
+Mr. Versatile: Consider the FLEX
+Chapter 7: Scouting Kickers and Defenders
+Nailing the Field Goals and Extra Points: The Kickers
+Guarding the Gridiron: The Team Defenses
+Chapter 8: Incorporating Important Draft
+Strategies into Your Game
+Why Strategy Is Important in Fantasy Drafts
+Identifying the Most Popular Draft Strategies
+Applying the Draft Strategies: Who to Pick and When
+Manipulating Your Budget during a Salary Cap Draft
+Chapter 9: Considering Other Draft Tactics
+to Build a Winning Team
+Avoiding Personal Biases
+Drafting Your Stars’ Backups as Insurance Policies
+Considering Rookies: Are the Top Rookies Worth Drafting?
+Thinking Ahead to the Fantasy Playoﬀs
+Part 3: Let the Games Begin: In-Season Strategy
+Guide
+Chapter 10: Setting Your Weekly Starting
+Lineup
+Why Reviewing Your Roster Is Vital
+Reasons Why You May Need to Adjust Your Lineup
+The How-To: Making the Actual Adjustments
+Meeting Your Lineup Deadlines
+Hitting the Film Room: Using Media to Your Advantage
+Chapter 11: Acquiring Players via Free
+Agency, Waivers, and Trades
+Investigating Free Agency
+Walking the Waiver Wire
+All the Right Moves: Tips for Adding to Your Roster
+Making a Trade Oﬀer: The Art of the Deal
+Chapter 12: Finishing Strong: Down the
+Stretch to the Fantasy Playoﬀs
+Welcome to the Show: The Fantasy Football Playoﬀs
+Aiming for the Playoﬀs: Ways to Improve Your Roster
+Setting Your Playoﬀ Starting Lineup
+Reaching the Big Kahuna: The Fantasy Title Game
+Part 4: Daily Fantasy Football: A New Draft Every
+Week
+Chapter 13: Place Your Bets: Fantasy
+Football Style
+Legalized Gambling? Not Quite
+Understanding What Makes Daily Fantasy Sports Diﬀerent
+from Standard Fantasy Football
+Using the Daily Fantasy Big Two: DraftKings and FanDuel
+Getting Started
+Bankroll Management
+Gambling Responsibly
+Chapter 14: Finding Your Game: Standard
+Contest Types
+Playing the Big Three Classic Contest Types
+Using Strategies for Winning Cash Games: H2H or 50/50s
+Guaranteed Prize Pool Tournaments: Big Payouts and
+Bigger Challenges
+Employing Draft Strategies for Winning GPPs
+Other Popular Contests Worth Checking Out
+Chapter 15: Virtual Salary Cap: Advanced
+Play Strategies
+Understanding Value
+Controlling Exposure
+Being Contrarian
+Fading
+Stacking
+Employing Hedge Lineups
+Chapter 16: Scoring the Right DFS Provider:
+FanDuel versus DraftKings and More
+Playing on DraftKings: A How-to Guide
+FanDuel in the Sun: A How-to Guide
+DraftKings versus FanDuel: Which Is the Victor?
+Playing on Yahoo! Fantasy
+Monkey Knife Fight: Fantasy for the Rest of Us
+So Which Service Is for You?
+Part 5: The Part of Tens
+Chapter 17: Ten Quick Fixes to Make the
+Day after Your Draft
+Look for Bye-Week Problems
+Replace Injured Players
+Assess Your Team’s Strengths
+Know Your Team’s Weaknesses
+Swim in the Free Agent Pool
+Trading from Surplus
+Find Trading Partners
+Know Your Opponents’ Rosters
+Upgrade Your Kicker and Defense Positions
+If It Isn’t Broken, Don’t Fix It
+Chapter 18: Ten Rookie Mistakes to Avoid
+Taking a Kicker Too Early
+Drafting a Team DEF Too Early
+Picking a QB Too Early
+Selecting Players with the Same Bye Week
+Ignoring the NFL Schedule
+Trash Talking Too Much
+Failing to Create or Neglecting Your Cheat Sheets
+Ignoring Injury Updates
+Missing the Draft Entirely
+Believing the Fantasy Hype
+Chapter 19: Ten Daily Fantasy Tips and
+Tricks
+Picking Your Provider
+Knowing the Diﬀerences between Cash Games and
+Tournaments
+Your Bankroll Is Your Lifeblood
+Drafting for the Moment
+Understanding Value Is Key to Winning
+Multi-entries Can Be a Powerful Multiplier
+Stacking Is Your Friend
+Guaranteed Contests Can Guarantee Profits
+Gambling Responsibly
+Watch Out for the Taxman!
+Index
+About the Author
+Connect with Dummies
+End User License Agreement
+List of Tables
+Chapter 1
+TABLE 1-1 A Good Week for Your Fantasy Team
+Chapter 4
+TABLE 4-1 The Standard Snake Draft
+TABLE 4-2 A Positional Cheat Sheet
+List of Illustrations
+Chapter 3
+FIGURE 3-1: Victory on your mantel!
+Chapter 4
+FIGURE 4-1: A draft board tracks the picks during the draft.
+Introduction
+In 1999, I was exactly where you may be right now. I
+decided to give the whole “fantasy football” thing a try,
+even though I had no idea how to play.
+Back then, the online version of the game was just
+starting to take oﬀ, and Yahoo! had just begun oﬀering
+its free league services. I did a bit of research and talked
+to a few buddies about strategy, but I mainly learned the
+game through trial and error(s). I had no definitive
+resource guide to help me get oﬀ to a good start in my
+fantasy football career.
+Things have changed today. Since 2007, Fantasy Football
+For Dummies has put helpful guidance and friendly
+advice right at your fingertips — the keys to a successful
+fantasy season, which I didn’t have when I began to play
+the game. This resource can make your fantasy football
+season less frustrating. You can avoid many mistakes and
+start racking up victories by knowing the basics of the
+game, the popular strategies for winning, and the
+etiquette of league play.
+Also, when I began playing, I knew very little about the
+available online resources. I just bought the first fantasy
+magazine I saw and went from there (and yes, printed
+magazines still exist). This book also includes an
+overview of major fantasy football providers and expert
+websites that oﬀer tools and advice you can turn to when
+looking to improve your team.
+Now with this second edition, I’ve refined strategies and
+updated the facts to match today’s NFL and fantasy rule
+sets, including FLEX and PPR. I also cover the biggest
+boom in fantasy football since the Internet: Daily Fantasy
+Football. In an all new Part 4 of this book, I deep dive
+into DraftKings, FanDuel and all things DFS involving
+online prize money: It’s fast paced, exciting and you can
+bet big to win big, but play at your own risk!
+Fantasy football was built to mirror the best parts of pro
+football and it does just that. Fantasy football is as
+exciting and fun as it is frustrating and unpredictable.
+Hope for the best and expect the worst!
+About This Book
+Fantasy Football For Dummies gives you the foundational
+information you need to play fantasy football. This book
+is a unique guide because it oﬀers in-depth lessons on
+how to play the game and serves as a reference for
+where to play and where to get great expert advice.
+Unlike most fantasy websites and magazines, which oﬀer
+advice with the assumption that you’re already a fantasy
+addict, this book serves the beginning fantasy player
+along with plenty of advice sprinkled throughout for
+more advanced players. You can open this book, scan the
+table of contents or index to find a subject that interests
+you, and flip to those pages to improve certain parts of
+your fantasy game or read from beginning to end to get
+an understanding of the full spectrum of the fantasy
+football world.
+Conventions Used in This
+Book
+I provide the following basic conventions to help you
+navigate your way through the concepts and discussions
+in this book:
+I italicize all new terms and follow them with easy-to-
+understand definitions.
+I boldface all keywords in bulleted lists and all steps
+in numbered lists.
+I use monofont to highlight all websites and email
+addresses to set them apart from the normal text.
+Most of the companies that provide fantasy football
+games and content have websites of the same name.
+For example, you can find Rotowire at www.rotowire.com.
+If some web addresses break across two lines of text,
+rest assured that I didn’t put in any extra characters
+(such as hyphens) to indicate the breaks. So, when
+using a web address that spans two lines of text, type
+in exactly what you see, pretending as though the line
+break doesn’t exist. For the fantasy websites, I also
+capitalize all the links to help you easily identify them.
+Although you can choose to play fantasy football on a
+wide array of web providers, to simplify matters
+throughout this book I use the default settings for
+Yahoo!. No matter what provider you choose, make
+sure you double-check the league settings before you
+start to play.
+Furthermore, because fantasy football is a game based
+on the National Football League (NFL), it can feature
+some confusing terminology. For example, each person
+who plays fantasy football is a player in the fantasy
+game, and they depend on the players in the NFL game.
+See what I mean? Therefore, when I refer to coaches, I
+mean you, the fantasy participant — unless I specifically
+say “NFL coach.” Whenever I say player, I’m referring to
+the NFL players who make up your fantasy league.
+Finally, fantasy sites and experts use a lot of positional
+shorthand based on NFL depth charts, and this book is
+no diﬀerent. I call the starting running back the RB1,
+and his backups are called RB2 and RB3. You can apply
+the same shorthand when you’re the king of your own
+team’s depth chart. Here are the positional abbreviations
+to look for:
+QB = Quarterback
+RB = Running back
+WR = Wide receiver
+TE = Tight end
+K = Kicker
+DEF = Team defense
+D/ST = Defense/Special teams
+What You’re Not to Read
+Throughout the book, there might be personal asides or
+historical references to the crazy game we call fantasy
+football. These anecdotes, which I often place in
+sidebars, are not essential reading in order to grasp
+fantasy football.
+Foolish Assumptions
+When writing this book, I made a couple of assumptions
+about you, my dear reader. Here are my two main
+assumptions:
+You’re a football fan. I don’t explain how oﬀenses
+can get a first down or when the forward pass was
+invented. You know the pro league, and you know
+many of the NFL stars by name. Understanding the
+game helps you evaluate talent and choose quality
+players during the fantasy draft process and during the
+season. It’s possible to stick only to expert advice and
+cheat sheets to play fantasy football, but I don’t advise
+it. For a more in-depth look at the game and rules of
+football, check out Football For Dummies, 6th Edition,
+by Howie Long and John Czarnecki (Wiley).
+You own (or have regular access to) a computer
+or a smartphone and you’re not afraid to use it.
+Almost all fantasy leagues are run exclusively online,
+from the drafting process to weekly team
+management. I assume that you can surf the web,
+download an app and click on links. Being able to
+navigate the Internet quickly and eﬀectively is part of
+the game.
+How This Book Is
+Organized
+Fantasy Football For Dummies explains the game to you
+from start (the draft) to finish (the championship).
+However, like the NFL, the fantasy season is never truly
+over. You can use the research information to scout
+players and potential sleepers year-round. This book is
+organized so that you can jump in anywhere, depending
+on your experience level and the status of your season
+and league.
+Part 1: The Xs and Os of Fantasy
+Football: Just the Basics, Please
+Part 1 provides readers with an overview of the game.
+You find out how it works, how diﬀerent fantasy leagues
+are set up and run, why scoring is so important in
+fantasy football, and how you can join or create a league
+that’s right for you. I also explain how you can prepare
+for the most fun day on the fantasy calendar: the all-
+important fantasy league draft.
+Part 2: Advanced Scouting and
+Drafting Secrets
+Researching the NFL players and picking the best
+possible talent for your fantasy team is a very important
+aspect of fantasy football. This part provides guidelines
+for you to use when you try to separate the wheat from
+the chaﬀ at the diﬀerent roster positions. Then when
+you’re ready for draft day, this part explains important
+draft strategies to help you assemble your team.
+Part 3: Let the Games Begin: In-
+Season Strategy Guide
+After you assemble your dream team in the draft (or
+endure a nightmare brought on by another coach always
+selecting your coveted players), you need to know how to
+guide your team to glory during the fantasy season. This
+part walks you through your many in-season
+management duties and breaks down the most common
+issues you’ll face and decisions you’ll have to make. If
+you draft well and you make some shrewd moves during
+the season, your team may qualify for your league’s
+playoﬀs, and you may even win your league
+championship! The fantasy postseason is its own beast,
+so I end this part by explaining the rules and strategies
+for enjoying postseason success.
+Part 4: Daily Fantasy Football – A
+New Draft Every Week
+Fantasy football can be fun, but what happens when you
+aren’t interested in playing through a whole season? Is
+there a way to apply your fantasy football drafting skills
+for one week, or even just one game? Yes. It’s called
+Daily Fantasy Football. And it’s taking the NFL and
+fantasy sports by storm.
+Part 4 focuses on introducing you to this exciting recent
+development in fantasy sports, by exploring the basics of
+finding a DFS provider, setting up an account, and then
+getting started entering tournaments and competitions.
+Learn the diﬀerence between popular contest types,
+from 50/50s to H2Hs to larger Guaranteed Prize Pool
+tournaments worth hundreds of thousands of dollars!
+Part 5: The Part of Tens
+Part 5 is the classic For Dummies feature, the Part of
+Tens. The chapters here are filled with quick reminders
+that you can refer to before your draft and well into the
+fantasy season. Specifically, I present ten quick fixes you
+can make after your draft concludes and you determine
+that your team is less than perfect. I also cover ten
+common rookie mistakes you should avoid at any time
+during your fantasy season. Finally, I oﬀer ten tricks and
+tips to get winning in Daily Fantasy contests and
+tournaments.
+Icons Used in This Book
+To help you navigate your way through this book, I
+provide the following friendly and useful icons in the left
+margin. These little pictures enhance your reading
+pleasure and point out specific types of information.
+This icon provides some fantasy football advice in
+a nutshell. I give you specific actions or strategies
+you can implement to improve your team or your
+fantasy football gaming experience.
+Here you find important advice worth repeating
+and remembering. If you have time to only skim the
+chapters I provide here, these are the bits of
+information you should keep with you.
+Most fantasy advice follows the “rule,” but there
+are always “exceptions,” right? When I see a possible
+contradiction or a path that could lead you to fantasy
+failure or exile from the rest of your league mates, I
+warn you about it. Consider this icon a yellow flag.
+Where to Go from Here
+Like all For Dummies titles, this is a reference book, and
+each chapter is a modular piece about a specific area of
+fantasy football. You can skip around and not get lost!
+Flip to the table of contents or the index, find the
+location of what you want to know, read what you want
+to read, and feel free to skip the rest of the info.
+If you’re totally new to the game, you can start your
+reading with Part 1. If you know the game but want to
+improve your skills as a fantasy coach, you may want to
+focus on Parts 2 and 3. If you already had your league’s
+draft, you may want to skip to Part 3, which discusses in-
+season game management. If you are here to learn how
+to master Daily Fantasy Sports play, then skip to Part 4!
+From the day you first sign up for a fantasy league to the
+day you hoist your league’s championship trophy over
+your head to the day you sign up for another season, this
+book will be your guide through the world of fantasy
+football. No matter what you read, I wish you luck in
+your future fantasy adventures.
+Part 1
+The Xs and Os of Fantasy
+Football: Just the Basics,
+Please
+IN THIS PART …
+If you’re new to the game of fantasy football, Part I has
+you covered. Chapter 1 gives you the quick lowdown on
+fantasy football. In Chapter 2, I explain how fantasy
+points are scored and why scoring is so important to the
+game. Chapter 3 covers the types of leagues available to
+fantasy players and helps you determine which one to
+join, if you aren’t already in one. Finally, Chapter 4 helps
+prepare you for your fantasy draft so you can create a
+fantasy team that would make NFL general managers
+green with envy.
+Chapter 1
+The Reality of Fantasy
+Football: What’s It All
+About?
+IN THIS CHAPTER
+Focusing on fantasy football’s big picture
+Getting up to speed on the draft process
+Filling your roster with the right players
+Reviewing the responsibilities of team
+management
+Starting your fantasy journey
+Sports fans usually root only for their favorite local
+teams, but fantasy sports allow the diehard sports fan to
+root for every team. In fact, playing fantasy makes
+watching every real game more fun and exciting.
+Millions of online fantasy sports enthusiasts can’t be
+wrong. The biggest of all the fantasy sports is fantasy
+football, and after you start playing, you’ll quickly know
+why. But before you start playing fantasy football, you
+need to know the basics.
+This chapter gives you a quick overview of fantasy
+football. Consider this chapter your jumping oﬀ point
+into fantasy football. If you already know how to play but
+want to improve your game, feel free to skip to Chapter
+4. However, if you keep reading, you may discover
+something about fantasy football that you didn’t know!
+This chapter focuses on season-long fantasy football
+leagues, also known as ”standard” leagues. If you’re
+looking to play “Daily Fantasy Football” or “DFS,” these
+basics still apply, and the diﬀerences between the two is
+explained in more detail in Part 4.
+Understanding Fantasy
+Football: A Quick Overview
+What is fantasy football all about? Instead of just
+watching the NFL game, fantasy football allows you to
+feel like you’re part of the action by assembling an all-
+star lineup of the best players in the league. Fantasy
+allows you to imagine the fireworks of all those football
+stars playing as one unit. In this section, I give you a
+quick walkthrough of the basics of fantasy football so you
+can get a better grasp of this popular activity you’re
+considering playing.
+How fantasy and the NFL diﬀer
+When comparing fantasy and the NFL, two significant
+diﬀerences stick out. In the NFL, all that matters is
+which team wins or loses. In fantasy, however, NFL wins
+and losses don’t count. Instead of team stats, fantasy
+relies not only on scored touchdowns but also on
+individual stats (such as yards gained) to calculate each
+fantasy player’s performance based on a determined
+league scoring system (see Chapter 2 for more on
+scoring). The results are called fantasy points, and your
+team’s fantasy point total is the sum of your starting
+players’ eﬀorts. Your fantasy team will win or lose based
+on those results. So, in a way, fantasy football and the
+NFL both are about wins and losses that lead up to the
+best teams battling in a playoﬀ format to decide a
+champion (see Chapter 12).
+The other major diﬀerence is that fantasy teams consist
+of players from every team in the league, not just one
+NFL team (see the “Drafting the Right Players for Your
+Roster” section later in this chapter for a breakdown of a
+fantasy team roster). Only the best players are drafted;
+thus, each team is a sports fan’s fantasy. Everything else
+in the game tries to reflect and simulate real football.
+How to play fantasy football
+So, you’ve decided that you want to play fantasy football.
+Perhaps a buddy asked you to join a league, or maybe a
+coworker started talking trash and bet that he could
+easily beat you in a new league that he’s forming.
+Perhaps you don’t know anyone who plays, but you’re
+always hearing about fantasy football and you want to
+join a public league to find out what the fuss is all about.
+No matter your reasons for playing fantasy
+football, you’re in for a fun-filled experience that’s
+sure to get you hooked. I can guarantee that at
+diﬀerent times, this game can make you cheer, drive
+you nuts, and break your heart. The following list
+gives you a snapshot of what happens in a fantasy
+season:
+1. You join a league.
+You can join a public league, where anyone can sign
+up for a spot, or a private league, where you need an
+invitation to play. Some people play just for fun and
+some play for serious coin. League selection is an
+important factor, so don’t take it lightly. Chapter 3
+discusses the diﬀerent kinds of leagues and what to
+look for when signing up for one.
+2. You prepare for your league draft by scouting
+players.
+Before choosing your fantasy team, you need to
+research all the available players so you can pre-rank
+them according to your personal preference. In
+Chapters 5, 6, and 7, I tell you what I look for when
+scouting the NFL so you can become your own expert.
+3. You build your fantasy team via the draft.
+The draft is the most fun and exciting day of the
+fantasy season. During the draft, each fantasy coach
+selects one NFL player at a time until the rosters are
+complete. Chapter 4 explains how to prepare for
+every type of draft and how the draft works. Chapters
+8 and 9 oﬀer in-depth draft strategies to help you
+outsmart your opponents and create a fantasy force.
+4. Your team competes against another team every
+week.
+During the NFL season, the real teams face each
+other and so do the fantasy teams in your league. The
+players’ real-time stats are converted into fantasy
+points by your league provider, and in the most
+common head-to-head leagues, the fantasy team that
+scores the most points wins the game for the week.
+Points-based leagues work a little diﬀerently. Check
+out Chapter 2 for a breakdown of how fantasy scoring
+works.
+5. You make moves to improve your team.
+As a fantasy coach, you’re in total control. You can
+drop players you think aren’t good enough and
+replace them with free agents. If one of your starters
+gets hurt, you can bench him and start a healthy
+player instead. You may even make a trade oﬀer to
+another coach. Chapters 10 and 11 explain how to
+manage your team each week and how to adjust your
+roster via player movement.
+6. Your team (hopefully) makes the playoﬀs and
+wins your league.
+Only the strong survive, and at the end of the fantasy
+season, the top teams square oﬀ in a tournament to
+decide the league champion. Chapter 12 oﬀers some
+strategic advice for managing your playoﬀ team and
+presents a breakdown of the various playoﬀ formats.
+The last team standing may win a trophy, a cash prize,
+or just honor; but make no mistake, there will be only
+one winner.
+How scoring makes you a winner
+Fantasy football simulates the real deal by using a
+performance-based scoring system. A touchdown (TD) is
+worth 6 points for an NFL team and 6 fantasy points for
+a player on a fantasy team (for rushing or receiving
+touchdowns. Many leagues count passing TDs for 4
+points). Fantasy players are also awarded 0.5 or 1 point
+per catch, points for yardage gained, such as 1 point for
+every ten yards gained rushing or receiving. Bad NFL
+plays often count as negative fantasy points;
+interceptions and fumbles lost can be worth -1 to -2
+points respectively. In general, every statistic can be
+used to rate a player’s achievements, good and bad,
+depending on your fantasy league.
+Your fantasy team’s final score each week is the
+sum of all your starting players’ fantasy points. Table
+1-1 shows an example of fantasy scoring for one
+week in a league with fractional and negative points.
+Don’t worry about having to calculate all this each
+week. Your league provider does the math for you.
+For more specifics about scoring, check out Chapter
+2.
+TABLE 1-1 A Good Week for Your Fantasy
+Team
+Position Actual
+Performance
+Fantasy Points
+Scored
+Fantasy Point
+Total
+Quarterback
+240 yds passing
+2 touchdowns
+1 interception
+240 / 25 = 9.6
+2 x 4 = 8
+1 x -2 = -1
+16.6
+Wide receiver
+110 yds receiving
+6 receptions
+1 touchdown
+110 / 10 = 11
+6 x 0.5 = 3 PPR
+1 x 6 = 6
+20
+Wide receiver 85 yds receiving
+3 receptions
+85 / 10 = 8.5
+3 x 0.5 = 1.5 PPR 10
+Running back
+140 yds rushing
+35 yds receiving
+2 receptions
+3 touchdowns
+140 / 10 = 14
+35 / 10 = 3.5
+2 x 0.5 = 1 PPR
+3 x 6 = 18
+36.5
+Running back
+80 yds rushing
+75 yds receiving
+4 receptions
+1 touchdown
+2 lost fumbles
+80 / 10 = 8
+75 / 10 = 7.5
+4 x 0.5 = 2 PPR
+1 x 6 = 6
+2 x -2 = -4
+19.5
+Tight End
+40 yds receiving
+3 receptions
+1 lost fumble
+40 / 10 = 4
+3 x 0.5 = 1.5 PPR
+1 x -2 = -2
+7.5
+FLEX
+(WR/RB/TE)
+110 yds receiving
+6 receptions
+1 touchdown
+110 x 10 = 11
+6 x 0.5 = 3 PPR
+6 x 1 = 6
+20
+Kicker 2 field goals
+2 extra points
+2 x 3 = 6
+2 x 1 = 2 8
+Position Actual
+Performance
+Fantasy Points
+Scored
+Fantasy Point
+Total
+Team defense
+14 points allowed
+2 sacks
+1 fumble
+recovered
+1 interception
+14 points = 1
+2 x 1 = 2
+1 x 2 = 2
+1 x 2 = 2
+7
+TOTAL: 145.1
+How important fantasy terms keep
+you in the loop
+Like the rest of the sports world, fantasy sports has a
+lingo all its own. The slang terms are all fairly easy to
+grasp and fun to use, so don’t be scared oﬀ! I include the
+following list so you can get a good feel for these fantasy
+football terms before you start playing, and I use them
+repeatedly throughout the book:
+Breakout: When a player goes from average to great.
+Bye week: Every NFL team is inactive once during the
+regular season; an NFL team’s oﬀ week is its bye
+week.
+Cheat sheets: The lists of pre-ranked players —
+overall and by position; see Chapter 4.
+Collusion: Two coaches working together to win a
+league; see Chapter 11.
+Daily Fantasy: An alternative to standard fantasy
+football where you bet money on individual weeks or
+games; see Part 4.
+Damaged goods: When a player involved in a trade
+is hurt; see Chapter 11.
+Elite: The highest ranked players at their positions.
