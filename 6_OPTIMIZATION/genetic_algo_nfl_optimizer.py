@@ -83,6 +83,16 @@ except ImportError as e:
     print(f"⚠️ Probability Enhanced Optimizer not available: {e}")
     PROBABILITY_OPTIMIZER_AVAILABLE = False
 
+# Import the NFL Stack Engine
+try:
+    from nfl_stack_engine import NFLStackEngine
+    from nfl_stack_config import NFL_STACK_TYPES, get_stack_positions
+    NFL_STACK_ENGINE_AVAILABLE = True
+    print("✅ NFL Stack Engine loaded successfully!")
+except ImportError as e:
+    print(f"⚠️ NFL Stack Engine not available: {e}")
+    NFL_STACK_ENGINE_AVAILABLE = False
+
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # NFL DraftKings Settings
@@ -92,17 +102,16 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 def map_nfl_stack_to_backend(stack_type):
     """
     Map new NFL stack names from GUI to backend processing format
-    
-    For now, we map to a simplified format until full nfl_stack_engine integration
+    Now properly integrated with nfl_stack_engine
     """
     stack_mapping = {
-        "QB + WR": "No Stacks",  # Temporary: treat as no stack until backend integrated
-        "QB + 2 WR": "No Stacks",
-        "QB + WR + TE": "No Stacks",
-        "QB + WR + RB": "No Stacks",
-        "QB + 2 WR + TE": "No Stacks",
-        "Game Stack": "No Stacks",
-        "Bring-Back": "No Stacks",
+        "QB + WR": "qb_wr",
+        "QB + 2 WR": "qb_2wr",
+        "QB + WR + TE": "qb_wr_te",
+        "QB + WR + RB": "qb_wr_rb",
+        "QB + 2 WR + TE": "qb_2wr_te",
+        "Game Stack": "game_stack",
+        "Bring-Back": "bring_back",
         "No Stack": "No Stacks"
     }
     
@@ -642,6 +651,87 @@ def optimize_single_lineup(args):
             
             # Log final enforcement summary
             logging.info(f"📊 STACK CONSTRAINT SUMMARY: {stack_size}-stack will be enforced using teams: {valid_teams}")
+    elif stack_type in ["qb_wr", "qb_2wr", "qb_wr_te", "qb_wr_rb", "qb_2wr_te", "game_stack", "bring_back"] and NFL_STACK_ENGINE_AVAILABLE:
+        # Use NFL Stack Engine for named stack types
+        logging.info(f"🎯 OPTIMIZER: Processing NFL stack type: {stack_type}")
+        
+        # Initialize stack engine
+        stack_engine = NFLStackEngine(df)
+        
+        # Get stack configuration
+        stack_info = NFL_STACK_TYPES.get(stack_type, {})
+        if not stack_info:
+            logging.warning(f"Unknown stack type {stack_type}, treating as no stack")
+        else:
+            # Get required positions for this stack
+            positions = get_stack_positions(stack_type)
+            same_team_positions = positions.get('same_team', [])
+            
+            logging.info(f"🎯 Stack '{stack_info.get('name', stack_type)}' requires: {same_team_positions} from same team")
+            
+            # Get available teams from selections
+            available_teams = []
+            if isinstance(team_selections, dict):
+                # Try various keys to find team selections
+                for key in [stack_type, "all", "qb_stacks", "game_stacks"]:
+                    if key in team_selections:
+                        available_teams = team_selections[key]
+                        break
+            elif isinstance(team_selections, list):
+                available_teams = team_selections
+            
+            if not available_teams:
+                available_teams = df['Team'].unique().tolist()
+                logging.warning(f"No specific teams selected for {stack_type}, using all teams")
+            
+            # Validate and filter teams
+            valid_teams = []
+            for team in available_teams:
+                is_feasible, msg = stack_engine.validate_stack_feasibility(stack_type, team)
+                if is_feasible:
+                    valid_teams.append(team)
+                else:
+                    logging.debug(f"Team {team} not feasible for {stack_type}: {msg}")
+            
+            if not valid_teams:
+                logging.warning(f"No valid teams for {stack_type} stack")
+            else:
+                # Create stacking constraints
+                # For QB-WR-TE stack: ensure QB, at least 1 WR, and TE are from same team
+                if len(valid_teams) == 1:
+                    # Single team - direct constraint
+                    team = valid_teams[0]
+                    for pos in same_team_positions:
+                        team_pos_players = df[(df['Team'] == team) & (df['Position'] == pos)].index
+                        if len(team_pos_players) > 0:
+                            if pos == 'WR' and '2wr' in stack_type:
+                                # Need at least 2 WRs
+                                problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) >= 2
+                                logging.info(f"✅ ENFORCING: At least 2 {pos} from {team}")
+                            else:
+                                # Need at least 1 of this position
+                                problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) >= 1
+                                logging.info(f"✅ ENFORCING: At least 1 {pos} from {team}")
+                else:
+                    # Multiple teams - create binary variables to select one team
+                    team_binary_vars = {team: pulp.LpVariable(f"stack_team_{team}", cat='Binary') for team in valid_teams}
+                    
+                    # Exactly one team must be selected for the stack
+                    problem += pulp.lpSum(team_binary_vars.values()) == 1
+                    
+                    # If a team is selected, enforce position requirements
+                    for team in valid_teams:
+                        for pos in same_team_positions:
+                            team_pos_players = df[(df['Team'] == team) & (df['Position'] == pos)].index
+                            if len(team_pos_players) > 0:
+                                if pos == 'WR' and '2wr' in stack_type:
+                                    # Need at least 2 WRs when this team is selected
+                                    problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) >= 2 * team_binary_vars[team]
+                                else:
+                                    # Need at least 1 of this position when this team is selected
+                                    problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) >= 1 * team_binary_vars[team]
+                    
+                    logging.info(f"✅ ENFORCING: {stack_info.get('name', stack_type)} from one of: {valid_teams}")
     else:
         # Implement complex stacking with proper team selection enforcement
         stack_sizes = [int(size) for size in stack_type.split('|')]
