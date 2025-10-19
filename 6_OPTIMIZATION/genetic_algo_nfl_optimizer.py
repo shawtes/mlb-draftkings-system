@@ -2451,9 +2451,19 @@ class FantasyFootballApp(QMainWindow):
             if stack_pattern == "No Stacks":
                 stack_sizes = [1]  # Treat as single team selection
                 teams_needed = 1
+            elif stack_pattern in ["qb_wr", "qb_2wr", "qb_wr_te", "qb_wr_rb", "qb_2wr_te", "game_stack", "bring_back"]:
+                # Named NFL stack types - single team stacks
+                stack_sizes = [stack_pattern]  # Keep as string
+                teams_needed = 1  # All positions come from same team
             else:
-                stack_sizes = [int(x) for x in stack_pattern.split('|')]
-                teams_needed = len(stack_sizes)
+                # Numeric stack patterns like "3|4|5"
+                try:
+                    stack_sizes = [int(x) for x in stack_pattern.split('|')]
+                    teams_needed = len(stack_sizes)
+                except ValueError:
+                    # Fallback for unknown formats
+                    stack_sizes = [stack_pattern]
+                    teams_needed = 1
             print(f"[DEBUG] Stack sizes: {stack_sizes}, teams_needed: {teams_needed}")
             
             if len(selected_teams) < teams_needed:
@@ -2505,7 +2515,13 @@ class FantasyFootballApp(QMainWindow):
                 stack_sizes = combo_info['stack_sizes']
                 combo_parts = []
                 for j, team in enumerate(teams):
-                    combo_parts.append(f"{team}({stack_sizes[j]})")
+                    # Handle both numeric and named stack types
+                    if isinstance(stack_sizes[j], int):
+                        combo_parts.append(f"{team}({stack_sizes[j]})")
+                    else:
+                        # For named stacks, just show team with stack type
+                        stack_display = stack_sizes[j].replace('_', '-').upper()
+                        combo_parts.append(f"{team}({stack_display})")
                 combo_text = " + ".join(combo_parts)
                 self.combinations_table.setItem(row, 1, QTableWidgetItem(combo_text))
                 
