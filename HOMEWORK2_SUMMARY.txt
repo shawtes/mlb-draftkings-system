@@ -1,0 +1,197 @@
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                  CSC 3320 HOMEWORK 2 - COMPLETE PACKAGE                       ║
+║                        Sineshaw Mesfin Tesfaye                                ║
+║                          stesfaye4@gsu.edu                                    ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+📦 PACKAGE CONTENTS
+═══════════════════════════════════════════════════════════════════════════════
+
+✅ REQUIRED FILES FOR SUBMISSION:
+  1. homework2.c              - C source code (1.8 KB)
+  2. homework2.bash           - Shell script (822 bytes)
+  3. hw2.log                  - Session recording (you'll create this)
+
+📚 DOCUMENTATION & GUIDES:
+  4. HOMEWORK2_TERMINAL_GUIDE.md    - Complete step-by-step instructions (8.8 KB)
+  5. HOMEWORK2_QUICK_REFERENCE.txt  - Quick reference card (16 KB)
+  6. homework2_README.txt           - Basic instructions (1.7 KB)
+  7. homework2_log.txt              - Example log output (2.6 KB)
+  8. HOMEWORK2_SUMMARY.txt          - This file
+
+💻 COMPILED FILES (for local testing only):
+  9. homework2                - Compiled executable (33 KB)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🎯 QUICK START - FOLLOW THESE 3 STEPS:
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 1: Read the complete guide
+  → Open: HOMEWORK2_TERMINAL_GUIDE.md
+  → This has EVERYTHING you need with detailed explanations
+
+STEP 2: Print/open the quick reference
+  → Open: HOMEWORK2_QUICK_REFERENCE.txt
+  → Keep this visible while working in the terminal
+
+STEP 3: Follow the instructions
+  → Connect to GSU server
+  → Run "script hw2.log" to start recording
+  → Create files, compile, run programs
+  → Run "exit" to stop recording
+  → Download hw2.log to submit
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🔑 CRITICAL INFORMATION:
+═══════════════════════════════════════════════════════════════════════════════
+
+SSH Connection:
+  Server:   student.cs.gsu.edu
+  Username: stesfaye4
+  Password: Sin06251994
+
+Commands to Record Session:
+  Start:  script hw2.log
+  Stop:   exit
+
+Download Log File (from your local computer):
+  scp stesfaye4@student.cs.gsu.edu:~/hw2.log ~/Downloads/
+
+═══════════════════════════════════════════════════════════════════════════════
+
+📝 WHAT YOUR hw2.log SHOULD CONTAIN:
+═══════════════════════════════════════════════════════════════════════════════
+
+✓ Login to GSU server
+✓ Starting script recording
+✓ Creating homework2.c with nano
+✓ Creating homework2.bash with nano
+✓ Compiling: gcc homework2.c -o homework2
+✓ Making executable: chmod +x homework2.bash
+✓ Running C program: ./homework2
+✓ Running shell script: ./homework2.bash
+✓ Listing files: ls -lh homework2*
+✓ Exiting script recording
+
+═══════════════════════════════════════════════════════════════════════════════
+
+⚠️ IMPORTANT NOTES:
+═══════════════════════════════════════════════════════════════════════════════
+
+1. /etc/passwd may not show your account
+   → This is EXPECTED and mentioned in the assignment
+   → Your grade will NOT be affected
+
+2. Process lists may be identical or different
+   → Either is acceptable
+   → The assignment just wants you to compare them
+
+3. The script command records EVERYTHING
+   → Every command you type
+   → Every output you see
+   → Every typo and correction
+   → This is GOOD - shows your work!
+
+4. Both programs must compile and run without errors
+   → Test locally first if you want
+   → But final submission must be from GSU server
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🧪 TEST YOUR WORK LOCALLY (OPTIONAL):
+═══════════════════════════════════════════════════════════════════════════════
+
+The files have already been tested on your Mac:
+
+  cd /Users/sineshawmesfintesfaye/mlb-draftkings-system
+  
+  gcc homework2.c -o homework2    ✅ Compiles successfully
+  ./homework2                     ✅ Runs successfully
+  
+  chmod +x homework2.bash         ✅ Made executable
+  ./homework2.bash                ✅ Runs successfully
+
+Results:
+  • Both programs work correctly
+  • Process IDs displayed correctly
+  • Group IDs displayed correctly
+  • ps command works
+  • sleep command works
+  • All output matches expected format
+
+═══════════════════════════════════════════════════════════════════════════════
+
+📤 SUBMISSION CHECKLIST:
+═══════════════════════════════════════════════════════════════════════════════
+
+Before submitting to iCollege, verify:
+
+  □ hw2.log exists and contains complete session
+  □ hw2.log shows both programs running successfully
+  □ homework2.c is the correct C source code
+  □ homework2.bash is the correct shell script
+  □ All three files are ready to upload
+  □ Files are from GSU server (not local machine)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+❓ NEED HELP?
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Read HOMEWORK2_TERMINAL_GUIDE.md (most detailed)
+2. Use HOMEWORK2_QUICK_REFERENCE.txt (quick lookup)
+3. Check homework2_log.txt (example output)
+4. Review assignment PDF
+5. Contact instructor/TA
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🎓 ASSIGNMENT REQUIREMENTS CHECKLIST:
+═══════════════════════════════════════════════════════════════════════════════
+
+C Program Requirements:
+  ✅ Prints "Starting C program" message
+  ✅ Uses getpid() to get process ID
+  ✅ Uses getppid() to get parent process ID
+  ✅ Uses getgid() to get group ID
+  ✅ Uses getuid() to get user ID
+  ✅ Checks if user ID matches and prints welcome
+  ✅ Uses grep with user ID for /etc/passwd
+  ✅ Calls system("ps") before sleep
+  ✅ Calls system("sleep 3") for 3-second pause
+  ✅ Calls system("ps") after sleep
+  ✅ Prints "Ending C program" message
+
+Shell Script Requirements:
+  ✅ Prints "Starting shell script" message
+  ✅ Uses $$ to show process ID
+  ✅ Uses $PPID to show parent process ID
+  ✅ Uses GID=`id -g` to get group ID
+  ✅ Uses $USER in welcome message
+  ✅ Uses grep $USER for /etc/passwd
+  ✅ Calls ps before sleep
+  ✅ Calls sleep 3 for 3-second pause
+  ✅ Calls ps after sleep
+  ✅ Prints "Ending shell script" message
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🏆 SUCCESS CRITERIA:
+═══════════════════════════════════════════════════════════════════════════════
+
+Your submission is ready when:
+  ✓ hw2.log shows complete terminal session
+  ✓ Both programs compile without errors
+  ✓ Both programs run without errors
+  ✓ Both programs produce expected output
+  ✓ All required files are included
+
+═══════════════════════════════════════════════════════════════════════════════
+
+                    ⭐ GOOD LUCK WITH YOUR HOMEWORK! ⭐
+                    
+              Everything you need is in this package!
+              
+═══════════════════════════════════════════════════════════════════════════════

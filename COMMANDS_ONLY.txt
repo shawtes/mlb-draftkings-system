@@ -1,0 +1,103 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    CSC 3320 HOMEWORK 2 - COMMANDS ONLY
+                          Copy and paste these!
+═══════════════════════════════════════════════════════════════════════════════
+
+SERVER LOGIN
+Username: stesfaye4
+Password: Sin06251994
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP-BY-STEP COMMANDS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. CONNECT TO SERVER:
+   ssh stesfaye4@student.cs.gsu.edu
+
+2. START RECORDING:
+   script hw2.log
+
+3. CREATE C FILE:
+   nano homework2.c
+   [Paste the C code from DO_THIS_HOMEWORK2.md]
+   [Press: Ctrl+X, then Y, then Enter]
+
+4. CREATE BASH FILE:
+   nano homework2.bash
+   [Paste the bash code from DO_THIS_HOMEWORK2.md]
+   [Press: Ctrl+X, then Y, then Enter]
+
+5. COMPILE C PROGRAM:
+   gcc homework2.c -o homework2
+
+6. MAKE BASH EXECUTABLE:
+   chmod +x homework2.bash
+
+7. RUN C PROGRAM:
+   ./homework2
+
+8. RUN BASH SCRIPT:
+   ./homework2.bash
+
+9. LIST FILES:
+   ls -lh homework2*
+
+10. STOP RECORDING:
+    exit
+
+11. DOWNLOAD FILES (FROM YOUR LOCAL COMPUTER):
+    scp stesfaye4@student.cs.gsu.edu:~/hw2.log ~/Downloads/
+    scp stesfaye4@student.cs.gsu.edu:~/homework2.c ~/Downloads/
+    scp stesfaye4@student.cs.gsu.edu:~/homework2.bash ~/Downloads/
+
+═══════════════════════════════════════════════════════════════════════════════
+ALL COMMANDS IN ONE BLOCK (FOR COPYING)
+═══════════════════════════════════════════════════════════════════════════════
+
+ssh stesfaye4@student.cs.gsu.edu
+script hw2.log
+nano homework2.c
+nano homework2.bash
+gcc homework2.c -o homework2
+chmod +x homework2.bash
+./homework2
+./homework2.bash
+ls -lh homework2*
+exit
+
+═══════════════════════════════════════════════════════════════════════════════
+DOWNLOAD COMMANDS (RUN ON YOUR LOCAL MAC)
+═══════════════════════════════════════════════════════════════════════════════
+
+scp stesfaye4@student.cs.gsu.edu:~/hw2.log ~/Downloads/
+scp stesfaye4@student.cs.gsu.edu:~/homework2.c ~/Downloads/
+scp stesfaye4@student.cs.gsu.edu:~/homework2.bash ~/Downloads/
+
+═══════════════════════════════════════════════════════════════════════════════
+NANO EDITOR KEYS
+═══════════════════════════════════════════════════════════════════════════════
+
+Save and Exit: Ctrl+X, then Y, then Enter
+Exit without saving: Ctrl+X, then N
+Paste: Ctrl+Shift+V (or Command+V on Mac)
+
+═══════════════════════════════════════════════════════════════════════════════
+WHAT TO SUBMIT ON iCOLLEGE
+═══════════════════════════════════════════════════════════════════════════════
+
+1. hw2.log
+2. homework2.c
+3. homework2.bash
+
+═══════════════════════════════════════════════════════════════════════════════
+IMPORTANT REMINDERS
+═══════════════════════════════════════════════════════════════════════════════
+
+✓ Start "script hw2.log" BEFORE doing anything else
+✓ Use "exit" to stop recording
+✓ The grep command may return nothing - this is OK!
+✓ Process lists may be same or different - both OK!
+✓ Download hw2.log from the server, don't create it locally
+
+═══════════════════════════════════════════════════════════════════════════════
+
