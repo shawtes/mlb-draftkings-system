@@ -795,39 +795,32 @@ def optimize_single_lineup(args):
             available_teams = df['Team'].unique().tolist()
             logging.warning(f"🚨 FALLBACK: Using ALL {len(available_teams)} teams for {stack_size}-stack!")
         
-        # Filter available teams to only those with enough offensive players (exclude DST)
+        # Filter available teams to only those with enough players for NBA stacks
         valid_teams = []
         for team in available_teams:
-            team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
-            if len(team_offense) >= stack_size:
+            team_players = df[df['Team'] == team].index
+            if len(team_players) >= stack_size:
                 valid_teams.append(team)
-                logging.debug(f"optimize_single_lineup: Team {team} has {len(team_offense)} offensive players (need {stack_size}) - VALID")
+                logging.debug(f"optimize_single_lineup: Team {team} has {len(team_players)} players (need {stack_size}) - VALID")
             else:
-                logging.debug(f"optimize_single_lineup: Team {team} has {len(team_offense)} offensive players (need {stack_size}) - INSUFFICIENT")
+                logging.debug(f"optimize_single_lineup: Team {team} has {len(team_players)} players (need {stack_size}) - INSUFFICIENT")
                 
         if not valid_teams:
-            logging.warning(f"optimize_single_lineup: No valid teams with enough offensive players for {stack_size}-stack")
+            logging.warning(f"optimize_single_lineup: No valid teams with enough players for {stack_size}-stack")
             logging.warning(f"Available teams: {available_teams}")
         else:
             # Enforce constraint for the selected teams
             if len(valid_teams) == 1:
                 # If only one team selected for this stack size, enforce it directly
                 selected_team = valid_teams[0]
-                team_offense = df[(df['Team'] == selected_team) & (df['Position'] != 'DST')].index
-                team_qb = df[(df['Team'] == selected_team) & (df['Position'] == 'QB')].index
+                team_players_idx = df[df['Team'] == selected_team].index
                 
-                # CRITICAL: Enforce stack with QB requirement
-                problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) >= stack_size
-                # Ensure the QB from this team is selected (QB must be part of the stack)
-                if len(team_qb) > 0:
-                    problem += pulp.lpSum([player_vars[idx] for idx in team_qb]) >= 1
-                    logging.info(f"✅ ENFORCING: Must have QB + {stack_size-1} other players from {selected_team}")
-                else:
-                    logging.warning(f"⚠️ Team {selected_team} has no QB, stack may not work correctly")
-                
+                # Enforce NBA team stack (no position requirements, just X players from same team)
+                problem += pulp.lpSum([player_vars[idx] for idx in team_players_idx]) >= stack_size
+                logging.info(f"✅ ENFORCING: Must have {stack_size} players from {selected_team}")
             else:
                 # If multiple teams selected for this stack size, create OR constraint
-                # This means: at least 'stack_size' players from ANY of the selected teams, with QB included
+                # This means: at least 'stack_size' players from ANY of the selected teams
                 team_binary_vars = {}
                 for team in valid_teams:
                     team_binary_vars[team] = pulp.LpVariable(f"use_team_{team}_{stack_size}", cat='Binary')
