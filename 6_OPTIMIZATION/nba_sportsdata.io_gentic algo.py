@@ -2643,7 +2643,7 @@ class FantasyFootballApp(QMainWindow):
             self.status_label.setText(f"❌ Deselected all {deselected_count} teams in {stack_size}")
 
     def populate_team_combinations_teams(self):
-        """Populate team checkboxes in the combinations tab when data is loaded"""
+        """Populate team/game checkboxes in the combinations tab when data is loaded"""
         if not hasattr(self, 'df_players') or self.df_players is None or self.df_players.empty:
             return
         
@@ -2658,14 +2658,50 @@ class FantasyFootballApp(QMainWindow):
         # Get unique teams
         teams = sorted(self.df_players['Team'].unique())
         
-        # Create checkboxes for each team
+        # 🏀 NBA GAMES (10/22/2025) - Tonight's matchups
+        NBA_GAMES = [
+            ("BKN", "CHA", "7:00 PM"),
+            ("CLE", "NYK", "7:00 PM"),
+            ("MIA", "ORL", "7:00 PM"),
+            ("TOR", "ATL", "7:30 PM"),
+            ("PHI", "BOS", "7:30 PM"),
+            ("DET", "CHI", "8:00 PM"),
+            ("NOP", "MEM", "8:00 PM"),
+            ("WAS", "MIL", "8:00 PM"),
+            ("LAC", "UTA", "9:00 PM"),
+            ("SAS", "DAL", "9:30 PM"),
+            ("MIN", "POR", "10:00 PM"),
+            ("SAC", "PHX", "10:00 PM")
+        ]
+        
+        # Add game matchups as checkboxes
+        for away, home, time in NBA_GAMES:
+            # Check if both teams are in the loaded data
+            if away in teams and home in teams:
+                game_label = f"{away} @ {home} ({time})"
+                checkbox = QCheckBox(game_label)
+                checkbox.setStyleSheet("padding: 3px; font-size: 11px; font-weight: bold; color: #2196F3;")
+                self.teams_layout.addWidget(checkbox)
+                # Store under game key for easy retrieval
+                self.team_checkboxes[f"{away}|{home}"] = checkbox
+        
+        # Add separator
+        separator = QLabel("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        separator.setStyleSheet("color: #666; font-size: 10px;")
+        self.teams_layout.addWidget(separator)
+        
+        # Add individual teams below games
+        individual_label = QLabel("Individual Teams:")
+        individual_label.setStyleSheet("font-weight: bold; color: #FF9800; margin-top: 5px;")
+        self.teams_layout.addWidget(individual_label)
+        
         for team in teams:
             checkbox = QCheckBox(team)
             checkbox.setStyleSheet("padding: 2px; font-size: 11px;")
             self.teams_layout.addWidget(checkbox)
             self.team_checkboxes[team] = checkbox
         
-        logging.info(f"Populated {len(teams)} teams in combinations tab")
+        logging.info(f"Populated {len(NBA_GAMES)} games and {len(teams)} teams in combinations tab")
 
     def select_all_combination_teams(self):
         """Select all teams in the combinations tab"""
@@ -2699,22 +2735,38 @@ class FantasyFootballApp(QMainWindow):
             stack_pattern = map_nfl_stack_to_backend(stack_pattern_raw)
             print(f"[DEBUG] Stack pattern (raw): {stack_pattern_raw}, mapped to: {stack_pattern}")
             
-            # Parse stack pattern
-            if stack_pattern == "No Stacks":
+            # Parse NBA stack pattern
+            if stack_pattern == "No Stack":
                 stack_sizes = [1]  # Treat as single team selection
                 teams_needed = 1
-            elif stack_pattern in ["qb_wr", "qb_2wr", "qb_wr_te", "qb_wr_rb", "qb_2wr_te", "game_stack", "bring_back"]:
-                # Named NFL stack types - single team stacks
-                stack_sizes = [stack_pattern]  # Keep as string
-                teams_needed = 1  # All positions come from same team
+            elif stack_pattern == "2 Players Same Team":
+                stack_sizes = [2]
+                teams_needed = 1
+            elif stack_pattern == "3 Players Same Team":
+                stack_sizes = [3]
+                teams_needed = 1
+            elif stack_pattern == "4 Players Same Team":
+                stack_sizes = [4]
+                teams_needed = 1
+            elif stack_pattern == "5 Players Same Team":
+                stack_sizes = [5]
+                teams_needed = 1
+            elif stack_pattern == "Game Stack (Both Teams)":
+                stack_sizes = [3, 2]  # 3 from one team, 2 from opponent
+                teams_needed = 2
             else:
-                # Numeric stack patterns like "3|4|5"
+                # Fallback - try to extract numbers
                 try:
-                    stack_sizes = [int(x) for x in stack_pattern.split('|')]
-                    teams_needed = len(stack_sizes)
-                except ValueError:
-                    # Fallback for unknown formats
-                    stack_sizes = [stack_pattern]
+                    # Extract first number from string
+                    import re
+                    numbers = re.findall(r'\d+', stack_pattern)
+                    if numbers:
+                        stack_sizes = [int(numbers[0])]
+                    else:
+                        stack_sizes = [3]  # Default to 3-player stack
+                    teams_needed = 1
+                except:
+                    stack_sizes = [3]
                     teams_needed = 1
             print(f"[DEBUG] Stack sizes: {stack_sizes}, teams_needed: {teams_needed}")
             
@@ -3191,22 +3243,22 @@ class FantasyFootballApp(QMainWindow):
         settings_section.addWidget(stack_label)
         
         self.combinations_stack_combo = QComboBox()
-        # Simple numeric stack options - QB + other players from same team
+        # NBA-specific stack options
         self.combinations_stack_combo.addItems([
-            "QB + 1 (2 Total)",      # QB + 1 other player
-            "QB + 2 (3 Total)",      # QB + 2 other players
-            "QB + 3 (4 Total)",      # QB + 3 other players
-            "QB + 4 (5 Total)",      # QB + 4 other players
-            "QB + 5 (6 Total)",      # QB + 5 other players
+            "2 Players Same Team",   # 2 players from same team
+            "3 Players Same Team",   # 3 players from same team
+            "4 Players Same Team",   # 4 players from same team
+            "5 Players Same Team",   # 5 players from same team
+            "Game Stack (Both Teams)", # Players from both teams in a game
             "No Stack"               # Independent selection
         ])
-        self.combinations_stack_combo.setCurrentText("QB + 2 (3 Total)")
-        self.combinations_stack_combo.setToolTip("Team Stack Options (QB + Others):\n"
-                                                  "• QB + 1: QB plus 1 other player from same team (2 total)\n"
-                                                  "• QB + 2: QB plus 2 other players from same team (3 total)\n"
-                                                  "• QB + 3: QB plus 3 other players from same team (4 total)\n"
-                                                  "• QB + 4: QB plus 4 other players from same team (5 total)\n"
-                                                  "• QB + 5: QB plus 5 other players from same team (6 total)\n"
+        self.combinations_stack_combo.setCurrentText("3 Players Same Team")
+        self.combinations_stack_combo.setToolTip("NBA Team Stack Options:\n"
+                                                  "• 2 Players Same Team: Stack 2 players from same team\n"
+                                                  "• 3 Players Same Team: Stack 3 players from same team\n"
+                                                  "• 4 Players Same Team: Stack 4 players from same team\n"
+                                                  "• 5 Players Same Team: Stack 5 players from same team\n"
+                                                  "• Game Stack: Players from both teams in a game\n"
                                                   "• No Stack: Independent player selection")
         settings_section.addWidget(self.combinations_stack_combo)
         
@@ -5239,14 +5291,17 @@ class FantasyFootballApp(QMainWindow):
         # Clear existing player exposure data
         self.player_exposure = {}
         
-        # Group players by position (NFL)
+        # Group players by position (NBA)
+        # Players can have multiple position eligibility (e.g., "PG/SG")
         position_groups = {
-            'All Offense': self.df_players[self.df_players['Position'] != 'DST'],
-            'QB': self.df_players[self.df_players['Position'] == 'QB'],
-            'RB': self.df_players[self.df_players['Position'] == 'RB'],
-            'WR': self.df_players[self.df_players['Position'] == 'WR'],
-            'TE': self.df_players[self.df_players['Position'] == 'TE'],
-            'DST': self.df_players[self.df_players['Position'] == 'DST']
+            'All Players': self.df_players.copy(),
+            'PG': self.df_players[self.df_players['Position'].str.contains('PG', na=False)],
+            'SG': self.df_players[self.df_players['Position'].str.contains('SG', na=False)],
+            'SF': self.df_players[self.df_players['Position'].str.contains('SF', na=False)],
+            'PF': self.df_players[self.df_players['Position'].str.contains('PF', na=False)],
+            'C': self.df_players[self.df_players['Position'].str.contains('C', na=False)],
+            'Guards': self.df_players[self.df_players['Position'].str.contains('PG|SG|G', na=False)],
+            'Forwards': self.df_players[self.df_players['Position'].str.contains('SF|PF|F', na=False)]
         }
         
         # Populate each table
@@ -7012,9 +7067,9 @@ class FantasyFootballApp(QMainWindow):
         return player_map
 
     def format_lineup_positions_only(self, lineup, player_name_to_id_map):
-        """Format a lineup to return only the position assignments with player IDs in DK format (QB, RB, RB, WR, WR, WR, TE, FLEX, DST)"""
+        """Format a lineup to return only the position assignments with player IDs in DK format (PG, SG, SF, PF, C, G, F, UTIL)"""
         # Create position mapping from lineup
-        position_players = {'QB': [], 'RB': [], 'WR': [], 'TE': [], 'DST': []}
+        position_players = {'PG': [], 'SG': [], 'SF': [], 'PF': [], 'C': [], 'G': [], 'F': [], 'UTIL': []}
         
         # CRITICAL FIX: Sort lineup by projection DESCENDING before grouping
         projection_cols = ['Fantasy_Points', 'FantasyPoints', 'Predicted_DK_Points', 'Projection', 'Points']
@@ -7069,115 +7124,137 @@ class FantasyFootballApp(QMainWindow):
             
             # Only add if we found a valid player ID
             if not player_id:
-                # 🏈 SPECIAL HANDLING FOR DST: Try fuzzy matching on team abbreviation
-                if pos == 'DST' or 'DEF' in pos:
-                    # DST names might be "Eagles", "Chiefs", etc. but need to map to team abbrev
-                    dst_team_map = {
-                        'EAGLES': 'PHI', 'PATRIOTS': 'NE', 'CHIEFS': 'KC', 
-                        'DOLPHINS': 'MIA', 'BEARS': 'CHI', 'BROWNS': 'CLE',
-                        'JETS': 'NYJ', 'VIKINGS': 'MIN', 'SAINTS': 'NO',
-                        'PANTHERS': 'CAR', 'TITANS': 'TEN', 'RAIDERS': 'LV',
-                        'SEAHAWKS': 'SEA', 'LIONS': 'DET', '49ERS': 'SF',
-                        'FALCONS': 'ATL', 'TEXANS': 'HOU', 'BUCCANEERS': 'TB'
-                    }
-                    name_upper = name.upper().replace(' ', '')
-                    
-                    # Try to find team abbreviation
-                    found_dst = False
-                    for dst_name, abbrev in dst_team_map.items():
-                        if dst_name in name_upper:
-                            # Look for this team in player_name_to_id_map
-                            for map_name, map_id in player_name_to_id_map.items():
-                                if abbrev in map_name.upper() or dst_name in map_name.upper():
-                                    player_id = str(map_id)
-                                    logging.info(f"✅ DST MATCHED: {name} -> {map_name} (ID: {player_id})")
-                                    found_dst = True
-                                    break
-                            if found_dst:
-                                break
-                    
-                    if not found_dst:
-                        logging.error(f"❌ DST {name} could not be matched to DK player pool!")
-                
                 # Generate a fallback ID as last resort
-                if not player_id:
-                    player_id = str(39200000 + len([p for sublist in position_players.values() for p in sublist]))
-                    logging.warning(f"❌ No valid ID found for {name} ({pos}), using fallback ID: {player_id}")
+                player_id = str(40494000 + len([p for sublist in position_players.values() for p in sublist]))
+                logging.warning(f"❌ No valid ID found for {name} ({pos}), using fallback ID: {player_id}")
             
-            # Handle NFL positions
-            if pos in ['QB', 'RB', 'WR', 'TE', 'DST']:
-                position_players[pos].append(player_id)
-            elif 'DEF' in pos or 'D/ST' in pos:
-                position_players['DST'].append(player_id)
-            else:
-                # If position is unclear, try to guess
-                logging.warning(f"Unclear position '{pos}' for {name}, skipping")
+            # Handle NBA positions - match to DraftKings roster positions
+            # Players can have multiple position eligibility (e.g., "PG/SG")
+            pos_eligible = []
+            
+            if 'PG' in pos:
+                pos_eligible.extend(['PG', 'G', 'UTIL'])
+            if 'SG' in pos:
+                pos_eligible.extend(['SG', 'G', 'UTIL'])
+            if 'SF' in pos:
+                pos_eligible.extend(['SF', 'F', 'UTIL'])
+            if 'PF' in pos:
+                pos_eligible.extend(['PF', 'F', 'UTIL'])
+            if 'C' in pos:
+                pos_eligible.extend(['C', 'UTIL'])
+            if 'G' in pos and 'PG' not in pos and 'SG' not in pos:
+                pos_eligible.extend(['G', 'UTIL'])
+            if 'F' in pos and 'SF' not in pos and 'PF' not in pos:
+                pos_eligible.extend(['F', 'UTIL'])
+            
+            # Remove duplicates
+            pos_eligible = list(set(pos_eligible))
+            
+            # Add to first available position slot
+            added = False
+            for eligible_pos in pos_eligible:
+                if eligible_pos in position_players and len(position_players[eligible_pos]) < POSITION_LIMITS.get(eligible_pos, 1):
+                    position_players[eligible_pos].append(player_id)
+                    added = True
+                    break
+            
+            if not added:
+                # If no specific position available, add to UTIL
+                if len(position_players['UTIL']) < 1:
+                    position_players['UTIL'].append(player_id)
+                else:
+                    logging.warning(f"Could not fit {name} ({pos}) into lineup - all slots full")
         
-        # Create the position assignments in DK NFL format: [QB, RB, RB, WR, WR, WR, TE, FLEX, DST]
+        # Create the position assignments in DK NBA format: [PG, SG, SF, PF, C, G, F, UTIL]
         position_assignments = []
         
-        # Add QB (1)
-        if len(position_players['QB']) >= 1:
-            position_assignments.append(position_players['QB'][0])
+        # Add PG (1)
+        if len(position_players['PG']) >= 1:
+            position_assignments.append(position_players['PG'][0])
         else:
             position_assignments.append("")
-            logging.error("No QB found in lineup!")
+            logging.error("No PG found in lineup!")
         
-        # Add RBs (2)
-        for i in range(2):
-            if len(position_players['RB']) > i:
-                position_assignments.append(position_players['RB'][i])
-            else:
-                position_assignments.append("")
-                logging.warning(f"Missing RB at position {i+1}")
-        
-        # Add WRs (3)
-        for i in range(3):
-            if len(position_players['WR']) > i:
-                position_assignments.append(position_players['WR'][i])
-            else:
-                position_assignments.append("")
-                logging.warning(f"Missing WR at position {i+1}")
-        
-        # Add TE (1)
-        if len(position_players['TE']) >= 1:
-            position_assignments.append(position_players['TE'][0])
+        # Add SG (1)
+        if len(position_players['SG']) >= 1:
+            position_assignments.append(position_players['SG'][0])
         else:
             position_assignments.append("")
-            logging.warning("No TE found in lineup!")
+            logging.error("No SG found in lineup!")
         
-        # Add FLEX (1) - use remaining RB/WR/TE
-        flex_added = False
-        for pos in ['RB', 'WR', 'TE']:
-            used_count = sum(1 for p in position_assignments if p in position_players[pos])
-            if len(position_players[pos]) > used_count:
-                # Find next unused player from this position
-                for player_id in position_players[pos]:
-                    if player_id not in position_assignments:
-                        position_assignments.append(player_id)
-                        flex_added = True
-                        break
-                if flex_added:
+        # Add SF (1)
+        if len(position_players['SF']) >= 1:
+            position_assignments.append(position_players['SF'][0])
+        else:
+            position_assignments.append("")
+            logging.error("No SF found in lineup!")
+        
+        # Add PF (1)
+        if len(position_players['PF']) >= 1:
+            position_assignments.append(position_players['PF'][0])
+        else:
+            position_assignments.append("")
+            logging.error("No PF found in lineup!")
+        
+        # Add C (1)
+        if len(position_players['C']) >= 1:
+            position_assignments.append(position_players['C'][0])
+        else:
+            position_assignments.append("")
+            logging.error("No C found in lineup!")
+        
+        # Add G (1) - use remaining guard not already used
+        if len(position_players['G']) >= 1:
+            # Find first guard not already used
+            for g_id in position_players['G']:
+                if g_id not in position_assignments:
+                    position_assignments.append(g_id)
                     break
-        
-        if not flex_added:
-            position_assignments.append("")
-            logging.warning("No FLEX player found!")
-        
-        # Add DST (1)
-        if len(position_players['DST']) >= 1:
-            position_assignments.append(position_players['DST'][0])
+            # If all guards already used, use empty
+            if len(position_assignments) == 5:
+                position_assignments.append("")
+                logging.warning("No available guard for G slot!")
         else:
             position_assignments.append("")
-            logging.error("No DST found in lineup!")
+            logging.warning("No G player found!")
         
-        # Final validation - ensure exactly 9 positions (NFL)
-        while len(position_assignments) < 9:
+        # Add F (1) - use remaining forward not already used
+        if len(position_players['F']) >= 1:
+            # Find first forward not already used
+            for f_id in position_players['F']:
+                if f_id not in position_assignments:
+                    position_assignments.append(f_id)
+                    break
+            # If all forwards already used, use empty
+            if len(position_assignments) == 6:
+                position_assignments.append("")
+                logging.warning("No available forward for F slot!")
+        else:
             position_assignments.append("")
-        position_assignments = position_assignments[:9]
+            logging.warning("No F player found!")
+        
+        # Add UTIL (1) - use remaining player not already used
+        if len(position_players['UTIL']) >= 1:
+            # Find first utility player not already used
+            for u_id in position_players['UTIL']:
+                if u_id not in position_assignments:
+                    position_assignments.append(u_id)
+                    break
+            # If all utility players already used, use empty
+            if len(position_assignments) == 7:
+                position_assignments.append("")
+                logging.warning("No available player for UTIL slot!")
+        else:
+            position_assignments.append("")
+            logging.warning("No UTIL player found!")
+        
+        # Final validation - ensure exactly 8 positions (NBA: PG, SG, SF, PF, C, G, F, UTIL)
+        while len(position_assignments) < 8:
+            position_assignments.append("")
+        position_assignments = position_assignments[:8]
         
         # CRITICAL FIX: Fill any empty positions with fallback IDs
-        for i in range(9):  # NFL has 9 positions
+        for i in range(8):  # NBA has 8 positions
             if not position_assignments[i] or position_assignments[i].strip() == '':
                 # Generate fallback ID for empty position
                 fallback_id = str(39200000 + i)
