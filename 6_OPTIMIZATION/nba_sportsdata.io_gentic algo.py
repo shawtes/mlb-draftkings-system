@@ -718,13 +718,13 @@ def optimize_single_lineup(args):
     
     # Constraint 1: Need at least 1 of each core position
     for position in ['PG', 'SG', 'SF', 'PF', 'C']:
-        available_for_position = [idx for idx in df.index if position in str(df.at[idx, 'Position'])]
-        
-        if len(available_for_position) > 0:
+            available_for_position = [idx for idx in df.index if position in str(df.at[idx, 'Position'])]
+            
+            if len(available_for_position) > 0:
             problem += pulp.lpSum([player_vars[idx] for idx in available_for_position]) >= 1
             logging.debug(f"Added constraint: At least 1 {position}")
-        else:
-            logging.warning(f"⚠️ No players available for position {position}!")
+            else:
+                logging.warning(f"⚠️ No players available for position {position}!")
     
     # Constraint 2: Need at least 2 guards total (PG and SG) to fill PG + SG + G slots
     guards = [idx for idx in df.index if 'PG' in str(df.at[idx, 'Position']) or 'SG' in str(df.at[idx, 'Position'])]
@@ -7305,7 +7305,7 @@ class FantasyFootballApp(QMainWindow):
         if position_players['C']:
             for player_id in position_players['C']:
                 if assign_player(4, player_id):
-                    break
+                        break
         
         # Phase 2: Fill PG (slot 0) - but reserve at least 1 guard for G slot
         pg_candidates = [pid for pid in position_players['PG'] if pid not in used_player_ids]
@@ -7326,13 +7326,22 @@ class FantasyFootballApp(QMainWindow):
                 pg_filled = True
                 break
         
-        # If no pure PG, use dual-eligible BUT reserve 1 for G slot
+        # If no pure PG, use dual-eligible with smart reservation
         if not pg_filled:
             for player_id in dual_pgs:
                 # Check if using this player would leave at least 1 for G slot
                 remaining_guards = len([pid for pid in position_players['G'] 
                                        if pid not in used_player_ids and pid != player_id])
-                if remaining_guards >= 1:  # Reserve 1 for G slot
+                # Allow if we have enough for G, OR if this is our last chance to fill PG
+                if remaining_guards >= 1 or len([p for p in dual_pgs if p not in used_player_ids]) == 1:
+                    if assign_player(0, player_id):
+                        pg_filled = True
+                        break
+        
+        # Last resort: use ANY PG/SG player if PG slot is still empty
+        if not pg_filled and pg_candidates:
+            for player_id in pg_candidates:
+                if player_id not in used_player_ids:
                     if assign_player(0, player_id):
                         break
         
@@ -7354,13 +7363,22 @@ class FantasyFootballApp(QMainWindow):
                 sg_filled = True
                 break
         
-        # If no pure SG, use dual-eligible BUT reserve 1 for G slot
+        # If no pure SG, use dual-eligible with smart reservation
         if not sg_filled:
             for player_id in dual_sgs:
                 # Check if using this player would leave at least 1 for G slot
                 remaining_guards = len([pid for pid in position_players['G'] 
                                        if pid not in used_player_ids and pid != player_id])
-                if remaining_guards >= 1:  # Reserve 1 for G slot
+                # Allow if we have enough for G, OR if this is our last chance to fill SG
+                if remaining_guards >= 1 or len([p for p in dual_sgs if p not in used_player_ids]) == 1:
+                    if assign_player(1, player_id):
+                        sg_filled = True
+                        break
+        
+        # Last resort: use ANY SG/PG player if SG slot is still empty
+        if not sg_filled and sg_candidates:
+            for player_id in sg_candidates:
+                if player_id not in used_player_ids:
                     if assign_player(1, player_id):
                         break
         
@@ -7385,13 +7403,22 @@ class FantasyFootballApp(QMainWindow):
                 sf_filled = True
                 break
         
-        # If no pure SF available, use dual-eligible BUT only if we have enough for F slot
+        # If no pure SF available, use dual-eligible with smart reservation
         if not sf_filled:
             for player_id in dual_sfs:
                 # Check if using this player would leave at least 1 for F slot
                 remaining_forwards = len([pid for pid in position_players['F'] 
                                          if pid not in used_player_ids and pid != player_id])
-                if remaining_forwards >= 1:  # Reserve 1 for F slot
+                # Allow if we have enough for F, OR if this is our last chance to fill SF
+                if remaining_forwards >= 1 or len([p for p in dual_sfs if p not in used_player_ids]) == 1:
+                    if assign_player(2, player_id):
+                        sf_filled = True
+                        break
+        
+        # Last resort: use ANY SF/PF player if SF slot is still empty
+        if not sf_filled and sf_candidates:
+            for player_id in sf_candidates:
+                if player_id not in used_player_ids:
                     if assign_player(2, player_id):
                         break
         
@@ -7413,13 +7440,22 @@ class FantasyFootballApp(QMainWindow):
                 pf_filled = True
                 break
         
-        # If no pure PF, use dual-eligible BUT reserve 1 for F slot
+        # If no pure PF, use dual-eligible with smart reservation
         if not pf_filled:
             for player_id in dual_pfs:
                 # Check if using this player would leave at least 1 for F slot
                 remaining_forwards = len([pid for pid in position_players['F'] 
                                          if pid not in used_player_ids and pid != player_id])
-                if remaining_forwards >= 1:  # Reserve 1 for F slot
+                # Allow if we have enough for F, OR if this is our last chance to fill PF
+                if remaining_forwards >= 1 or len([p for p in dual_pfs if p not in used_player_ids]) == 1:
+                    if assign_player(3, player_id):
+                        pf_filled = True
+                        break
+        
+        # Last resort: use ANY PF/SF player if PF slot is still empty
+        if not pf_filled and pf_candidates:
+            for player_id in pf_candidates:
+                if player_id not in used_player_ids:
                     if assign_player(3, player_id):
                         break
         
@@ -7521,7 +7557,7 @@ class FantasyFootballApp(QMainWindow):
                                 logging.info(f"✅ Backfilled {slot_name} slot with {name}")
                                 break
                     if position_assignments[i]:  # Successfully filled
-                        break
+                            break
         
         # Final validation - ensure exactly 8 positions (NBA: PG, SG, SF, PF, C, G, F, UTIL)
         while len(position_assignments) < 8:
