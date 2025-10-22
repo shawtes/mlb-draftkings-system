@@ -109,17 +109,21 @@ def map_nba_stack_to_backend(stack_type):
         "PG + Wing": "pg_wing_stack",     # Point Guard + Wing (SF/SG)
         "Stars + Value": "stars_value",   # 2-3 stars + value plays
         "Game Stack": "game_stack",        # 4+ players from one high-scoring game
+        "Game Stack (Both Teams)": "game_stack",  # Players from both teams in a game
         "Balanced": "balanced",            # No specific stacking
-        "No Stack": "No Stacks"
+        "No Stack": "No Stacks",
+        "2 Players Same Team": "2",        # 2 players from same team
+        "3 Players Same Team": "3",        # 3 players from same team
+        "4 Players Same Team": "4",        # 4 players from same team
+        "5 Players Same Team": "5",        # 5 players from same team
     }
     
-    # Check if it's the new format "QB + X (Y Total)"
-    if "QB +" in stack_type and "Total)" in stack_type:
-        # Extract the total number from parentheses
+    # Check if it's a numeric pattern like "2 Players Same Team"
+    if "Players Same Team" in stack_type:
+        # Extract the number
         import re
-        match = re.search(r'\((\d+)\s+Total\)', stack_type)
+        match = re.search(r'(\d+)\s+Players', stack_type)
         if match:
-            # Return just the number as a string (e.g., "3")
             return match.group(1)
     
     # Return mapped value or original if not found
@@ -583,8 +587,8 @@ class GeneticDiversityEngine:
 def optimize_single_lineup(args):
     df, stack_type, team_projected_runs, team_selections, min_salary = args
     
-    # MAP NEW NFL STACK NAMES TO BACKEND FORMAT
-    stack_type = map_nfl_stack_to_backend(stack_type)
+    # MAP NEW NBA STACK NAMES TO BACKEND FORMAT
+    stack_type = map_nba_stack_to_backend(stack_type)
     
     logging.debug(f"optimize_single_lineup: Starting with stack type {stack_type}, min_salary={min_salary}")
     
@@ -686,32 +690,38 @@ def optimize_single_lineup(args):
         problem += pulp.lpSum([df.at[idx, 'Salary'] * player_vars[idx] for idx in df.index]) >= min_salary
         logging.debug(f"optimize_single_lineup: Added minimum salary constraint >= {min_salary}")
     
+    # NBA Position Constraints
+    # For each position, ensure we have exactly the required number
     for position, limit in POSITION_LIMITS.items():
-        # Special handling for FLEX position (can be filled by RB, WR, or TE)
-        if position == 'FLEX':
-            # FLEX doesn't need a separate constraint
-            # It's handled by requiring total RB+WR+TE = 7
-            # We'll add this constraint after the loop
-            available_for_position = [idx for idx in df.index if df.at[idx, 'Position'] in FLEX_POSITIONS]
-            logging.debug(f"optimize_single_lineup: Position {position} (RB/WR/TE) needs total 7 (2+3+1+FLEX), available: {len(available_for_position)}")
+        if position in ['G', 'F', 'UTIL']:
+            # Flexible positions - handled separately below
             continue
-        else:
-            available_for_position = [idx for idx in df.index if position in df.at[idx, 'Position']]
-            logging.debug(f"optimize_single_lineup: Position {position} needs {limit}, available: {len(available_for_position)}")
-            if len(available_for_position) < limit:
-                logging.error(f"optimize_single_lineup: INSUFFICIENT PLAYERS for {position}: need {limit}, have {len(available_for_position)}")
-                return pd.DataFrame(), stack_type
-            
-            # For RB, WR, TE: minimum requirement (FLEX makes it at least X)
-            # For QB, DST: exact requirement
-            if position in FLEX_POSITIONS:
-                problem += pulp.lpSum([player_vars[idx] for idx in df.index if position in df.at[idx, 'Position']]) >= limit
-            else:
-                problem += pulp.lpSum([player_vars[idx] for idx in df.index if position in df.at[idx, 'Position']]) == limit
+        
+        # Count available players for this position
+        available_for_position = [idx for idx in df.index if position in str(df.at[idx, 'Position'])]
+        logging.debug(f"optimize_single_lineup: Position {position} needs {limit}, available: {len(available_for_position)}")
+        
+        if len(available_for_position) < limit:
+            logging.error(f"optimize_single_lineup: INSUFFICIENT PLAYERS for {position}: need {limit}, have {len(available_for_position)}")
+            return pd.DataFrame(), stack_type
+        
+        # Add exact constraint for primary positions (PG, SG, SF, PF, C)
+        problem += pulp.lpSum([player_vars[idx] for idx in df.index if position in str(df.at[idx, 'Position'])]) == limit
     
-    # Ensure total of RB + WR + TE equals 7 (which accounts for the FLEX)
-    problem += pulp.lpSum([player_vars[idx] for idx in df.index if df.at[idx, 'Position'] in FLEX_POSITIONS]) == 7
-    logging.debug("optimize_single_lineup: Added constraint: RB + WR + TE = 7 (includes FLEX)")
+    # G position (can be PG or SG)
+    if 'G' in POSITION_LIMITS:
+        problem += pulp.lpSum([player_vars[idx] for idx in df.index if any(pos in str(df.at[idx, 'Position']) for pos in GUARD_POSITIONS)]) >= POSITION_LIMITS['G']
+        logging.debug("optimize_single_lineup: Added constraint: G slot (PG/SG eligible)")
+    
+    # F position (can be SF or PF)
+    if 'F' in POSITION_LIMITS:
+        problem += pulp.lpSum([player_vars[idx] for idx in df.index if any(pos in str(df.at[idx, 'Position']) for pos in FORWARD_POSITIONS)]) >= POSITION_LIMITS['F']
+        logging.debug("optimize_single_lineup: Added constraint: F slot (SF/PF eligible)")
+    
+    # UTIL position (can be any position)
+    if 'UTIL' in POSITION_LIMITS:
+        # UTIL is automatically satisfied by having 8 total players
+        logging.debug("optimize_single_lineup: UTIL slot (any position)")
 
     # Handle different stack types
     stack_size = None
@@ -2731,8 +2741,8 @@ class FantasyFootballApp(QMainWindow):
             
             # Get stack pattern and parse it
             stack_pattern_raw = self.combinations_stack_combo.currentText()
-            # Map new NFL stack names to backend format
-            stack_pattern = map_nfl_stack_to_backend(stack_pattern_raw)
+            # Map new NBA stack names to backend format
+            stack_pattern = map_nba_stack_to_backend(stack_pattern_raw)
             print(f"[DEBUG] Stack pattern (raw): {stack_pattern_raw}, mapped to: {stack_pattern}")
             
             # Parse NBA stack pattern
