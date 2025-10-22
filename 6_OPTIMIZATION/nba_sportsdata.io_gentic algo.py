@@ -721,8 +721,8 @@ def optimize_single_lineup(args):
             available_for_position = [idx for idx in df.index if position in str(df.at[idx, 'Position'])]
             
             if len(available_for_position) > 0:
-            problem += pulp.lpSum([player_vars[idx] for idx in available_for_position]) >= 1
-            logging.debug(f"Added constraint: At least 1 {position}")
+                problem += pulp.lpSum([player_vars[idx] for idx in available_for_position]) >= 1
+                logging.debug(f"Added constraint: At least 1 {position}")
             else:
                 logging.warning(f"⚠️ No players available for position {position}!")
     
