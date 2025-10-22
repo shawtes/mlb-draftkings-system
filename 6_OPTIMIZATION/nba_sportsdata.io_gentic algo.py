@@ -4115,7 +4115,7 @@ class FantasyFootballApp(QMainWindow):
             dialog_text = f'How many favorite lineups to export in DraftKings format?\n\n'
             dialog_text += f'📊 Available: {num_available} favorite lineups\n'
             dialog_text += f'🏃 From {unique_runs} different optimization runs\n\n'
-            dialog_text += f'🎯 Export format: DraftKings contest entry format (NFL)\n'
+            dialog_text += f'🎯 Export format: DraftKings contest entry format (NBA)\n'
             dialog_text += f'📋 Headers: Entry ID, Contest Name, Contest ID, Entry Fee, PG, SG, SF, PF, C, G, F, UTIL\n'
             dialog_text += f'🔢 Contains: Player names (cleaned for DK format) ready for DraftKings upload'
             
