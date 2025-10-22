@@ -8,6 +8,7 @@ const { Parser } = require('json2csv');
 const WebSocket = require('ws');
 const { v4: uuidv4 } = require('uuid');
 const MLBOptimizer = require('./optimizer');
+const NFLOptimizer = require('./nfl-optimizer');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -52,6 +53,7 @@ const upload = multer({
 let playersData = [];
 let optimizationResults = [];
 let activeConnections = new Set();
+let currentSport = 'MLB'; // Track current sport mode (MLB or NFL)
 
 // Broadcast to all connected clients
 function broadcast(message) {
@@ -341,10 +343,30 @@ app.put('/api/players/bulk', (req, res) => {
   res.json({ success: true, updatedCount });
 });
 
-// Run optimization
+// Set sport mode
+app.post('/api/set-sport', (req, res) => {
+  const { sport } = req.body;
+  
+  if (!sport || !['MLB', 'NFL'].includes(sport.toUpperCase())) {
+    return res.status(400).json({ error: 'Invalid sport. Must be MLB or NFL' });
+  }
+  
+  currentSport = sport.toUpperCase();
+  console.log(`🏈 Sport mode set to: ${currentSport}`);
+  
+  res.json({ success: true, sport: currentSport });
+});
+
+// Get current sport mode
+app.get('/api/sport', (req, res) => {
+  res.json({ sport: currentSport });
+});
+
+// Run optimization (supports both MLB and NFL)
 app.post('/api/optimize', async (req, res) => {
   try {
     const {
+      sport = currentSport,
       numLineups = 1,
       minSalary = 45000,
       maxSalary = 50000,
@@ -360,6 +382,7 @@ app.post('/api/optimize', async (req, res) => {
       stackTypes = {},
       exposureSettings = {},
       riskTolerance = 'medium',
+      contestMode = 'gpp',
       bankroll = 1000
     } = req.body;
     
@@ -369,8 +392,12 @@ app.post('/api/optimize', async (req, res) => {
     }
     
     const selectedPlayers = playersData.filter(p => p.selected);
-    if (selectedPlayers.length < 10) {
-      return res.status(400).json({ error: 'Need at least 10 players selected' });
+    const minPlayersRequired = sport === 'NFL' ? 9 : 10;
+    
+    if (selectedPlayers.length < minPlayersRequired) {
+      return res.status(400).json({ 
+        error: `Need at least ${minPlayersRequired} players selected for ${sport}` 
+      });
     }
     
     // Start optimization process
@@ -380,45 +407,74 @@ app.post('/api/optimize', async (req, res) => {
       type: 'OPTIMIZATION_STARTED',
       data: { 
         id: optimizationId, 
+        sport,
         numLineups,
         timestamp: new Date().toISOString()
       }
     });
     
-    // Use enhanced optimizer
-    const optimizer = new MLBOptimizer();
-    const results = await optimizer.optimize({
-      players: selectedPlayers,
-      numLineups,
-      minSalary,
-      maxSalary,
-      stackSettings,
-      uniquePlayers,
-      maxExposure,
-      // Pass advanced settings
-      monteCarloIterations,
-      sortingMethod,
-      minUniquePlayersBetweenLineups,
-      enableRiskManagement,
-      disableKellySizing,
-      stackTypes,
-      exposureSettings,
-      riskTolerance,
-      bankroll,
-      onProgress: (progress) => {
-        broadcast({
-          type: 'OPTIMIZATION_PROGRESS',
-          data: { id: optimizationId, progress, timestamp: new Date().toISOString() }
-        });
-      }
-    });
+    // Select optimizer based on sport
+    let optimizer, results;
+    
+    if (sport === 'NFL') {
+      console.log('🏈 Using NFL Optimizer');
+      optimizer = new NFLOptimizer();
+      results = await optimizer.optimize({
+        players: selectedPlayers,
+        numLineups,
+        minSalary: minSalary || 48000, // NFL default
+        maxSalary,
+        stackSettings,
+        uniquePlayers,
+        maxExposure,
+        stackTypes,
+        exposureSettings,
+        riskTolerance,
+        contestMode,
+        bankroll,
+        onProgress: (progress) => {
+          broadcast({
+            type: 'OPTIMIZATION_PROGRESS',
+            data: { id: optimizationId, progress, timestamp: new Date().toISOString() }
+          });
+        }
+      });
+    } else {
+      console.log('⚾ Using MLB Optimizer');
+      optimizer = new MLBOptimizer();
+      results = await optimizer.optimize({
+        players: selectedPlayers,
+        numLineups,
+        minSalary: minSalary || 45000, // MLB default
+        maxSalary,
+        stackSettings,
+        uniquePlayers,
+        maxExposure,
+        monteCarloIterations,
+        sortingMethod,
+        minUniquePlayersBetweenLineups,
+        enableRiskManagement,
+        disableKellySizing,
+        stackTypes,
+        exposureSettings,
+        riskTolerance,
+        bankroll,
+        onProgress: (progress) => {
+          broadcast({
+            type: 'OPTIMIZATION_PROGRESS',
+            data: { id: optimizationId, progress, timestamp: new Date().toISOString() }
+          });
+        }
+      });
+    }
     
     optimizationResults = results;
     
     broadcast({
       type: 'OPTIMIZATION_COMPLETED',
       data: { 
-        id: optimizationId, 
+        id: optimizationId,
+        sport,
         lineups: results.length,
         timestamp: new Date().toISOString()
       }
@@ -426,6 +482,7 @@ app.post('/api/optimize', async (req, res) => {
     
     res.json({
       success: true,
+      sport,
       optimizationId,
       lineups: results,
       summary: {
@@ -458,6 +515,7 @@ app.get('/api/results', (req, res) => {
 // Export lineups to CSV
 app.get('/api/export/:format', (req, res) => {
   const { format } = req.params;
+  const { sport = currentSport } = req.query;
   
   if (optimizationResults.length === 0) {
     return res.status(400).json({ error: 'No optimization results to export' });
@@ -465,27 +523,44 @@ app.get('/api/export/:format', (req, res) => {
   
   try {
     if (format === 'draftkings') {
-      // DraftKings format
+      // DraftKings format - different for MLB vs NFL
       const dkData = optimizationResults.map((lineup, index) => {
         const players = lineup.players;
-        return {
-          'Entry ID': `Lineup_${index + 1}`,
-          'Contest Name': 'MLB Optimizer',
-          'Contest ID': '12345',
-          'Entry Fee': '$1.00',
-          'P': players.find(p => p.position.includes('P'))?.name || '',
-          'P/UTIL': players.filter(p => p.position.includes('P'))[1]?.name || '',
-          'C': players.find(p => p.position.includes('C'))?.name || '',
-          '1B': players.find(p => p.position.includes('1B'))?.name || '',
-          '2B': players.find(p => p.position.includes('2B'))?.name || '',
-          '3B': players.find(p => p.position.includes('3B'))?.name || '',
-          'SS': players.find(p => p.position.includes('SS'))?.name || '',
-          'OF': players.filter(p => p.position.includes('OF'))[0]?.name || '',
-          'OF ': players.filter(p => p.position.includes('OF'))[1]?.name || '',
-          'OF  ': players.filter(p => p.position.includes('OF'))[2]?.name || '',
-          'Total Salary': lineup.totalSalary,
-          'Projected Points': lineup.totalProjection.toFixed(2)
-        };
+        
+        if (sport === 'NFL') {
+          // NFL DraftKings format
+          return {
+            'QB': players.find(p => p.position === 'QB')?.name || '',
+            'RB': players.filter(p => p.position === 'RB')[0]?.name || '',
+            'RB ': players.filter(p => p.position === 'RB')[1]?.name || '',
+            'WR': players.filter(p => p.position === 'WR')[0]?.name || '',
+            'WR ': players.filter(p => p.position === 'WR')[1]?.name || '',
+            'WR  ': players.filter(p => p.position === 'WR')[2]?.name || '',
+            'TE': players.find(p => p.position === 'TE')?.name || '',
+            'FLEX': players[7]?.name || '', // 8th player (0-indexed position 7)
+            'DST': players.find(p => p.position === 'DST')?.name || ''
+          };
+        } else {
+          // MLB DraftKings format
+          return {
+            'Entry ID': `Lineup_${index + 1}`,
+            'Contest Name': 'MLB Optimizer',
+            'Contest ID': '12345',
+            'Entry Fee': '$1.00',
+            'P': players.find(p => p.position.includes('P'))?.name || '',
+            'P/UTIL': players.filter(p => p.position.includes('P'))[1]?.name || '',
+            'C': players.find(p => p.position.includes('C'))?.name || '',
+            '1B': players.find(p => p.position.includes('1B'))?.name || '',
+            '2B': players.find(p => p.position.includes('2B'))?.name || '',
+            '3B': players.find(p => p.position.includes('3B'))?.name || '',
+            'SS': players.find(p => p.position.includes('SS'))?.name || '',
+            'OF': players.filter(p => p.position.includes('OF'))[0]?.name || '',
+            'OF ': players.filter(p => p.position.includes('OF'))[1]?.name || '',
+            'OF  ': players.filter(p => p.position.includes('OF'))[2]?.name || '',
+            'Total Salary': lineup.totalSalary,
+            'Projected Points': lineup.totalProjection.toFixed(2)
+          };
+        }
       });
       
       const parser = new Parser({ 
@@ -494,8 +569,9 @@ app.get('/api/export/:format', (req, res) => {
       });
       const csv = parser.parse(dkData);
       
+      const filename = sport === 'NFL' ? 'nfl_draftkings_lineups.csv' : 'mlb_draftkings_lineups.csv';
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=draftkings_lineups.csv');
+      res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
       res.send(csv);
       
     } else {

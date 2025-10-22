@@ -49,7 +49,7 @@ def load_dk_entries(file_path):
     if not analysis or analysis["header_line"] is None:
         # Fall back to standard pandas read
         logging.warning("Could not analyze DK file structure, using standard read")
-        return pd.read_csv(file_path, on_bad_lines='skip')
+        return pd.read_csv(file_path, encoding='utf-8', on_bad_lines='skip')
     
     try:
         # Read only the actual entries section using the detected format
@@ -58,10 +58,10 @@ def load_dk_entries(file_path):
         if analysis["instruction_line"]:
             # Read only up to the instructions line
             nrows = analysis["instruction_line"] - header_line - 1
-            df = pd.read_csv(file_path, skiprows=header_line, nrows=nrows)
+            df = pd.read_csv(file_path, encoding='utf-8', skiprows=header_line, nrows=nrows)
         else:
             # Read all rows after header, handle special formats
-            df = pd.read_csv(file_path, skiprows=header_line)
+            df = pd.read_csv(file_path, encoding='utf-8', skiprows=header_line)
             
             # Try to detect the end of entry rows
             for i, row in df.iterrows():
@@ -88,7 +88,7 @@ def load_dk_entries(file_path):
     except Exception as e:
         logging.error(f"Error using smart reader: {str(e)}")
         # Fall back to standard read
-        return pd.read_csv(file_path, on_bad_lines='skip')
+        return pd.read_csv(file_path, encoding='utf-8', on_bad_lines='skip')
 
 def extract_player_data(file_path):
     """Extract player reference data from DraftKings entries file"""
@@ -101,7 +101,7 @@ def extract_player_data(file_path):
     try:
         # Read starting from the player data header line
         player_data_line = analysis["player_data_line"]
-        player_df = pd.read_csv(file_path, skiprows=player_data_line)
+        player_df = pd.read_csv(file_path, encoding='utf-8', skiprows=player_data_line)
         
         # Clean up the DataFrame
         cols_to_drop = []
