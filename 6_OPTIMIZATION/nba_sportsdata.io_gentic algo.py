@@ -5055,10 +5055,15 @@ class FantasyFootballApp(QMainWindow):
             logging.info(f"Loading players from CSV: {file_path}")
             logging.info(f"Raw CSV shape: {df.shape}, columns: {len(df.columns)}")
             
-            # 🔧 AUTOMATIC COLUMN MAPPING - Handle both old and new formats
+            # 🔧 AUTOMATIC COLUMN MAPPING - Handle both NBA and NFL formats
             column_mapping = {
                 'Pos': 'Position',  # Handle old format
-                'Predicted_Points': 'Predicted_DK_Points'  # Handle old format
+                'Predicted_Points': 'Predicted_DK_Points',  # Handle old format
+                'DK_Position': 'Position',  # NBA slate optimizer format
+                'Roster_Position': 'Position',  # DraftKings roster format
+                'Projected_DK_Points': 'Predicted_DK_Points',  # NBA projections
+                'DK_ID': 'ID',  # Player IDs
+                'Pri_Pos': 'Position'  # Primary position
             }
             
             # Apply column mapping automatically
@@ -5119,36 +5124,41 @@ class FantasyFootballApp(QMainWindow):
             df = df[df['Salary'] > 0]
             df = df[df['Predicted_DK_Points'] > 0]
             
-            # 🏈 CRITICAL NFL VALIDATION: Check for DST teams
-            dst_count = len(df[df['Position'] == 'DST'])
+            # 🏀 NBA POSITION VALIDATION
             print(f"\n{'='*70}")
-            print(f"🏈 NFL POSITION VALIDATION")
+            print(f"🏀 NBA POSITION VALIDATION")
             print(f"{'='*70}")
-            print(f"   QB:  {len(df[df['Position'] == 'QB'])}")
-            print(f"   RB:  {len(df[df['Position'] == 'RB'])}")
-            print(f"   WR:  {len(df[df['Position'] == 'WR'])}")
-            print(f"   TE:  {len(df[df['Position'] == 'TE'])}")
-            print(f"   DST: {dst_count}")
+            
+            # Check for Position or Roster_Position column
+            pos_col = 'Position' if 'Position' in df.columns else 'Roster_Position'
+            if pos_col not in df.columns:
+                # Try to find any position-related column
+                pos_cols = [col for col in df.columns if 'pos' in col.lower()]
+                if pos_cols:
+                    pos_col = pos_cols[0]
+                    print(f"   Using '{pos_col}' as position column")
+            
+            # Count NBA positions
+            pg_count = len(df[df[pos_col].str.contains('PG', na=False)])
+            sg_count = len(df[df[pos_col].str.contains('SG', na=False)])
+            sf_count = len(df[df[pos_col].str.contains('SF', na=False)])
+            pf_count = len(df[df[pos_col].str.contains('PF', na=False)])
+            c_count = len(df[df[pos_col].str.contains('C', na=False)])
+            
+            print(f"   PG:  {pg_count}")
+            print(f"   SG:  {sg_count}")
+            print(f"   SF:  {sf_count}")
+            print(f"   PF:  {pf_count}")
+            print(f"   C:   {c_count}")
+            print(f"   Total: {len(df)} players")
             print(f"{'='*70}\n")
             
-            if dst_count == 0:
-                error_msg = (
-                    "❌ CRITICAL ERROR: NO DST (Defense/Special Teams) FOUND!\n\n"
-                    "This player pool has 0 DST teams. NFL lineups REQUIRE 1 DST.\n\n"
-                    "✅ SOLUTION: Load a file with DST teams:\n"
-                    "   - nfl_week7_CASH_SPORTSDATA.csv (has 12 DST)\n"
-                    "   - nfl_week7_GPP_SPORTSDATA.csv (has 12 DST)\n\n"
-                    "⚠️  DO NOT USE files without DST - optimizer will fail!"
-                )
-                print(error_msg)
-                logging.error(error_msg)
-                QMessageBox.critical(self, "No DST Teams Found", error_msg)
-                return
-            elif dst_count < 5:
+            # Validate we have enough players at each position
+            if pg_count < 3 or sg_count < 3 or sf_count < 3 or pf_count < 3 or c_count < 2:
                 warning_msg = (
-                    f"⚠️  WARNING: Only {dst_count} DST teams found.\n\n"
-                    f"This is unusually low. Most slates have 10-12 DST teams.\n"
-                    f"Consider using nfl_week7_CASH_SPORTSDATA.csv which has 12 DST."
+                    f"⚠️  WARNING: Low player counts at some positions.\n\n"
+                    f"PG: {pg_count}, SG: {sg_count}, SF: {sf_count}, PF: {pf_count}, C: {c_count}\n\n"
+                    f"Optimizer may have limited options. Consider loading a fuller slate."
                 )
                 print(warning_msg)
                 logging.warning(warning_msg)
