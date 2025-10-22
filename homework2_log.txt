@@ -1,0 +1,94 @@
+CSC 3320 - Homework 2 - Execution Log
+======================================
+Student: Sineshaw Mesfin Tesfaye
+Username: stesfaye4
+
+COMPILING C PROGRAM:
+--------------------
+$ gcc homework2.c -o homework2
+(Compilation successful - no errors)
+
+RUNNING C PROGRAM:
+------------------
+$ ./homework2
+Starting C program
+
+Process ID: 64395
+Parent Process ID: 1096
+Group ID: 20
+
+Welcome Sineshaw Mesfin Tesfaye
+Searching for user in /etc/passwd:
+
+First process list:
+  PID TTY           TIME CMD
+  837 ttys000    0:00.02 -zsh
+ 1096 ttys006    0:00.55 /bin/zsh -il
+64395 ttys006    0:00.00 ./homework2
+Command returned with value 0.
+
+Sleeping for 3 seconds...
+
+Second process list:
+  PID TTY           TIME CMD
+  837 ttys000    0:00.02 -zsh
+ 1096 ttys006    0:00.55 /bin/zsh -il
+64395 ttys006    0:00.00 ./homework2
+Command returned with value 0.
+
+Note: The process lists may differ slightly due to timing.
+
+Ending C program
+
+MAKING SHELL SCRIPT EXECUTABLE:
+--------------------------------
+$ chmod +x homework2.bash
+
+RUNNING SHELL SCRIPT:
+---------------------
+$ ./homework2.bash
+Starting shell script
+
+Process ID: 64656
+Parent Process ID: 1096
+Group ID: 20
+
+Welcome sineshawmesfintesfaye
+Searching for user in /etc/passwd:
+
+First process list:
+  PID TTY           TIME CMD
+  837 ttys000    0:00.02 -zsh
+ 1096 ttys006    0:00.56 /bin/zsh -il
+64656 ttys006    0:00.00 /bin/bash ./homework2.bash
+
+Sleeping for 3 seconds...
+
+Second process list:
+  PID TTY           TIME CMD
+  837 ttys000    0:00.02 -zsh
+ 1096 ttys006    0:00.56 /bin/zsh -il
+64656 ttys006    0:00.00 /bin/bash ./homework2.bash
+
+Note: The process lists may differ slightly due to timing.
+
+Ending shell script
+
+OBSERVATIONS:
+-------------
+1. Both programs successfully displayed process IDs and parent process IDs
+2. Group ID was correctly retrieved in both implementations
+3. The grep command for /etc/passwd did not return results on this system
+   (This is expected on macOS and some Linux systems where user accounts
+    are managed differently)
+4. The ps command showed process lists before and after the 3-second sleep
+5. Process lists were similar but not identical between the two runs
+6. The C program shows process ID 64395 while running
+7. The shell script shows process ID 64656 while running
+
+DIFFERENCES BETWEEN C AND SHELL IMPLEMENTATIONS:
+-------------------------------------------------
+1. C program requires compilation; shell script runs directly
+2. C program uses system calls (getpid, getppid, getuid, getgid)
+3. Shell script uses environment variables ($$, $PPID, $USER, $UID, $GID)
+4. Both achieve the same functional results with different approaches

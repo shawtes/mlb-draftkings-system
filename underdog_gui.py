@@ -1656,7 +1656,7 @@ class NFLUnderdogFantasyGUI:
 def main():
     """Main function to run the GUI"""
     root = tk.Tk()
-    app = UnderdogFantasyGUI(root)
+    app = NFLUnderdogFantasyGUI(root)
     root.mainloop()
 
 

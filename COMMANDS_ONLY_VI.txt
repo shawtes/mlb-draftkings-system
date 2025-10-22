@@ -1,0 +1,162 @@
+═══════════════════════════════════════════════════════════════════════════════
+                CSC 3320 HOMEWORK 2 - COMMANDS ONLY (VI EDITOR)
+                          Copy and paste these!
+═══════════════════════════════════════════════════════════════════════════════
+
+SERVER LOGIN
+Username: stesfaye4
+Password: Sin06251994
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP-BY-STEP COMMANDS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. CONNECT TO SERVER:
+   ssh stesfaye4@student.cs.gsu.edu
+
+2. START RECORDING:
+   script hw2.log
+
+3. CREATE C FILE:
+   vi homework2.c
+   [Press 'i' to enter INSERT mode]
+   [Paste the C code from DO_THIS_HOMEWORK2_VI.md]
+   [Press 'Esc' then type ':wq' and press Enter]
+
+4. CREATE BASH FILE:
+   vi homework2.bash
+   [Press 'i' to enter INSERT mode]
+   [Paste the bash code from DO_THIS_HOMEWORK2_VI.md]
+   [Press 'Esc' then type ':wq' and press Enter]
+
+5. COMPILE C PROGRAM:
+   gcc homework2.c -o homework2
+
+6. MAKE BASH EXECUTABLE:
+   chmod +x homework2.bash
+
+7. RUN C PROGRAM:
+   ./homework2
+
+8. RUN BASH SCRIPT:
+   ./homework2.bash
+
+9. LIST FILES:
+   ls -lh homework2*
+
+10. STOP RECORDING:
+    exit
+
+11. DOWNLOAD FILES (FROM YOUR LOCAL COMPUTER):
+    scp stesfaye4@student.cs.gsu.edu:~/hw2.log ~/Downloads/
+    scp stesfaye4@student.cs.gsu.edu:~/homework2.c ~/Downloads/
+    scp stesfaye4@student.cs.gsu.edu:~/homework2.bash ~/Downloads/
+
+═══════════════════════════════════════════════════════════════════════════════
+ALL COMMANDS IN ONE BLOCK (FOR COPYING)
+═══════════════════════════════════════════════════════════════════════════════
+
+ssh stesfaye4@student.cs.gsu.edu
+script hw2.log
+vi homework2.c
+vi homework2.bash
+gcc homework2.c -o homework2
+chmod +x homework2.bash
+./homework2
+./homework2.bash
+ls -lh homework2*
+exit
+
+═══════════════════════════════════════════════════════════════════════════════
+DOWNLOAD COMMANDS (RUN ON YOUR LOCAL MAC)
+═══════════════════════════════════════════════════════════════════════════════
+
+scp stesfaye4@student.cs.gsu.edu:~/hw2.log ~/Downloads/
+scp stesfaye4@student.cs.gsu.edu:~/homework2.c ~/Downloads/
+scp stesfaye4@student.cs.gsu.edu:~/homework2.bash ~/Downloads/
+
+═══════════════════════════════════════════════════════════════════════════════
+VI EDITOR ESSENTIAL COMMANDS
+═══════════════════════════════════════════════════════════════════════════════
+
+ENTER INSERT MODE (to type/paste):
+   i                Insert at cursor
+   a                Insert after cursor
+
+EXIT INSERT MODE:
+   Esc              Return to command mode
+
+SAVE AND QUIT:
+   :wq              Save and quit
+   :w               Save only
+   :q               Quit (only works if no changes)
+   :q!              Quit without saving
+
+NAVIGATION (in command mode):
+   h j k l          Left, down, up, right
+   gg               Go to top of file
+   G                Go to bottom of file
+
+DELETE (in command mode):
+   x                Delete character
+   dd               Delete line
+   dw               Delete word
+
+UNDO/REDO:
+   u                Undo
+   Ctrl+r           Redo
+
+STUCK IN VI?
+   Esc :q!          Exit without saving
+
+═══════════════════════════════════════════════════════════════════════════════
+VI WORKFLOW FOR THIS HOMEWORK
+═══════════════════════════════════════════════════════════════════════════════
+
+For homework2.c:
+   1. Type: vi homework2.c
+   2. Press: i
+   3. Paste entire C code
+   4. Press: Esc
+   5. Type: :wq
+   6. Press: Enter
+
+For homework2.bash:
+   1. Type: vi homework2.bash
+   2. Press: i
+   3. Paste entire bash code
+   4. Press: Esc
+   5. Type: :wq
+   6. Press: Enter
+
+═══════════════════════════════════════════════════════════════════════════════
+WHAT TO SUBMIT ON iCOLLEGE
+═══════════════════════════════════════════════════════════════════════════════
+
+1. hw2.log
+2. homework2.c
+3. homework2.bash
+
+═══════════════════════════════════════════════════════════════════════════════
+IMPORTANT REMINDERS
+═══════════════════════════════════════════════════════════════════════════════
+
+✓ Start "script hw2.log" BEFORE doing anything else
+✓ Use "exit" to stop recording
+✓ In VI: Press 'i' to insert, 'Esc' to exit insert mode, ':wq' to save
+✓ The grep command may return nothing - this is OK!
+✓ Process lists may be same or different - both OK!
+✓ Download hw2.log from the server, don't create it locally
+
+═══════════════════════════════════════════════════════════════════════════════
+VI EMERGENCY EXITS
+═══════════════════════════════════════════════════════════════════════════════
+
+Stuck and can't type?          Press 'i' to enter insert mode
+Stuck and commands show text?  Press 'Esc' first
+Can't save and exit?           Press Esc then :wq
+Want to quit without saving?   Press Esc then :q!
+Really stuck?                  Press Esc multiple times, then :q!
+
+═══════════════════════════════════════════════════════════════════════════════
+

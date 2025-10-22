@@ -154,6 +154,63 @@ NFL_STACK_TYPES = {
         'ownership_impact': 'very_low',
         'correlation': 0.20,
         'leverage': 1.15
+    },
+    
+    # TEAM HEAVY STACKS - 3, 4, 5 Players from Same Team
+    'qb_plus_2': {
+        'name': 'QB + 2 (3 Team)',
+        'description': 'QB with 2 other players from same team - moderate team exposure',
+        'positions_same_team': ['QB', 'any', 'any'],
+        'min_players_same_team': 3,
+        'recommended_for': ['gpp_tournament', 'cash_game'],
+        'ownership_impact': 'medium',
+        'correlation': 0.70,
+        'leverage': 1.25
+    },
+    
+    'qb_plus_3': {
+        'name': 'QB + 3 (4 Team)',
+        'description': 'QB with 3 other players from same team - heavy team exposure',
+        'positions_same_team': ['QB', 'any', 'any', 'any'],
+        'min_players_same_team': 4,
+        'recommended_for': ['gpp_tournament'],
+        'ownership_impact': 'low',
+        'correlation': 0.80,
+        'leverage': 1.40
+    },
+    
+    'qb_plus_4': {
+        'name': 'QB + 4 (5 Team)',
+        'description': 'QB with 4 other players from same team - ultra heavy team exposure',
+        'positions_same_team': ['QB', 'any', 'any', 'any', 'any'],
+        'min_players_same_team': 5,
+        'recommended_for': ['gpp_tournament'],
+        'ownership_impact': 'very_low',
+        'correlation': 0.85,
+        'leverage': 1.60
+    },
+    
+    # SPECIFIC 4/2 STACKS - 4 total players, 2 from each position group
+    'qb_2wr_2rb': {
+        'name': '4/2: QB + 2 WR + 2 RB',
+        'description': 'QB with 2 WRs and 2 RBs from same team - balanced offense',
+        'positions_same_team': ['QB', 'WR', 'WR', 'RB', 'RB'],
+        'min_players_same_team': 5,
+        'recommended_for': ['gpp_tournament'],
+        'ownership_impact': 'very_low',
+        'correlation': 0.75,
+        'leverage': 1.55
+    },
+    
+    'qb_2wr_rb_te': {
+        'name': '4/2: QB + 2 WR + RB + TE',
+        'description': 'QB with 2 WRs, RB and TE from same team - full offense stack',
+        'positions_same_team': ['QB', 'WR', 'WR', 'RB', 'TE'],
+        'min_players_same_team': 5,
+        'recommended_for': ['gpp_tournament'],
+        'ownership_impact': 'very_low',
+        'correlation': 0.78,
+        'leverage': 1.58
     }
 }
 
@@ -166,6 +223,7 @@ RECOMMENDED_STACKS_BY_CONTEST = {
         'qb_wr',           # Most common, reliable
         'no_stack',        # Sometimes best plays don't stack
         'qb_wr_rb',        # Total offense correlation
+        'qb_plus_2',       # Moderate team exposure
     ],
     
     'gpp_tournament': [
@@ -174,18 +232,25 @@ RECOMMENDED_STACKS_BY_CONTEST = {
         'game_qb_wr_opp_wr',  # Game stack for shootouts
         'game_qb_wr_opp_rb',  # Bring-back hedge
         'qb_2wr_te',       # Ultra aggressive
+        'qb_plus_3',       # Heavy team exposure
+        'qb_plus_4',       # Ultra heavy team exposure
+        'qb_2wr_2rb',      # Full team stack with RBs
+        'qb_2wr_rb_te',    # Full offense stack
     ],
     
     'single_entry_gpp': [
         'qb_wr_te',        # Lower ownership
         'game_qb_wr_opp_rb',  # Hedge with bring-back
         'qb_wr_rb',        # Balanced correlation
+        'qb_plus_3',       # Heavy team exposure
     ],
     
     '3_max': [
         'qb_2wr',          # Need ceiling
         'game_qb_2wr_opp_wr', # Full game stack
         'qb_2wr_te',       # All pass catchers
+        'qb_plus_4',       # Ultra heavy team exposure
+        'qb_2wr_rb_te',    # Full offense stack
     ]
 }
 
@@ -196,7 +261,7 @@ RECOMMENDED_STACKS_BY_CONTEST = {
 GAME_ENVIRONMENT_MULTIPLIERS = {
     'high_total': {
         # Over/Under >= 50 points
-        'boost_stacks': ['game_qb_wr_opp_wr', 'game_qb_2wr_opp_wr', 'qb_2wr'],
+        'boost_stacks': ['game_qb_wr_opp_wr', 'game_qb_2wr_opp_wr', 'qb_2wr', 'qb_plus_3', 'qb_plus_4'],
         'multiplier': 1.25,
         'description': 'High-scoring game expected'
     },
@@ -210,21 +275,21 @@ GAME_ENVIRONMENT_MULTIPLIERS = {
     
     'big_favorite': {
         # Spread >= 7 points
-        'boost_stacks': ['qb_2wr', 'qb_wr_rb'],
+        'boost_stacks': ['qb_2wr', 'qb_wr_rb', 'qb_plus_3', 'qb_plus_4', 'qb_2wr_2rb', 'qb_2wr_rb_te'],
         'multiplier': 1.10,
         'description': 'Favorite should dominate, stack their offense'
     },
     
     'dome_game': {
         # Indoor stadium
-        'boost_stacks': ['qb_2wr', 'qb_2wr_te'],
+        'boost_stacks': ['qb_2wr', 'qb_2wr_te', 'qb_plus_3', 'qb_2wr_rb_te'],
         'multiplier': 1.08,
         'description': 'Passing conditions perfect'
     },
     
     'bad_weather': {
         # Wind/rain/snow
-        'boost_stacks': ['2rb_same_team', 'qb_wr_rb'],
+        'boost_stacks': ['2rb_same_team', 'qb_wr_rb', 'qb_2wr_2rb'],
         'multiplier': 1.05,
         'description': 'Run-heavy game script likely'
     }
@@ -237,19 +302,19 @@ GAME_ENVIRONMENT_MULTIPLIERS = {
 OWNERSHIP_STRATEGY = {
     'chalk': {
         # High ownership (>25%)
-        'prefer_stacks': ['qb_wr', 'qb_2wr'],
+        'prefer_stacks': ['qb_wr', 'qb_2wr', 'qb_plus_2'],
         'description': 'Popular stacks, good for cash games'
     },
     
     'contrarian': {
         # Low ownership (<10%)
-        'prefer_stacks': ['qb_wr_te', 'game_qb_wr_opp_rb', '2rb_same_team'],
+        'prefer_stacks': ['qb_wr_te', 'game_qb_wr_opp_rb', '2rb_same_team', 'qb_plus_4', 'qb_2wr_2rb', 'qb_2wr_rb_te'],
         'description': 'Unique stacks for GPP leverage'
     },
     
     'balanced': {
         # Medium ownership (10-25%)
-        'prefer_stacks': ['qb_wr_rb', 'game_qb_wr_opp_wr'],
+        'prefer_stacks': ['qb_wr_rb', 'game_qb_wr_opp_wr', 'qb_plus_3'],
         'description': 'Mix of correlation and uniqueness'
     }
 }

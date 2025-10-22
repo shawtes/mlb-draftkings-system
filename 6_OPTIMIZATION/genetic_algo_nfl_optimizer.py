@@ -115,6 +115,15 @@ def map_nfl_stack_to_backend(stack_type):
         "No Stack": "No Stacks"
     }
     
+    # Check if it's the new format "QB + X (Y Total)"
+    if "QB +" in stack_type and "Total)" in stack_type:
+        # Extract the total number from parentheses
+        import re
+        match = re.search(r'\((\d+)\s+Total\)', stack_type)
+        if match:
+            # Return just the number as a string (e.g., "3")
+            return match.group(1)
+    
     # Return mapped value or original if not found
     return stack_mapping.get(stack_type, stack_type)
 
@@ -336,6 +345,16 @@ class GeneticDiversityEngine:
                     child_pos_mask = child['Position'] == position
                     child.loc[child_pos_mask] = p2_players.values
         
+        # CRITICAL: Remove duplicate players after crossover
+        if 'Name' in child.columns and child['Name'].duplicated().any():
+            duplicates = child[child['Name'].duplicated(keep=False)]['Name'].unique()
+            logging.warning(f"🚨 CROSSOVER created duplicates: {duplicates.tolist()}")
+            child = child.drop_duplicates(subset=['Name'], keep='first')
+            # If we lost players due to deduplication, this child is invalid
+            if len(child) != REQUIRED_TEAM_SIZE:
+                logging.warning(f"⚠️ Child invalid after dedup: {len(child)} players")
+                return parent1.copy()  # Return parent1 as fallback
+        
         return child
     
     def _mutate_lineup(self, lineup):
@@ -355,7 +374,7 @@ class GeneticDiversityEngine:
         for position in positions_to_mutate:
             current_players = mutated[mutated['Position'] == position]
             if len(current_players) > 0:
-                # Find alternative players
+                # Find alternative players - EXCLUDE all current players by Name
                 alternatives = self.df_players[
                     (self.df_players['Position'] == position) & 
                     (~self.df_players['Name'].isin(mutated['Name']))
@@ -365,6 +384,16 @@ class GeneticDiversityEngine:
                     # Replace with random alternative
                     replacement = alternatives.sample(1).iloc[0]
                     mutated.loc[mutated['Position'] == position].iloc[0] = replacement
+        
+        # CRITICAL: Double-check no duplicates after mutation
+        if 'Name' in mutated.columns and mutated['Name'].duplicated().any():
+            duplicates = mutated[mutated['Name'].duplicated(keep=False)]['Name'].unique()
+            logging.error(f"🚨 MUTATION created duplicates: {duplicates.tolist()}")
+            mutated = mutated.drop_duplicates(subset=['Name'], keep='first')
+            # If we lost players due to deduplication, return original
+            if len(mutated) != REQUIRED_TEAM_SIZE:
+                logging.warning(f"⚠️ Mutant invalid after dedup: {len(mutated)} players, returning original")
+                return lineup.copy()
         
         return mutated
     
@@ -423,6 +452,18 @@ class GeneticDiversityEngine:
             return False
             
         try:
+            # CRITICAL: Check for duplicate players first!
+            if 'Name' in lineup.columns:
+                if lineup['Name'].duplicated().any():
+                    duplicates = lineup[lineup['Name'].duplicated(keep=False)]['Name'].tolist()
+                    logging.error(f"🚨 VALIDATION FAILED: Duplicate players found: {duplicates}")
+                    return False
+            
+            # Check correct number of players
+            if len(lineup) != REQUIRED_TEAM_SIZE:
+                logging.debug(f"⚠️ Invalid lineup size: {len(lineup)} (need {REQUIRED_TEAM_SIZE})")
+                return False
+            
             # Check salary constraints
             total_salary = lineup['Salary'].sum() if 'Salary' in lineup.columns else 0
             if total_salary > self.salary_cap or total_salary < self.min_salary:
@@ -436,7 +477,8 @@ class GeneticDiversityEngine:
                     
             return True
             
-        except Exception:
+        except Exception as e:
+            logging.debug(f"⚠️ Validation exception: {e}")
             return False
 
 def optimize_single_lineup(args):
@@ -469,6 +511,18 @@ def optimize_single_lineup(args):
     player_vars = {}
     for idx in df.index:
         player_vars[idx] = pulp.LpVariable(f"player_{idx}", cat='Binary')
+    
+    # CRITICAL: Ensure each unique player name appears at most once in the lineup
+    # Group by player name and ensure sum of their indices <= 1
+    if 'Name' in df.columns:
+        player_name_groups = df.groupby('Name').groups
+        for player_name, indices in player_name_groups.items():
+            if len(indices) > 1:
+                # If same player appears multiple times in dataframe, ensure only one instance is selected
+                problem += pulp.lpSum([player_vars[idx] for idx in indices]) <= 1
+                logging.debug(f"🚫 DUPLICATE PREVENTION: Player '{player_name}' appears {len(indices)} times in dataframe, adding constraint")
+    else:
+        logging.warning("⚠️ 'Name' column not found - cannot add duplicate player prevention")
     
     # 🎲 PROBABILITY-ENHANCED OBJECTIVE FUNCTION
     has_probability_metrics = any(col in df.columns for col in [
@@ -561,12 +615,36 @@ def optimize_single_lineup(args):
     logging.debug("optimize_single_lineup: Added constraint: RB + WR + TE = 7 (includes FLEX)")
 
     # Handle different stack types
+    stack_size = None
     if stack_type == "No Stacks":
         # No stacking constraints - just basic position and salary constraints
         logging.debug("optimize_single_lineup: Using no stacks")
     elif stack_type in ["5", "4", "3"]:
         # Handle simple single stack types (5 players, 4 players, 3 players from one team)
         stack_size = int(stack_type)
+    elif "QB +" in stack_type and "Total)" in stack_type:
+        # Handle new format: "QB + 2 (3 Total)" -> extract 3
+        try:
+            # Extract number from parentheses
+            import re
+            match = re.search(r'\((\d+)\s+Total\)', stack_type)
+            if match:
+                stack_size = int(match.group(1))
+                logging.info(f"🎯 OPTIMIZER: Parsed QB stack type '{stack_type}' -> {stack_size} players total")
+            else:
+                # Fallback: just get any number from the string
+                numbers = re.findall(r'\d+', stack_type)
+                stack_size = int(numbers[-1]) if numbers else 3  # Use last number or default to 3
+                logging.warning(f"⚠️ Could not parse stack type '{stack_type}' cleanly, using {stack_size}")
+        except (ValueError, IndexError) as e:
+            logging.error(f"❌ Failed to parse stack type '{stack_type}': {e}")
+            stack_size = 3  # Default fallback
+    elif stack_type.replace(" ", "").isdigit():
+        # Handle plain numbers
+        stack_size = int(stack_type)
+    
+    # Process numeric stack if stack_size was determined
+    if stack_size is not None:
         logging.info(f"🎯 OPTIMIZER: Processing simple {stack_size}-stack")
         logging.info(f"🎯 OPTIMIZER: Team selections received: {team_selections}")
         
@@ -627,12 +705,20 @@ def optimize_single_lineup(args):
                 # If only one team selected for this stack size, enforce it directly
                 selected_team = valid_teams[0]
                 team_offense = df[(df['Team'] == selected_team) & (df['Position'] != 'DST')].index
+                team_qb = df[(df['Team'] == selected_team) & (df['Position'] == 'QB')].index
+                
+                # CRITICAL: Enforce stack with QB requirement
                 problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) >= stack_size
-                logging.info(f"✅ ENFORCING: Must have at least {stack_size} players from {selected_team}")
+                # Ensure the QB from this team is selected (QB must be part of the stack)
+                if len(team_qb) > 0:
+                    problem += pulp.lpSum([player_vars[idx] for idx in team_qb]) >= 1
+                    logging.info(f"✅ ENFORCING: Must have QB + {stack_size-1} other players from {selected_team}")
+                else:
+                    logging.warning(f"⚠️ Team {selected_team} has no QB, stack may not work correctly")
                 
             else:
                 # If multiple teams selected for this stack size, create OR constraint
-                # This means: at least 'stack_size' players from ANY of the selected teams
+                # This means: at least 'stack_size' players from ANY of the selected teams, with QB included
                 team_binary_vars = {}
                 for team in valid_teams:
                     team_binary_vars[team] = pulp.LpVariable(f"use_team_{team}_{stack_size}", cat='Binary')
@@ -640,17 +726,55 @@ def optimize_single_lineup(args):
                 # At least one team must be selected
                 problem += pulp.lpSum(team_binary_vars.values()) >= 1
                 
-                # If a team is selected, enforce the stack constraint
+                # ONLY ONE team can have the stack (prevent multiple 3+ player stacks)
+                problem += pulp.lpSum(team_binary_vars.values()) <= 1
+                logging.info(f"✅ ENFORCING: Exactly ONE team will have {stack_size}+ players")
+                
+                # If a team is selected, enforce the stack constraint + QB requirement
                 for team in valid_teams:
                     team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
-                    if len(team_offense) >= stack_size:
+                    team_qb = df[(df['Team'] == team) & (df['Position'] == 'QB')].index
+                    
+                    if len(team_offense) >= stack_size and len(team_qb) > 0:
                         # If team is selected (binary = 1), enforce at least 'stack_size' players
                         problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) >= stack_size * team_binary_vars[team]
+                        # AND enforce that the QB from this team is selected
+                        problem += pulp.lpSum([player_vars[idx] for idx in team_qb]) >= team_binary_vars[team]
                 
-                logging.info(f"✅ ENFORCING: Must have at least {stack_size} players from ANY of: {valid_teams}")
+                logging.info(f"✅ ENFORCING: Must have QB + {stack_size-1} others from ONE of: {valid_teams}")
+            
+            # ADDITIONAL CONSTRAINT: Prevent ALL other teams from having large stacks
+            # This ensures ONLY ONE team (the stacked team) has stack_size+ players
+            all_teams = df['Team'].unique().tolist()
+            non_dst_teams = [t for t in all_teams if t != 'DST']
+            
+            if len(valid_teams) == 1:
+                # If only one valid team, limit all others
+                for other_team in non_dst_teams:
+                    if other_team != valid_teams[0]:
+                        other_team_offense = df[(df['Team'] == other_team) & (df['Position'] != 'DST')].index
+                        if len(other_team_offense) >= stack_size:
+                            problem += pulp.lpSum([player_vars[idx] for idx in other_team_offense]) <= stack_size - 1
+                            logging.debug(f"🚫 LIMITING: Team {other_team} can have max {stack_size-1} players")
+            else:
+                # If multiple valid teams, use binary variables to ensure only the selected team has the stack
+                # and all non-selected teams (including other valid teams) are limited
+                for team in non_dst_teams:
+                    if team in valid_teams:
+                        # For valid teams, they can only have stack_size+ if their binary var is 1
+                        team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
+                        # If NOT selected (binary = 0), limit to stack_size-1
+                        problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) <= stack_size - 1 + 9 * team_binary_vars[team]
+                    else:
+                        # For non-valid teams, always limit to stack_size-1
+                        team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
+                        if len(team_offense) >= stack_size:
+                            problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) <= stack_size - 1
+                            logging.debug(f"🚫 LIMITING: Team {team} can have max {stack_size-1} players")
             
             # Log final enforcement summary
-            logging.info(f"📊 STACK CONSTRAINT SUMMARY: {stack_size}-stack will be enforced using teams: {valid_teams}")
+            logging.info(f"📊 STACK CONSTRAINT SUMMARY: QB-based {stack_size}-stack will be enforced using teams: {valid_teams}")
+            logging.info(f"🚫 OTHER TEAMS: Limited to max {stack_size-1} players each to prevent multiple stacks")
     elif stack_type in ["qb_wr", "qb_2wr", "qb_wr_te", "qb_wr_rb", "qb_2wr_te", "game_stack", "bring_back"] and NFL_STACK_ENGINE_AVAILABLE:
         # Use NFL Stack Engine for named stack types
         logging.info(f"🎯 OPTIMIZER: Processing NFL stack type: {stack_type}")
@@ -892,6 +1016,21 @@ def optimize_single_lineup(args):
 
     if pulp.LpStatus[status] == 'Optimal':
         lineup = df.loc[[idx for idx in df.index if player_vars[idx].varValue is not None and player_vars[idx].varValue > 0.5]]
+        
+        # CRITICAL: Remove any duplicate players by name (safety check)
+        if 'Name' in lineup.columns:
+            duplicates_before = lineup['Name'].duplicated().sum()
+            if duplicates_before > 0:
+                logging.error(f"🚨 FOUND {duplicates_before} DUPLICATE PLAYERS IN LINEUP!")
+                logging.error(f"🚨 Duplicate players: {lineup[lineup['Name'].duplicated(keep=False)]['Name'].tolist()}")
+                # Keep first occurrence of each player
+                lineup = lineup.drop_duplicates(subset=['Name'], keep='first')
+                logging.info(f"✅ Removed duplicates, lineup now has {len(lineup)} unique players")
+        
+        # Validate lineup has correct number of players
+        if len(lineup) != REQUIRED_TEAM_SIZE:
+            logging.error(f"🚨 LINEUP SIZE ERROR: {len(lineup)} players (need {REQUIRED_TEAM_SIZE})")
+            return pd.DataFrame(), stack_type
         
         # Log the actual team composition for debugging
         team_counts = lineup['Team'].value_counts()
@@ -2867,6 +3006,11 @@ class FantasyFootballApp(QMainWindow):
             "QB + 2 WR + TE",        # Full passing game
             "Game Stack",            # QB + WR + Opp WR
             "Bring-Back",            # QB + WR + Opp RB
+            "QB + 2 (3 Team)",       # QB + 2 other positions from same team
+            "QB + 3 (4 Team)",       # QB + 3 other positions from same team
+            "QB + 4 (5 Team)",       # QB + 4 other positions from same team
+            "4/2: QB + 2 WR + 2 RB", # QB with 2 WRs and 2 RBs
+            "4/2: QB + 2 WR + RB + TE", # QB with 2 WRs, RB and TE
             "No Stack"               # No correlation
         ]
         for stack_type in stack_types:
@@ -2952,24 +3096,23 @@ class FantasyFootballApp(QMainWindow):
         settings_section.addWidget(stack_label)
         
         self.combinations_stack_combo = QComboBox()
-        # NFL-specific stack types - focus on QB-WR correlation
+        # Simple numeric stack options - QB + other players from same team
         self.combinations_stack_combo.addItems([
-            "QB + WR",               # Most common
-            "QB + 2 WR",             # Aggressive double stack
-            "QB + WR + TE",          # Contrarian triple
-            "QB + WR + RB",          # Total offense
-            "QB + 2 WR + TE",        # Full passing
-            "Game Stack",            # QB+WR + Opp WR
-            "Bring-Back",            # QB+WR + Opp RB
+            "QB + 1 (2 Total)",      # QB + 1 other player
+            "QB + 2 (3 Total)",      # QB + 2 other players
+            "QB + 3 (4 Total)",      # QB + 3 other players
+            "QB + 4 (5 Total)",      # QB + 4 other players
+            "QB + 5 (6 Total)",      # QB + 5 other players
             "No Stack"               # Independent selection
         ])
-        self.combinations_stack_combo.setCurrentText("QB + WR")
-        self.combinations_stack_combo.setToolTip("NFL Stack Types:\n"
-                                                  "• QB + WR: QB with his top WR target (safe)\n"
-                                                  "• QB + 2 WR: QB with 2 WRs (aggressive ceiling)\n"
-                                                  "• QB + WR + TE: QB with WR and TE (contrarian)\n"
-                                                  "• Game Stack: Your QB+WR + opponent WR (shootout)\n"
-                                                  "• Bring-Back: Your QB+WR + opponent RB (hedge)")
+        self.combinations_stack_combo.setCurrentText("QB + 2 (3 Total)")
+        self.combinations_stack_combo.setToolTip("Team Stack Options (QB + Others):\n"
+                                                  "• QB + 1: QB plus 1 other player from same team (2 total)\n"
+                                                  "• QB + 2: QB plus 2 other players from same team (3 total)\n"
+                                                  "• QB + 3: QB plus 3 other players from same team (4 total)\n"
+                                                  "• QB + 4: QB plus 4 other players from same team (5 total)\n"
+                                                  "• QB + 5: QB plus 5 other players from same team (6 total)\n"
+                                                  "• No Stack: Independent player selection")
         settings_section.addWidget(self.combinations_stack_combo)
         
         # Default lineups per combination

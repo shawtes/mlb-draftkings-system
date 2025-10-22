@@ -107,13 +107,18 @@ class NFLUnderdogFantasyGUI:
         summary_frame = ttk.LabelFrame(self.nfl_data_frame, text="NFL Data Summary")
         summary_frame.pack(fill=tk.X, padx=5, pady=5)
         
-        # Summary labels
-        self.data_summary_text = tk.Text(summary_frame, height=8, wrap=tk.WORD)
-        data_scrollbar = ttk.Scrollbar(summary_frame, orient=tk.VERTICAL, command=self.data_summary_text.yview)
-        self.data_summary_text.configure(yscrollcommand=data_scrollbar.set)
+        # Summary labels with horizontal and vertical scrolling
+        self.data_summary_text = tk.Text(summary_frame, height=8, wrap=tk.NONE)  # Changed to NONE for horizontal scroll
+        data_scrollbar_y = ttk.Scrollbar(summary_frame, orient=tk.VERTICAL, command=self.data_summary_text.yview)
+        data_scrollbar_x = ttk.Scrollbar(summary_frame, orient=tk.HORIZONTAL, command=self.data_summary_text.xview)
+        self.data_summary_text.configure(yscrollcommand=data_scrollbar_y.set, xscrollcommand=data_scrollbar_x.set)
         
-        self.data_summary_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
-        data_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=5, pady=5)
+        self.data_summary_text.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        data_scrollbar_y.grid(row=0, column=1, sticky='ns')
+        data_scrollbar_x.grid(row=1, column=0, sticky='ew')
+        
+        summary_frame.grid_rowconfigure(0, weight=1)
+        summary_frame.grid_columnconfigure(0, weight=1)
         
         # Player data tree
         tree_frame = ttk.LabelFrame(self.nfl_data_frame, text="Player Data")
@@ -123,9 +128,20 @@ class NFLUnderdogFantasyGUI:
         columns = ('Name', 'Position', 'Team', 'Opponent', 'Projected Points', 'Salary')
         self.player_tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=15)
         
+        # Configure column widths for better visibility
+        column_widths = {
+            'Name': 200,
+            'Position': 80,
+            'Team': 70,
+            'Opponent': 80,
+            'Projected Points': 130,
+            'Salary': 100
+        }
+        
         for col in columns:
             self.player_tree.heading(col, text=col)
-            self.player_tree.column(col, width=120)
+            width = column_widths.get(col, 120)
+            self.player_tree.column(col, width=width, minwidth=50, stretch=True)
         
         # Scrollbars for tree
         tree_scrollbar_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.player_tree.yview)
@@ -167,9 +183,21 @@ class NFLUnderdogFantasyGUI:
         columns = ('Player', 'Team', 'Prop', 'Line', 'Projection', 'Probability', 'Multiplier')
         self.props_tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=15)
         
+        # Configure column widths for better visibility
+        column_widths = {
+            'Player': 180,
+            'Team': 60,
+            'Prop': 140,
+            'Line': 80,
+            'Projection': 100,
+            'Probability': 100,
+            'Multiplier': 80
+        }
+        
         for col in columns:
             self.props_tree.heading(col, text=col)
-            self.props_tree.column(col, width=120)
+            width = column_widths.get(col, 120)
+            self.props_tree.column(col, width=width, minwidth=50, stretch=True)
         
         # Scrollbars
         props_scrollbar_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.props_tree.yview)
@@ -189,9 +217,23 @@ class NFLUnderdogFantasyGUI:
         columns = ('Player', 'Team', 'Prop', 'Line', 'Projection', 'Probability', 'Multiplier', 'Expected Return', 'Kelly Fraction')
         self.power_plays_tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=15)
         
+        # Configure column widths for better visibility
+        column_widths = {
+            'Player': 180,
+            'Team': 60,
+            'Prop': 140,
+            'Line': 80,
+            'Projection': 100,
+            'Probability': 100,
+            'Multiplier': 80,
+            'Expected Return': 120,
+            'Kelly Fraction': 100
+        }
+        
         for col in columns:
             self.power_plays_tree.heading(col, text=col)
-            self.power_plays_tree.column(col, width=100)
+            width = column_widths.get(col, 100)
+            self.power_plays_tree.column(col, width=width, minwidth=50, stretch=True)
         
         # Scrollbars
         power_scrollbar_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.power_plays_tree.yview)
@@ -231,12 +273,17 @@ class NFLUnderdogFantasyGUI:
         summary_frame = ttk.LabelFrame(self.parlay_frame, text="Parlay Summary by Leg Count")
         summary_frame.pack(fill=tk.X, padx=5, pady=5)
         
-        self.parlay_summary_text = tk.Text(summary_frame, height=6, wrap=tk.WORD, font=("Courier", 10))
-        summary_scrollbar = ttk.Scrollbar(summary_frame, orient=tk.VERTICAL, command=self.parlay_summary_text.yview)
-        self.parlay_summary_text.configure(yscrollcommand=summary_scrollbar.set)
+        self.parlay_summary_text = tk.Text(summary_frame, height=6, wrap=tk.NONE, font=("Courier", 10))  # NONE for horizontal scroll
+        summary_scrollbar_y = ttk.Scrollbar(summary_frame, orient=tk.VERTICAL, command=self.parlay_summary_text.yview)
+        summary_scrollbar_x = ttk.Scrollbar(summary_frame, orient=tk.HORIZONTAL, command=self.parlay_summary_text.xview)
+        self.parlay_summary_text.configure(yscrollcommand=summary_scrollbar_y.set, xscrollcommand=summary_scrollbar_x.set)
         
-        self.parlay_summary_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
-        summary_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=5, pady=5)
+        self.parlay_summary_text.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        summary_scrollbar_y.grid(row=0, column=1, sticky='ns')
+        summary_scrollbar_x.grid(row=1, column=0, sticky='ew')
+        
+        summary_frame.grid_rowconfigure(0, weight=1)
+        summary_frame.grid_columnconfigure(0, weight=1)
         
         # Create notebook for parlay categories
         self.parlay_notebook = ttk.Notebook(self.parlay_frame)
@@ -261,12 +308,20 @@ class NFLUnderdogFantasyGUI:
         columns = ('Parlay ID', 'Legs', 'Combined Prob', 'Payout', 'Expected Value', 'Leg Details')
         tree = ttk.Treeview(parent_frame, columns=columns, show='headings', height=15)
         
+        # Configure column widths and allow resizing
+        column_widths = {
+            'Parlay ID': 100,
+            'Legs': 60,
+            'Combined Prob': 120,
+            'Payout': 100,
+            'Expected Value': 120,
+            'Leg Details': 600  # Wider for long parlay details
+        }
+        
         for col in columns:
             tree.heading(col, text=col)
-            if col == 'Leg Details':
-                tree.column(col, width=400)
-            else:
-                tree.column(col, width=100)
+            width = column_widths.get(col, 100)
+            tree.column(col, width=width, minwidth=50, stretch=True)  # Allow column resizing
         
         # Scrollbars
         scrollbar_y = ttk.Scrollbar(parent_frame, orient=tk.VERTICAL, command=tree.yview)
@@ -281,39 +336,50 @@ class NFLUnderdogFantasyGUI:
     
     def setup_team_analysis_tab(self):
         """Setup team analysis tab"""
-        # Team analysis text
+        # Team analysis text with horizontal and vertical scrolling
         analysis_frame = ttk.LabelFrame(self.team_analysis_frame, text="Team Analysis")
         analysis_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        self.team_analysis_text = tk.Text(analysis_frame, wrap=tk.WORD)
-        team_scrollbar = ttk.Scrollbar(analysis_frame, orient=tk.VERTICAL, command=self.team_analysis_text.yview)
-        self.team_analysis_text.configure(yscrollcommand=team_scrollbar.set)
+        self.team_analysis_text = tk.Text(analysis_frame, wrap=tk.NONE)  # NONE for horizontal scroll
+        team_scrollbar_y = ttk.Scrollbar(analysis_frame, orient=tk.VERTICAL, command=self.team_analysis_text.yview)
+        team_scrollbar_x = ttk.Scrollbar(analysis_frame, orient=tk.HORIZONTAL, command=self.team_analysis_text.xview)
+        self.team_analysis_text.configure(yscrollcommand=team_scrollbar_y.set, xscrollcommand=team_scrollbar_x.set)
         
-        self.team_analysis_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
-        team_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=5, pady=5)
+        self.team_analysis_text.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        team_scrollbar_y.grid(row=0, column=1, sticky='ns')
+        team_scrollbar_x.grid(row=1, column=0, sticky='ew')
+        
+        analysis_frame.grid_rowconfigure(0, weight=1)
+        analysis_frame.grid_columnconfigure(0, weight=1)
     
     def load_nfl_data(self):
         """Load NFL data from sportsdata.io"""
         try:
-            # Look for SPORTSDATA files specifically (they have detailed projections)
-            nfl_files = [f for f in os.listdir(self.default_dir) 
-                        if 'SPORTSDATA' in f and f.endswith('.csv')]
-            
-            if not nfl_files:
-                messagebox.showwarning("Warning", 
-                    "No SportsData.io files found!\n\n"
-                    "Please load a file with detailed projections like:\n"
-                    "- nfl_week7_CASH_SPORTSDATA.csv\n"
-                    "- nfl_week7_GPP_SPORTSDATA.csv")
-                return
-            
-            # Prefer CASH file, fallback to first SPORTSDATA file
-            if any('CASH' in f for f in nfl_files):
-                latest_nfl_file = [f for f in nfl_files if 'CASH' in f][0]
+            # First check for SEA vs TEN tonight file
+            sea_ten_file = "sea_vs_ten_tonight.csv"
+            if os.path.exists(sea_ten_file):
+                print(f"🏈 Loading SEA vs TEN tonight game data...")
+                nfl_path = sea_ten_file
             else:
-                latest_nfl_file = nfl_files[0]
-            
-            nfl_path = os.path.join(self.default_dir, latest_nfl_file)
+                # Look for SPORTSDATA files specifically (they have detailed projections)
+                nfl_files = [f for f in os.listdir(self.default_dir) 
+                            if 'SPORTSDATA' in f and f.endswith('.csv')]
+                
+                if not nfl_files:
+                    messagebox.showwarning("Warning", 
+                        "No SportsData.io files found!\n\n"
+                        "Please load a file with detailed projections like:\n"
+                        "- nfl_week7_CASH_SPORTSDATA.csv\n"
+                        "- nfl_week7_GPP_SPORTSDATA.csv")
+                    return
+                
+                # Prefer CASH file, fallback to first SPORTSDATA file
+                if any('CASH' in f for f in nfl_files):
+                    latest_nfl_file = [f for f in nfl_files if 'CASH' in f][0]
+                else:
+                    latest_nfl_file = nfl_files[0]
+                
+                nfl_path = os.path.join(self.default_dir, latest_nfl_file)
             self.nfl_data_df = pd.read_csv(nfl_path)
             
             # Verify required columns exist
@@ -327,12 +393,15 @@ class NFLUnderdogFantasyGUI:
                 self.nfl_data_df = None
                 return
             
-            self.status_label.config(text=f"Loaded NFL Data: {latest_nfl_file}", foreground="green")
+            # Get filename for display
+            display_name = os.path.basename(nfl_path)
+            
+            self.status_label.config(text=f"Loaded NFL Data: {display_name}", foreground="green")
             self.update_data_summary()
             self.populate_player_tree()
             self.update_team_list()
             
-            print(f"✅ Successfully loaded {len(self.nfl_data_df)} players from {latest_nfl_file}")
+            print(f"✅ Successfully loaded {len(self.nfl_data_df)} players from {display_name}")
             print(f"📋 Available columns: {self.nfl_data_df.columns.tolist()}")
             
         except Exception as e:
@@ -392,6 +461,24 @@ Top 5 Players by Projected Points:
         self.team_combo['values'] = teams
         self.available_teams = teams[1:]  # Exclude 'All'
     
+    def get_realistic_line(self, projection, prop_type):
+        """Convert projection to realistic prop line"""
+        # Lines are typically set slightly below projection to create 50/50ish odds
+        if 'Yards' in prop_type:
+            # Round to nearest 0.5 for yards props
+            base_line = projection * 0.85  # Set line at ~85% of projection
+            return round(base_line * 2) / 2  # Round to nearest 0.5
+        elif 'TD' in prop_type:
+            # TDs - round to nearest 0.5
+            base_line = max(0.5, projection * 0.9)
+            return round(base_line * 2) / 2
+        elif 'Receptions' in prop_type:
+            # Receptions - round to nearest 0.5
+            base_line = projection * 0.85
+            return round(base_line * 2) / 2
+        else:
+            return round(projection, 1)
+    
     def generate_nfl_props(self):
         """Generate NFL prop bets from the data"""
         if self.nfl_data_df is None:
@@ -417,10 +504,11 @@ Top 5 Players by Projected Points:
             if position == 'QB':
                 if 'PassingYards' in player and not pd.isna(player['PassingYards']):
                     yards = player['PassingYards']
-                    if yards > 0:
-                        multiplier = self.get_multiplier('Passing Yards', yards)
+                    if yards > 100:  # Only create props for significant projections
+                        line = self.get_realistic_line(yards, 'Passing Yards')
+                        multiplier = self.get_multiplier('Passing Yards', line)
                         prob = self.calculate_probability(
-                            yards, round(yards), 
+                            yards, line, 
                             prop_type='Passing Yards',
                             position='QB',
                             player_name=name,
@@ -428,18 +516,19 @@ Top 5 Players by Projected Points:
                         )
                         self.prop_bets.append({
                             'player': name, 'team': team, 'opponent': opponent,
-                            'prop': 'Passing Yards', 'line': round(yards),
+                            'prop': 'Passing Yards', 'line': line,
                             'projection': yards, 'probability': prob,
                             'multiplier': multiplier
                         })
-                        print(f"  Added Passing Yards prop: {yards}")
+                        print(f"  Added Passing Yards prop: O{line}")
                 
                 if 'PassingTouchdowns' in player and not pd.isna(player['PassingTouchdowns']):
                     tds = player['PassingTouchdowns']
-                    if tds > 0:
-                        multiplier = self.get_multiplier('Passing TDs', tds)
+                    if tds > 0.5:
+                        line = self.get_realistic_line(tds, 'Passing TDs')
+                        multiplier = self.get_multiplier('Passing TDs', line)
                         prob = self.calculate_probability(
-                            tds, round(tds, 1),
+                            tds, line,
                             prop_type='Passing TDs',
                             position='QB',
                             player_name=name,
@@ -447,18 +536,19 @@ Top 5 Players by Projected Points:
                         )
                         self.prop_bets.append({
                             'player': name, 'team': team, 'opponent': opponent,
-                            'prop': 'Passing TDs', 'line': round(tds, 1),
+                            'prop': 'Passing TDs', 'line': line,
                             'projection': tds, 'probability': prob,
                             'multiplier': multiplier
                         })
-                        print(f"  Added Passing TDs prop: {tds}")
+                        print(f"  Added Passing TDs prop: O{line}")
                 
                 if 'RushingYards' in player and not pd.isna(player['RushingYards']):
                     rush_yards = player['RushingYards']
-                    if rush_yards > 5:
-                        multiplier = self.get_multiplier('Rushing Yards', rush_yards)
+                    if rush_yards > 10:
+                        line = self.get_realistic_line(rush_yards, 'Rushing Yards')
+                        multiplier = self.get_multiplier('Rushing Yards', line)
                         prob = self.calculate_probability(
-                            rush_yards, round(rush_yards),
+                            rush_yards, line,
                             prop_type='Rushing Yards',
                             position='QB',
                             player_name=name,
@@ -466,20 +556,21 @@ Top 5 Players by Projected Points:
                         )
                         self.prop_bets.append({
                             'player': name, 'team': team, 'opponent': opponent,
-                            'prop': 'Rushing Yards', 'line': round(rush_yards),
+                            'prop': 'Rushing Yards', 'line': line,
                             'projection': rush_yards, 'probability': prob,
                             'multiplier': multiplier
                         })
-                        print(f"  Added Rushing Yards prop: {rush_yards}")
+                        print(f"  Added Rushing Yards prop: O{line}")
             
             # RB Props
             elif position == 'RB':
                 if 'RushingYards' in player and not pd.isna(player['RushingYards']):
                     yards = player['RushingYards']
-                    if yards > 5:  # Lowered threshold
-                        multiplier = self.get_multiplier('Rushing Yards', yards)
+                    if yards > 20:  # Only create props for significant projections
+                        line = self.get_realistic_line(yards, 'Rushing Yards')
+                        multiplier = self.get_multiplier('Rushing Yards', line)
                         prob = self.calculate_probability(
-                            yards, round(yards),
+                            yards, line,
                             prop_type='Rushing Yards',
                             position='RB',
                             player_name=name,
@@ -487,18 +578,19 @@ Top 5 Players by Projected Points:
                         )
                         self.prop_bets.append({
                             'player': name, 'team': team, 'opponent': opponent,
-                            'prop': 'Rushing Yards', 'line': round(yards),
+                            'prop': 'Rushing Yards', 'line': line,
                             'projection': yards, 'probability': prob,
                             'multiplier': multiplier
                         })
-                        print(f"  Added Rushing Yards prop: {yards}")
+                        print(f"  Added Rushing Yards prop: O{line}")
                 
                 if 'RushingTouchdowns' in player and not pd.isna(player['RushingTouchdowns']):
                     tds = player['RushingTouchdowns']
-                    if tds > 0:
-                        multiplier = self.get_multiplier('Rushing TDs', tds)
+                    if tds > 0.5:
+                        line = self.get_realistic_line(tds, 'Rushing TDs')
+                        multiplier = self.get_multiplier('Rushing TDs', line)
                         prob = self.calculate_probability(
-                            tds, round(tds, 1),
+                            tds, line,
                             prop_type='Rushing TDs',
                             position='RB',
                             player_name=name,
@@ -506,18 +598,19 @@ Top 5 Players by Projected Points:
                         )
                         self.prop_bets.append({
                             'player': name, 'team': team, 'opponent': opponent,
-                            'prop': 'Rushing TDs', 'line': round(tds, 1),
+                            'prop': 'Rushing TDs', 'line': line,
                             'projection': tds, 'probability': prob,
                             'multiplier': multiplier
                         })
-                        print(f"  Added Rushing TDs prop: {tds}")
+                        print(f"  Added Rushing TDs prop: O{line}")
                 
                 if 'ReceivingYards' in player and not pd.isna(player['ReceivingYards']):
                     rec_yards = player['ReceivingYards']
-                    if rec_yards > 0:
-                        multiplier = self.get_multiplier('Receiving Yards', rec_yards)
+                    if rec_yards > 10:
+                        line = self.get_realistic_line(rec_yards, 'Receiving Yards')
+                        multiplier = self.get_multiplier('Receiving Yards', line)
                         prob = self.calculate_probability(
-                            rec_yards, round(rec_yards),
+                            rec_yards, line,
                             prop_type='Receiving Yards',
                             position='RB',
                             player_name=name,
@@ -525,75 +618,115 @@ Top 5 Players by Projected Points:
                         )
                         self.prop_bets.append({
                             'player': name, 'team': team, 'opponent': opponent,
-                            'prop': 'Receiving Yards', 'line': round(rec_yards),
+                            'prop': 'Receiving Yards', 'line': line,
                             'projection': rec_yards, 'probability': prob,
                             'multiplier': multiplier
                         })
-                        print(f"  Added Receiving Yards prop: {rec_yards}")
+                        print(f"  Added Receiving Yards prop: O{line}")
             
             # WR Props
             elif position == 'WR':
                 if 'ReceivingYards' in player and not pd.isna(player['ReceivingYards']):
                     yards = player['ReceivingYards']
-                    if yards > 5:  # Lowered threshold
-                        prob = self.calculate_probability(yards, round(yards))
+                    if yards > 20:
+                        line = self.get_realistic_line(yards, 'Receiving Yards')
+                        multiplier = self.get_multiplier('Receiving Yards', line)
+                        prob = self.calculate_probability(
+                            yards, line,
+                            prop_type='Receiving Yards',
+                            position='WR',
+                            player_name=name,
+                            multiplier=multiplier
+                        )
                         self.prop_bets.append({
                             'player': name, 'team': team, 'opponent': opponent,
-                            'prop': 'Receiving Yards', 'line': round(yards),
+                            'prop': 'Receiving Yards', 'line': line,
                             'projection': yards, 'probability': prob,
-                            'multiplier': self.get_multiplier('Receiving Yards', yards)
+                            'multiplier': multiplier
                         })
-                        print(f"  Added Receiving Yards prop: {yards}")
+                        print(f"  Added Receiving Yards prop: O{line}")
                 
                 if 'ReceivingTouchdowns' in player and not pd.isna(player['ReceivingTouchdowns']):
                     tds = player['ReceivingTouchdowns']
-                    if tds > 0:
-                        prob = self.calculate_probability(tds, round(tds, 1))
+                    if tds > 0.5:
+                        line = self.get_realistic_line(tds, 'Receiving TDs')
+                        multiplier = self.get_multiplier('Receiving TDs', line)
+                        prob = self.calculate_probability(
+                            tds, line,
+                            prop_type='Receiving TDs',
+                            position='WR',
+                            player_name=name,
+                            multiplier=multiplier
+                        )
                         self.prop_bets.append({
                             'player': name, 'team': team, 'opponent': opponent,
-                            'prop': 'Receiving TDs', 'line': round(tds, 1),
+                            'prop': 'Receiving TDs', 'line': line,
                             'projection': tds, 'probability': prob,
-                            'multiplier': self.get_multiplier('Receiving TDs', tds)
+                            'multiplier': multiplier
                         })
-                        print(f"  Added Receiving TDs prop: {tds}")
+                        print(f"  Added Receiving TDs prop: O{line}")
                 
                 if 'Receptions' in player and not pd.isna(player['Receptions']):
                     rec = player['Receptions']
-                    if rec > 0:
-                        prob = self.calculate_probability(rec, round(rec, 1))
+                    if rec > 2:
+                        line = self.get_realistic_line(rec, 'Receptions')
+                        multiplier = self.get_multiplier('Receptions', line)
+                        prob = self.calculate_probability(
+                            rec, line,
+                            prop_type='Receptions',
+                            position='WR',
+                            player_name=name,
+                            multiplier=multiplier
+                        )
                         self.prop_bets.append({
                             'player': name, 'team': team, 'opponent': opponent,
-                            'prop': 'Receptions', 'line': round(rec, 1),
+                            'prop': 'Receptions', 'line': line,
                             'projection': rec, 'probability': prob,
-                            'multiplier': self.get_multiplier('Receptions', rec)
+                            'multiplier': multiplier
                         })
-                        print(f"  Added Receptions prop: {rec}")
+                        print(f"  Added Receptions prop: O{line}")
             
             # TE Props
             elif position == 'TE':
                 if 'ReceivingYards' in player and not pd.isna(player['ReceivingYards']):
                     yards = player['ReceivingYards']
-                    if yards > 0:
-                        prob = self.calculate_probability(yards, round(yards))
+                    if yards > 15:
+                        line = self.get_realistic_line(yards, 'Receiving Yards')
+                        multiplier = self.get_multiplier('Receiving Yards', line)
+                        prob = self.calculate_probability(
+                            yards, line,
+                            prop_type='Receiving Yards',
+                            position='TE',
+                            player_name=name,
+                            multiplier=multiplier
+                        )
                         self.prop_bets.append({
                             'player': name, 'team': team, 'opponent': opponent,
-                            'prop': 'Receiving Yards', 'line': round(yards),
+                            'prop': 'Receiving Yards', 'line': line,
                             'projection': yards, 'probability': prob,
-                            'multiplier': self.get_multiplier('Receiving Yards', yards)
+                            'multiplier': multiplier
                         })
-                        print(f"  Added Receiving Yards prop: {yards}")
+                        print(f"  Added Receiving Yards prop: O{line}")
                 
                 if 'Receptions' in player and not pd.isna(player['Receptions']):
                     rec = player['Receptions']
-                    if rec > 0:
-                        prob = self.calculate_probability(rec, round(rec, 1))
+                    if rec > 2:
+                        line = self.get_realistic_line(rec, 'Receptions')
+                        multiplier = self.get_multiplier('Receptions', line)
+                        prob = self.calculate_probability(
+                            rec, line,
+                            prop_type='Receptions',
+                            position='TE',
+                            player_name=name,
+                            multiplier=multiplier
+                        )
                         self.prop_bets.append({
                             'player': name, 'team': team, 'opponent': opponent,
-                            'prop': 'Receptions', 'line': round(rec, 1),
+                            'prop': 'Receptions', 'line': line,
                             'projection': rec, 'probability': prob,
-                            'multiplier': self.get_multiplier('Receptions', rec)
+                            'multiplier': multiplier
                         })
-                        print(f"  Added Receptions prop: {rec}")
+                        print(f"  Added Receptions prop: O{line}")
         
         print(f"Generated {len(self.prop_bets)} total prop bets")
         self.populate_props_tree()
@@ -822,7 +955,7 @@ Top 5 Players by Projected Points:
                         'expected_value': expected_value,
                         'leg_details': leg_details
                     })
-            
+        
             # Sort by expected value and keep top N for this leg count
             leg_parlays.sort(key=lambda x: x['expected_value'], reverse=True)
             leg_parlays = leg_parlays[:parlays_per_leg]
