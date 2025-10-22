@@ -381,7 +381,10 @@ class NFLOptimizer {
     const grouped = {};
     
     players.forEach(player => {
-      if (!player.selected && player.selected !== undefined) return;
+      // Always include DST players regardless of selection status
+      // Other positions require selection
+      const isDST = player.position === 'DST';
+      if (!player.selected && player.selected !== undefined && !isDST) return;
       
       // NFL positions don't have multi-position eligibility like MLB
       const pos = player.position;

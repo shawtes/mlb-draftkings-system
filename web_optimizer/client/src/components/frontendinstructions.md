@@ -1,4 +1,4 @@
-Excellent Enterprise level work only
+Perfect excellent Enterprise level work only
 
 take inspiration from big tech FAANG companies with billions of users and professional/clean modern styling 
 
@@ -7,9 +7,12 @@ no errors
 simple-- clean concise work nothing too out of reach/scope just something good enough to get users and looks profesional/clean
 
 
-tasks:
 
-overall page change the background from a dark navy to lighter blue/greyish color with background navy padding
+TASK ONE: 
+
+
+
+do not complete these yet: 
 
 dfs optimizer- have it be multiple builds/pages for the tab 
 confimr implemenation with backend optimizer

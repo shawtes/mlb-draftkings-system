@@ -85,9 +85,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   }, [activeView, selectedSport]);
 
   return (
-    <div className="min-h-screen bg-slate-900 relative overflow-hidden flex flex-col">
+    <div className="min-h-screen relative overflow-hidden flex flex-col" style={{ backgroundColor: '#64748b' }}>
       {/* Animated Grid Background */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-30" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#64748b_1px,transparent_1px),linear-gradient(to_bottom,#64748b_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-30" />
       
       {/* Gradient Orb - Top Left */}
       <div className="absolute top-0 -left-40 w-96 h-96 bg-cyan-500/15 rounded-full blur-[120px] pointer-events-none" />
@@ -96,41 +96,39 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       <div className="absolute top-1/3 -right-40 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
 
       {/* Top Navigation Header */}
-      <header className="bg-slate-800/95 backdrop-blur-xl border-b border-slate-700/50 shadow-2xl relative z-10">
+      <header className="backdrop-blur-xl border-b border-slate-700/50 shadow-2xl relative z-10" style={{ backgroundColor: '#1e293b' }}>
         {/* Top Bar - Logo and User Section */}
-        <div className="flex items-center justify-between px-8 py-4 border-b border-cyan-500/10">
+        <div className="flex items-center justify-between px-8 py-6 border-b border-cyan-500/10">
           {/* Left: Logo */}
           <div className="flex items-center gap-4">
             <div className="relative">
-              <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-cyan-500/30 relative">
-                <Trophy className="w-7 h-7 text-white" />
-                <div className="absolute -top-1 -right-1 w-3 h-3 bg-cyan-400 rounded-full border-2 border-black animate-pulse" />
-              </div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">UrSim</div>
-              <div className="text-xs text-cyan-400/70 font-medium">DFS Lineup Optimizer</div>
+              <img 
+                src="/src/logo.jpg" 
+                alt="UrSim Logo" 
+                className="w-30 h-30 rounded-xl shadow-lg shadow-cyan-500/30"
+                style={{ background: 'transparent' }}
+              />
             </div>
           </div>
           
           {/* Right: User Actions */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <Button 
               variant="ghost" 
               size="icon" 
-              className="text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all"
+              className="text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all w-12 h-12"
               title="Help & Support"
               onClick={() => handleNavigation('how-to-use')}
             >
-              <HelpCircle className="w-5 h-5" />
+              <HelpCircle className="w-7 h-7" />
             </Button>
             <Button 
               variant="ghost" 
               size="icon" 
-              className="text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all relative"
+              className="text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all relative w-12 h-12"
               title="Notifications"
             >
-              <MessageSquare className="w-5 h-5" />
+              <MessageSquare className="w-7 h-7" />
               <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
             </Button>
 
@@ -138,11 +136,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 text-slate-400 hover:text-cyan-400 px-4 py-2 rounded-lg hover:bg-cyan-500/5 transition-all border border-transparent hover:border-cyan-500/20">
-                  <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-[0_0_10px_rgba(6,182,212,0.3)]">
-                    <User className="w-5 h-5 text-white" />
+                  <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-[0_0_10px_rgba(6,182,212,0.3)]">
+                    <User className="w-6 h-6 text-white" />
                   </div>
                   <span className="font-medium">User</span>
-                  <ChevronDown className="w-4 h-4" />
+                  <ChevronDown className="w-5 h-5" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56 bg-slate-900 border-cyan-500/20">
@@ -165,7 +163,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         </div>
 
         {/* Middle Header Section - Sport Selection Tabs */}
-        <div className="px-8 py-6 border-b border-slate-700/30">
+        <div className="px-8 py-6 border-b border-slate-700/30" style={{ backgroundColor: '#334155' }}>
           <div className="flex items-center justify-between">
             {/* Left: Sport Tabs */}
             <div className="flex items-center gap-3">
@@ -290,7 +288,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         </header>
 
         {/* Main Content */}
-      <main className="flex-1 overflow-auto p-8 relative z-10">
+      <main className="flex-1 overflow-auto p-8 relative z-10" style={{ backgroundColor: '#64748b' }}>
           {renderMainContent}
         </main>
     </div>

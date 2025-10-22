@@ -125,7 +125,10 @@ class MLBOptimizer {
     const grouped = {};
     
     players.forEach(player => {
-      if (!player.selected) return;
+      // Always include DST players regardless of selection status
+      // Other positions require selection
+      const isDST = player.position === 'DST' || player.position.includes('DST');
+      if (!player.selected && !isDST) return;
       
       const positions = player.position.split('/');
       positions.forEach(pos => {
