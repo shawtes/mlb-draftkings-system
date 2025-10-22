@@ -59,11 +59,18 @@ class NBADataFetcher:
                 logging.debug(f"Using cached data for {cache_key}")
                 return cached_data
         
-        # Make request
+        # Make request - try both header and query parameter methods
         url = f"{self.base_url}{endpoint}"
         
         try:
+            # Try with header first
             response = requests.get(url, headers=self.headers, timeout=30)
+            
+            # If 401, try with query parameter instead
+            if response.status_code == 401:
+                params = {'key': self.api_key}
+                response = requests.get(url, params=params, timeout=30)
+            
             response.raise_for_status()
             
             data = response.json()
@@ -76,6 +83,7 @@ class NBADataFetcher:
             
         except requests.exceptions.RequestException as e:
             logging.error(f"API request failed: {e}")
+            logging.error(f"URL: {url}")
             return {}
     
     # ========================================================================
