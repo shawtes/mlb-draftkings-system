@@ -7339,10 +7339,12 @@ class FantasyFootballApp(QMainWindow):
                         break
         
         # Last resort: use ANY PG/SG player if PG slot is still empty
-        if not pg_filled and pg_candidates:
-            for player_id in pg_candidates:
+        # Search through ALL available PG-eligible players, not just initial candidates
+        if not pg_filled:
+            for player_id in position_players['PG']:
                 if player_id not in used_player_ids:
                     if assign_player(0, player_id):
+                        pg_filled = True
                         break
         
         # Phase 3: Fill SG (slot 1) - similar reservation logic
@@ -7376,10 +7378,12 @@ class FantasyFootballApp(QMainWindow):
                         break
         
         # Last resort: use ANY SG/PG player if SG slot is still empty
-        if not sg_filled and sg_candidates:
-            for player_id in sg_candidates:
+        # Search through ALL available SG-eligible players, not just initial candidates
+        if not sg_filled:
+            for player_id in position_players['SG']:
                 if player_id not in used_player_ids:
                     if assign_player(1, player_id):
+                        sg_filled = True
                         break
         
         # Phase 4: Fill SF (slot 2) - BUT reserve at least 1 forward for F slot
@@ -7416,10 +7420,12 @@ class FantasyFootballApp(QMainWindow):
                         break
         
         # Last resort: use ANY SF/PF player if SF slot is still empty
-        if not sf_filled and sf_candidates:
-            for player_id in sf_candidates:
+        # Search through ALL available SF-eligible players, not just initial candidates
+        if not sf_filled:
+            for player_id in position_players['SF']:
                 if player_id not in used_player_ids:
                     if assign_player(2, player_id):
+                        sf_filled = True
                         break
         
         # Phase 5: Fill PF (slot 3) - similar reservation logic
@@ -7453,10 +7459,12 @@ class FantasyFootballApp(QMainWindow):
                         break
         
         # Last resort: use ANY PF/SF player if PF slot is still empty
-        if not pf_filled and pf_candidates:
-            for player_id in pf_candidates:
+        # Search through ALL available PF-eligible players, not just initial candidates
+        if not pf_filled:
+            for player_id in position_players['PF']:
                 if player_id not in used_player_ids:
                     if assign_player(3, player_id):
+                        pf_filled = True
                         break
         
         # Phase 6: Fill G slot (slot 5) - now we should have dual-eligible guards available
