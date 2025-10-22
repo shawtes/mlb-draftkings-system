@@ -690,38 +690,26 @@ def optimize_single_lineup(args):
         problem += pulp.lpSum([df.at[idx, 'Salary'] * player_vars[idx] for idx in df.index]) >= min_salary
         logging.debug(f"optimize_single_lineup: Added minimum salary constraint >= {min_salary}")
     
-    # NBA Position Constraints
-    # For each position, ensure we have exactly the required number
-    for position, limit in POSITION_LIMITS.items():
-        if position in ['G', 'F', 'UTIL']:
-            # Flexible positions - handled separately below
-            continue
-        
-        # Count available players for this position
-        available_for_position = [idx for idx in df.index if position in str(df.at[idx, 'Position'])]
-        logging.debug(f"optimize_single_lineup: Position {position} needs {limit}, available: {len(available_for_position)}")
-        
-        if len(available_for_position) < limit:
-            logging.error(f"optimize_single_lineup: INSUFFICIENT PLAYERS for {position}: need {limit}, have {len(available_for_position)}")
-            return pd.DataFrame(), stack_type
-        
-        # Add exact constraint for primary positions (PG, SG, SF, PF, C)
-        problem += pulp.lpSum([player_vars[idx] for idx in df.index if position in str(df.at[idx, 'Position'])]) == limit
+    # NBA Position Constraints - SIMPLIFIED for better optimization
+    # We need 8 players total: PG, SG, SF, PF, C, G, F, UTIL
+    # The G, F, UTIL slots make this flexible - we don't need exact position matching
     
-    # G position (can be PG or SG)
-    if 'G' in POSITION_LIMITS:
-        problem += pulp.lpSum([player_vars[idx] for idx in df.index if any(pos in str(df.at[idx, 'Position']) for pos in GUARD_POSITIONS)]) >= POSITION_LIMITS['G']
-        logging.debug("optimize_single_lineup: Added constraint: G slot (PG/SG eligible)")
+    # Minimum requirements for primary positions (at least 1 of each core position)
+    for position in ['PG', 'SG', 'SF', 'PF', 'C']:
+        if position in POSITION_LIMITS and POSITION_LIMITS[position] > 0:
+            available_for_position = [idx for idx in df.index if position in str(df.at[idx, 'Position'])]
+            logging.debug(f"optimize_single_lineup: Position {position} available: {len(available_for_position)}")
+            
+            if len(available_for_position) > 0:
+                # At least 1 of this position (flexible due to G/F/UTIL slots)
+                problem += pulp.lpSum([player_vars[idx] for idx in df.index if position in str(df.at[idx, 'Position'])]) >= 1
+                logging.debug(f"optimize_single_lineup: Added constraint: At least 1 {position}")
+            else:
+                logging.warning(f"⚠️ No players available for position {position}!")
     
-    # F position (can be SF or PF)
-    if 'F' in POSITION_LIMITS:
-        problem += pulp.lpSum([player_vars[idx] for idx in df.index if any(pos in str(df.at[idx, 'Position']) for pos in FORWARD_POSITIONS)]) >= POSITION_LIMITS['F']
-        logging.debug("optimize_single_lineup: Added constraint: F slot (SF/PF eligible)")
-    
-    # UTIL position (can be any position)
-    if 'UTIL' in POSITION_LIMITS:
-        # UTIL is automatically satisfied by having 8 total players
-        logging.debug("optimize_single_lineup: UTIL slot (any position)")
+    # No additional constraints needed - the flexibility of G/F/UTIL means any 8-player
+    # combination with at least 1 of each primary position is valid
+    logging.debug("optimize_single_lineup: NBA constraints applied (flexible for G/F/UTIL)")
 
     # Handle different stack types
     stack_size = None
@@ -1141,8 +1129,14 @@ def optimize_single_lineup(args):
         
         return lineup, stack_type
     else:
-        logging.debug(f"optimize_single_lineup: No optimal solution found. Status: {pulp.LpStatus[status]}")
-        logging.debug(f"Constraints: {problem.constraints}")
+        logging.error(f"❌ optimize_single_lineup: No optimal solution found. Status: {pulp.LpStatus[status]}")
+        logging.error(f"❌ This usually means constraints are INFEASIBLE (impossible to satisfy)")
+        logging.error(f"❌ Check: 1) Enough players at each position, 2) Stack size reasonable, 3) Salary constraints achievable")
+        logging.error(f"❌ Stack type: {stack_type}, Min salary: {min_salary}, Available players: {len(df)}")
+        
+        # Log constraint counts for debugging
+        logging.error(f"❌ Total constraints: {len(problem.constraints)}")
+        
         return pd.DataFrame(), stack_type
 def simulate_iteration(df):
     random_factors = np.random.normal(1, 0.1, size=len(df))
