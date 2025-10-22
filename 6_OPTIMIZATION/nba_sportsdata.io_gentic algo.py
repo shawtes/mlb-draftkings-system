@@ -2278,7 +2278,7 @@ class FantasyFootballApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Advanced NFL DFS Optimizer - Genetic Algorithm")
+        self.setWindowTitle("Advanced NBA DFS Optimizer - Research-Based Genetic Algorithm")
         
         # Get screen size and set window to 85% of screen size (works on Mac and Windows)
         screen = QApplication.primaryScreen().geometry()
@@ -2467,7 +2467,7 @@ class FantasyFootballApp(QMainWindow):
 
         self.player_tables = {}
 
-        positions = ["All Offense", "QB", "RB", "WR", "TE", "DST"]
+        positions = ["All Players", "PG", "SG", "SF", "PF", "C", "Guards", "Forwards"]
         for position in positions:
             sub_tab = QWidget()
             position_tabs.addTab(sub_tab, position)
@@ -3098,19 +3098,15 @@ class FantasyFootballApp(QMainWindow):
     
         # NFL-specific stack types based on proper DFS theory
         stack_types = [
-            "QB + WR",               # Most common - QB with top WR
-            "QB + 2 WR",             # Double stack - aggressive
-            "QB + WR + TE",          # Triple stack - contrarian
-            "QB + WR + RB",          # Total offense
-            "QB + 2 WR + TE",        # Full passing game
-            "Game Stack",            # QB + WR + Opp WR
-            "Bring-Back",            # QB + WR + Opp RB
-            "QB + 2 (3 Team)",       # QB + 2 other positions from same team
-            "QB + 3 (4 Team)",       # QB + 3 other positions from same team
-            "QB + 4 (5 Team)",       # QB + 4 other positions from same team
-            "4/2: QB + 2 WR + 2 RB", # QB with 2 WRs and 2 RBs
-            "4/2: QB + 2 WR + RB + TE", # QB with 2 WRs, RB and TE
-            "No Stack"               # No correlation
+            "PG + C",                # Point Guard + Center correlation (pick & roll)
+            "PG + Wing",             # Point Guard + Wing (SF/SG) for assists
+            "Stars + Value",         # 2-3 stars ($9K+) + value plays ($3-5K)
+            "Game Stack",            # 4+ players from high O/U game (225+)
+            "Team Stack (3)",        # 3 players from same team
+            "Team Stack (4)",        # 4 players from same team
+            "Balanced",              # No specific stacking
+            "Contrarian",            # Low ownership focus
+            "No Stack"               # Random selection
         ]
         for stack_type in stack_types:
             row_position = self.stack_exposure_table.rowCount()
@@ -4071,7 +4067,7 @@ class FantasyFootballApp(QMainWindow):
             dialog_text += f'📊 Available: {num_available} favorite lineups\n'
             dialog_text += f'🏃 From {unique_runs} different optimization runs\n\n'
             dialog_text += f'🎯 Export format: DraftKings contest entry format (NFL)\n'
-            dialog_text += f'📋 Headers: Entry ID, Contest Name, Contest ID, Entry Fee, QB, RB, RB, WR, WR, WR, TE, FLEX, DST\n'
+            dialog_text += f'📋 Headers: Entry ID, Contest Name, Contest ID, Entry Fee, PG, SG, SF, PF, C, G, F, UTIL\n'
             dialog_text += f'🔢 Contains: Player names (cleaned for DK format) ready for DraftKings upload'
             
             num_to_use, ok = QInputDialog.getInt(
@@ -4105,7 +4101,7 @@ class FantasyFootballApp(QMainWindow):
             success_msg += f"📊 Exported {export_info['lineups_exported']} favorite lineups\n"
             success_msg += f"🏃 From {unique_runs} optimization runs\n"
             success_msg += f"💾 Saved to: {os.path.basename(save_path)}\n\n"
-            success_msg += f"📋 Format: Entry ID, Contest Name, Contest ID, Entry Fee, QB, RB, RB, WR, WR, WR, TE, FLEX, DST\n"
+            success_msg += f"📋 Format: Entry ID, Contest Name, Contest ID, Entry Fee, PG, SG, SF, PF, C, G, F, UTIL\n"
             
             if export_info['player_ids_used'] > 0:
                 success_msg += f"🔢 Player IDs: {export_info['player_ids_used']} positions filled with numeric IDs\n"
@@ -5539,7 +5535,7 @@ class FantasyFootballApp(QMainWindow):
         2. Names + Player IDs (for verification)
         3. Player IDs only (alternate upload format)
         """
-        dk_positions = ['QB', 'RB', 'RB', 'WR', 'WR', 'WR', 'TE', 'FLEX', 'DST']
+        dk_positions = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
         
         # Determine output paths for multiple formats
         base_path = output_path.rsplit('.', 1)[0]
@@ -5919,7 +5915,7 @@ class FantasyFootballApp(QMainWindow):
                 return None
             
             # Standard DK header (NFL FORMAT - 13 columns total)
-            header_line = ["Entry ID", "Contest Name", "Contest ID", "Entry Fee", "QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX", "DST"]
+            header_line = ["Entry ID", "Contest Name", "Contest ID", "Entry Fee", "PG", "SG", "SF", "PF", "C", "G", "F", "UTIL"]
             entry_rows = []
             
             # Check if first row is header
@@ -6002,7 +5998,7 @@ class FantasyFootballApp(QMainWindow):
             return 'contest_format'
         
         # Check if columns match DK position format exactly (including duplicate positions)
-        dk_positions = ['QB', 'RB', 'RB', 'WR', 'WR', 'WR', 'TE', 'FLEX', 'DST']
+        dk_positions = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
         # Count positions in file columns (NFL)
         position_counts = {}
         legacy_position_counts = {}
@@ -6201,7 +6197,7 @@ class FantasyFootballApp(QMainWindow):
             logging.info(f"📋 Created {len(player_name_to_id_map)} player mappings from loaded data")
         
         # Define the correct DraftKings headers (NFL FORMAT)
-        correct_headers = ['Entry ID', 'Contest Name', 'Contest ID', 'Entry Fee', 'QB', 'RB', 'RB', 'WR', 'WR', 'WR', 'TE', 'FLEX', 'DST']
+        correct_headers = ['Entry ID', 'Contest Name', 'Contest ID', 'Entry Fee', 'PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
         
         # CHECK FOR CACHE-CLEARING MODE: If we're in cache-clearing mode, use fresh optimized lineups
         # Support both Windows and macOS paths
