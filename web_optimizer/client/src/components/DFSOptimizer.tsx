@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -6,7 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
-import { Users, Link2, BarChart3, Target, Cpu, Star, Upload, Play, Save, Settings, FileText, Download, Plus, CheckSquare, XSquare } from 'lucide-react';
+import { Users, Link2, BarChart3, Target, Cpu, Star, Upload, Play, Save, Settings, FileText, Download, Plus, CheckSquare, XSquare, ChevronDown, ChevronUp } from 'lucide-react';
+import { Sport, SPORT_CONFIGS, getPositionFilters, filterPlayersByPosition, getPositionCount } from './sport-config';
 
 // Player data interface
 interface Player {
@@ -26,35 +27,41 @@ interface Player {
 interface PlayersTabProps {
   playerData: Player[];
   selectedPlayers: string[];
+  sport: Sport;
   onPlayersChange: (players: string[]) => void;
   onPlayerDataChange: (players: Player[]) => void;
 }
 
-const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, onPlayersChange, onPlayerDataChange }) => {
-  const [positionFilter, setPositionFilter] = useState('all-batters');
+const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sport, onPlayersChange, onPlayerDataChange }) => {
+  const sportConfig = SPORT_CONFIGS[sport];
+  const [positionFilter, setPositionFilter] = useState(sport === 'MLB' ? 'all-batters' : 'all-offense');
   const [sortBy, setSortBy] = useState('points');
+
+  // Update filter when sport changes
+  useEffect(() => {
+    setPositionFilter(sport === 'MLB' ? 'all-batters' : 'all-offense');
+  }, [sport]);
 
   // Position counts
   const positionCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     playerData.forEach(p => {
-      const positions = p.position.split('/');
-      positions.forEach(pos => {
-        counts[pos] = (counts[pos] || 0) + 1;
-      });
+      if (sport === 'MLB') {
+        const positions = p.position.split('/');
+        positions.forEach(pos => {
+          counts[pos] = (counts[pos] || 0) + 1;
+        });
+      } else {
+        // NFL positions are single
+        counts[p.position] = (counts[p.position] || 0) + 1;
+      }
     });
     return counts;
-  }, [playerData]);
+  }, [playerData, sport]);
 
-  // Filter players by position
+  // Filter players by position using sport config
   const filteredPlayers = useMemo(() => {
-    let filtered = playerData;
-    
-    if (positionFilter === 'all-batters') {
-      filtered = playerData.filter(p => !p.position.includes('P'));
-    } else if (positionFilter !== 'all') {
-      filtered = playerData.filter(p => p.position.includes(positionFilter));
-    }
+    const filtered = filterPlayersByPosition(playerData, positionFilter, sport);
 
     // Sort
     const sorted = [...filtered].sort((a, b) => {
@@ -136,30 +143,24 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, on
 
                   return (
     <div className="flex flex-col h-full space-y-4">
-      {/* Position Sub-Tabs */}
+      {/* Position Sub-Tabs - Dynamic based on sport */}
       <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-thumb-cyan-500/20 scrollbar-track-transparent pb-2">
-        {[
-          { id: 'all-batters', label: 'All Batters', count: Object.entries(positionCounts).filter(([pos]) => pos !== 'P').reduce((sum, [, count]) => sum + count, 0) },
-          { id: 'C', label: 'C', count: positionCounts['C'] || 0 },
-          { id: '1B', label: '1B', count: positionCounts['1B'] || 0 },
-          { id: '2B', label: '2B', count: positionCounts['2B'] || 0 },
-          { id: '3B', label: '3B', count: positionCounts['3B'] || 0 },
-          { id: 'SS', label: 'SS', count: positionCounts['SS'] || 0 },
-          { id: 'OF', label: 'OF', count: positionCounts['OF'] || 0 },
-          { id: 'P', label: 'P', count: positionCounts['P'] || 0 },
-        ].map((pos) => (
-                    <button
-            key={pos.id}
-            onClick={() => setPositionFilter(pos.id)}
-            className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
-              positionFilter === pos.id
-                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
-                : 'bg-slate-700/40 text-white border border-slate-600/30 hover:bg-slate-700 hover:text-white'
-            }`}
-          >
-            {pos.label} <span className="text-xs opacity-70">({pos.count})</span>
-                    </button>
-        ))}
+        {getPositionFilters(sport).map((pos) => {
+          const count = getPositionCount(playerData, pos.id, sport);
+          return (
+            <button
+              key={pos.id}
+              onClick={() => setPositionFilter(pos.id)}
+              className={`px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
+                positionFilter === pos.id
+                  ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
+                  : 'bg-slate-700/40 text-white border border-slate-600/30 hover:bg-slate-700 hover:text-white'
+              }`}
+            >
+              {pos.label} <span className="text-xs opacity-70">({count})</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Action Toolbar */}
@@ -169,7 +170,7 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, on
             variant="outline"
             size="sm"
             onClick={handleSelectAll}
-            className="border-green-500/30 hover:bg-green-500/10 text-white"
+            className="border-green-500/30 bg-green-500/5 text-white transition-none"
           >
             <CheckSquare className="w-4 h-4 mr-2" />
             Select All
@@ -178,7 +179,7 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, on
             variant="outline"
             size="sm"
             onClick={handleDeselectAll}
-            className="border-red-500/30 hover:bg-red-500/10 text-white"
+            className="border-red-500/30 bg-red-500/5 text-white transition-none"
           >
             <XSquare className="w-4 h-4 mr-2" />
             Deselect All
@@ -207,7 +208,7 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, on
           <thead className="bg-slate-700 sticky top-0 z-10">
             <tr className="border-b border-slate-600">
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-12">
-                <Checkbox className="border-slate-500" />
+                <Checkbox className="border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400" />
               </th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider min-w-[150px]">Name</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-16">Team</th>
@@ -236,7 +237,10 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, on
                     <Checkbox
                       checked={isSelected}
                       onCheckedChange={() => togglePlayer(player.id)}
-                      className="border-slate-500"
+                      className="border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
+                      style={{ 
+                        accentColor: '#1f2937'
+                      }}
                     />
                   </td>
                   <td className="px-3 py-2 text-white font-medium">{player.name}</td>
@@ -447,7 +451,7 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
             variant="outline"
             size="sm"
             onClick={handleSelectAll}
-            className="border-green-500/30 hover:bg-green-500/10 text-white"
+            className="border-green-500/30 bg-green-500/5 text-white transition-none"
           >
             <CheckSquare className="w-4 h-4 mr-2" />
             Select All
@@ -456,7 +460,7 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
             variant="outline"
             size="sm"
             onClick={handleDeselectAll}
-            className="border-red-500/30 hover:bg-red-500/10 text-white"
+            className="border-red-500/30 bg-red-500/5 text-white transition-none"
           >
             <XSquare className="w-4 h-4 mr-2" />
             Deselect All
@@ -465,7 +469,7 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
             variant="outline"
             size="sm"
             onClick={handleTestDetection}
-            className="border-cyan-500/30 hover:bg-cyan-500/10 text-white"
+            className="border-cyan-500/30 bg-cyan-500/5 text-white transition-none"
           >
             <Target className="w-4 h-4 mr-2" />
             Test Detection
@@ -485,7 +489,7 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
           <thead className="bg-slate-700 sticky top-0 z-10">
             <tr className="border-b border-slate-600">
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-12">
-                <Checkbox className="border-slate-500" />
+                <Checkbox className="border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400" />
               </th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-20">Team</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-24">Status</th>
@@ -514,7 +518,10 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
                       checked={isSelected}
                       onCheckedChange={() => toggleTeam(team.abbr)}
                       disabled={!canStack}
-                      className="border-slate-500"
+                      className="border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
+                      style={{ 
+                        accentColor: '#1f2937'
+                      }}
                     />
                   </td>
                   <td className="px-3 py-2 text-white font-bold">{team.abbr}</td>
@@ -612,10 +619,12 @@ interface StackType {
 // Stack Exposure Tab Component
 interface StackExposureTabProps {
   stackSettings: StackType[];
+  sport: Sport;
   onStackSettingsChange: (settings: StackType[]) => void;
 }
 
-const StackExposureTab: React.FC<StackExposureTabProps> = ({ stackSettings, onStackSettingsChange }) => {
+const StackExposureTab: React.FC<StackExposureTabProps> = ({ stackSettings, sport, onStackSettingsChange }) => {
+  const sportConfig = SPORT_CONFIGS[sport];
   // Toggle stack type enabled
   const toggleStackType = (id: string) => {
     const updated = stackSettings.map(s => 
@@ -646,193 +655,157 @@ const StackExposureTab: React.FC<StackExposureTabProps> = ({ stackSettings, onSt
   const totalMinExp = enabledStacks.reduce((sum, s) => sum + s.minExp, 0);
   const totalMaxExp = enabledStacks.reduce((sum, s) => sum + s.maxExp, 0);
 
-  // Validation warnings
+  // Validation
   const hasConflict = totalMinExp > 100;
   const hasNoSelection = enabledStacks.length === 0;
 
   return (
-    <div className="flex flex-col h-full space-y-4">
+    <div className="flex flex-col h-full p-8 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pb-4 border-b border-slate-700">
         <div>
           <h2 className="text-2xl font-bold text-white">Stack Exposure Configuration</h2>
-          <p className="text-slate-400 text-sm mt-1">
-            Configure which stack types to use and their proportions
+          <p className="text-slate-300 text-base mt-1">
+            Select stack types and set exposure ranges
           </p>
         </div>
-        {enabledStacks.length > 0 && (
-          <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-4 py-2">
-            <div className="text-cyan-400 font-semibold">{enabledStacks.length} Active</div>
-            <div className="text-white text-xs">Stack Type{enabledStacks.length !== 1 ? 's' : ''}</div>
+        <div className="flex items-center gap-6">
+          <div className="text-right">
+            <div className="text-sm text-slate-400">Active Stacks</div>
+            <div className="text-3xl font-bold text-cyan-400">{enabledStacks.length}/{stackSettings.length}</div>
           </div>
-        )}
+          <div className="text-right">
+            <div className="text-sm text-slate-400">Total Min</div>
+            <div className={`text-3xl font-bold ${hasConflict ? 'text-red-400' : 'text-white'}`}>{totalMinExp}%</div>
+          </div>
+        </div>
       </div>
 
-      {/* Validation Warnings */}
+      {/* Warnings */}
       {hasNoSelection && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-          <div className="flex items-start gap-3">
-            <div className="text-red-400 text-lg">⚠</div>
-            <div>
-              <h3 className="text-red-400 font-semibold mb-1">No Stack Types Selected</h3>
-              <p className="text-white text-sm">
-                You must enable at least one stack type to run optimization.
-              </p>
-            </div>
-          </div>
+        <div className="bg-red-500/10 border-l-4 border-red-500 rounded-lg p-4">
+          <p className="text-red-400 text-base font-semibold">⚠ Select at least one stack type to optimize</p>
         </div>
       )}
-
       {hasConflict && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
-          <div className="flex items-start gap-3">
-            <div className="text-yellow-400 text-lg">⚠</div>
-            <div>
-              <h3 className="text-yellow-400 font-semibold mb-1">Conflicting Constraints</h3>
-              <p className="text-white text-sm mb-2">
-                Total minimum exposure is <span className="font-bold text-yellow-400">{totalMinExp}%</span> (exceeds 100%)
-              </p>
-              <p className="text-slate-400 text-xs">
-                Adjust minimums so they total ≤ 100%
-              </p>
-            </div>
-          </div>
+        <div className="bg-yellow-500/10 border-l-4 border-yellow-500 rounded-lg p-4">
+          <p className="text-yellow-400 text-base font-semibold">⚠ Total minimum exposure exceeds 100% - adjust your minimums</p>
         </div>
       )}
 
-      {/* Stack Exposure Table */}
+      {/* Stack Options - Large Vertical Cards */}
       <div className="flex-1 overflow-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-700 sticky top-0 z-10">
-            <tr className="border-b border-slate-600">
-              <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-12">
-                <Checkbox className="border-slate-500" />
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-32">Stack Type</th>
-              <th className="px-3 py-3 text-center text-xs font-semibold text-cyan-400 uppercase tracking-wider w-28">Min Exp</th>
-              <th className="px-3 py-3 text-center text-xs font-semibold text-cyan-400 uppercase tracking-wider w-28">Max Exp</th>
-              <th className="px-3 py-3 text-center text-xs font-semibold text-cyan-400 uppercase tracking-wider w-24">Lineup</th>
-              <th className="px-3 py-3 text-center text-xs font-semibold text-cyan-400 uppercase tracking-wider w-24">Pool</th>
-              <th className="px-3 py-3 text-center text-xs font-semibold text-cyan-400 uppercase tracking-wider w-24">Entry</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stackSettings.map((stack, idx) => (
-              <tr
-                key={stack.id}
-                className={`border-b border-slate-700/50 transition-colors ${
-                  idx % 2 === 0 ? 'bg-slate-800/20' : ''
-                } ${stack.enabled ? 'bg-cyan-500/5' : ''}`}
-              >
-                <td className="px-3 py-3">
+        <div className="space-y-4 pr-2">
+          {stackSettings.map((stack) => (
+            <div
+              key={stack.id}
+              className={`border-2 rounded-xl p-6 transition-all ${
+                stack.enabled 
+                  ? 'bg-slate-800/50 border-cyan-500/50' 
+                  : 'bg-slate-800/20 border-slate-700'
+              }`}
+            >
+              <div className="flex items-center gap-8">
+                {/* Checkbox and Label */}
+                <div className="flex items-center gap-4 min-w-[280px]">
                   <Checkbox
                     checked={stack.enabled}
                     onCheckedChange={() => toggleStackType(stack.id)}
-                    className="border-slate-500"
+                    className="h-6 w-6 border-2 border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
+                    style={{ accentColor: '#1f2937' }}
                   />
-                </td>
-                <td className="px-3 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`font-bold ${stack.enabled ? 'text-cyan-400' : 'text-slate-400'}`}>
-                      {stack.label}
-                    </span>
-                    {stack.enabled && (
-                      <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse" />
-                    )}
-                  </div>
-                </td>
-                <td className="px-3 py-3">
-                  <Input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={stack.minExp}
-                    onChange={(e) => updateExposure(stack.id, 'minExp', parseInt(e.target.value) || 0)}
-                    disabled={!stack.enabled}
-                    className="bg-slate-700 border-slate-600 text-white text-xs h-9 w-20 text-center mx-auto"
-                  />
-                </td>
-                <td className="px-3 py-3">
-                  <Input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={stack.maxExp}
-                    onChange={(e) => updateExposure(stack.id, 'maxExp', parseInt(e.target.value) || 0)}
-                    disabled={!stack.enabled}
-                    className="bg-slate-700 border-slate-600 text-white text-xs h-9 w-20 text-center mx-auto"
-                  />
-                </td>
-                <td className="px-3 py-3 text-center text-slate-400 text-xs">
-                  {stack.lineupExp !== undefined ? `${stack.lineupExp.toFixed(1)}%` : '—'}
-                </td>
-                <td className="px-3 py-3 text-center text-slate-400 text-xs">
-                  {stack.poolExp !== undefined ? `${stack.poolExp.toFixed(1)}%` : '—'}
-                </td>
-                <td className="px-3 py-3 text-center text-slate-400 text-xs">
-                  {stack.entryExp !== undefined ? `${stack.entryExp.toFixed(1)}%` : '—'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Status Bar */}
-      <div className="space-y-3">
-        {/* Active Stacks Summary */}
-        {enabledStacks.length > 0 && (
-          <div className="bg-slate-700/40 border border-slate-600/50 rounded-lg p-4">
-            <h3 className="text-sm font-semibold text-cyan-400 mb-3">Active Stack Types ({enabledStacks.length})</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-              {enabledStacks.map(stack => (
-                <div key={stack.id} className="flex items-center justify-between bg-slate-800/40 rounded px-3 py-2">
-                  <span className="text-white font-medium">{stack.label}</span>
-                  <span className="text-slate-400 text-xs">
-                    {stack.minExp}% - {stack.maxExp}%
+                  <span className={`font-bold text-xl ${stack.enabled ? 'text-white' : 'text-slate-400'}`}>
+                    {stack.label}
                   </span>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
 
-        {/* Exposure Summary */}
-        <div className="bg-slate-700/40 border border-slate-600/50 rounded-lg p-3">
-          <div className="flex items-center justify-between text-sm flex-wrap gap-2">
-            <div className="flex gap-6">
-              <div>
-                <span className="text-slate-400">Total Min Exp:</span>
-                <span className={`ml-2 font-bold ${hasConflict ? 'text-red-400' : 'text-cyan-400'}`}>
-                  {totalMinExp}%
-                </span>
+                {/* Exposure Controls */}
+                <div className="flex items-center gap-8 flex-1">
+                  <div className="flex items-center gap-3">
+                    <label className="text-base text-slate-300 w-12 font-medium">Min</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={stack.minExp}
+                      onChange={(e) => updateExposure(stack.id, 'minExp', parseInt(e.target.value) || 0)}
+                      disabled={!stack.enabled}
+                      className={`w-20 h-12 rounded-lg border-2 text-center text-lg font-bold ${
+                        stack.enabled
+                          ? 'bg-slate-700 border-slate-600 text-white'
+                          : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
+                      }`}
+                    />
+                    <span className="text-slate-300 text-lg font-medium">%</span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className="text-base text-slate-300 w-12 font-medium">Max</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={stack.maxExp}
+                      onChange={(e) => updateExposure(stack.id, 'maxExp', parseInt(e.target.value) || 0)}
+                      disabled={!stack.enabled}
+                      className={`w-20 h-12 rounded-lg border-2 text-center text-lg font-bold ${
+                        stack.enabled
+                          ? 'bg-slate-700 border-slate-600 text-white'
+                          : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
+                      }`}
+                    />
+                    <span className="text-slate-300 text-lg font-medium">%</span>
+                  </div>
                 </div>
-              <div>
-                <span className="text-slate-400">Total Max Exp:</span>
-                <span className="ml-2 font-bold text-white">
-                  {totalMaxExp}%
-                </span>
-            </div>
-          </div>
-            
-            {!hasNoSelection && !hasConflict && (
-              <div className="flex items-center gap-2 text-white">
-                <div className="w-2 h-2 bg-green-400 rounded-full" />
-                <span className="text-xs font-medium">Ready to optimize</span>
+
+                {/* Current Exposure Stats */}
+                {(stack.lineupExp !== undefined || stack.poolExp !== undefined || stack.entryExp !== undefined) && stack.enabled && (
+                  <div className="flex items-center gap-4 text-base text-slate-300">
+                    {stack.lineupExp !== undefined && (
+                      <div>
+                        <span>Lineup: </span>
+                        <span className="text-white font-bold text-lg">{stack.lineupExp.toFixed(1)}%</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
+          ))}
         </div>
       </div>
 
-        {/* Tip */}
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
-          <div className="flex items-start gap-2">
-            <div className="text-blue-400 text-sm">💡</div>
-            <p className="text-white text-xs">
-              <span className="font-semibold text-blue-400">Tip:</span> Selected stack types will be distributed across generated lineups. 
-              Exposure percentages are calculated after optimization completes.
-            </p>
+      {/* Summary Footer */}
+      {enabledStacks.length > 0 && (
+        <div className="border-t-2 border-slate-700 pt-5">
+          <div className="flex items-center justify-between text-lg">
+            <div className="flex gap-8">
+              <div>
+                <span className="text-slate-300 font-medium">Total Min: </span>
+                <span className={`font-bold text-xl ${hasConflict ? 'text-red-400' : 'text-cyan-400'}`}>
+                  {totalMinExp}%
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-300 font-medium">Total Max: </span>
+                <span className="font-bold text-xl text-white">{totalMaxExp}%</span>
+              </div>
+            </div>
+            <div className="text-slate-300 text-base">
+              {enabledStacks.length} of {stackSettings.length} enabled
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* Tip */}
+      <div className="bg-slate-800/40 border border-slate-600 rounded-lg p-4">
+        <div className="flex items-start gap-3">
+          <div className="text-cyan-400 text-lg">💡</div>
+          <p className="text-slate-200 text-base leading-relaxed">
+            <span className="font-bold text-cyan-400">Tip:</span> Selected stack types will be distributed across generated lineups. 
+            Exposure percentages are calculated after optimization completes.
+          </p>
         </div>
       </div>
     </div>
@@ -983,59 +956,59 @@ const TeamCombinationsTab: React.FC<TeamCombinationsTabProps> = ({ playerData })
   }
 
   return (
-    <div className="flex flex-col h-full space-y-4 p-4">
-      {/* Header - Clean Style */}
-      <div className="border-b border-slate-700 pb-4">
-        <h2 className="text-xl font-bold text-white flex items-center gap-2">
-          🔥 Team Combination Generator
+    <div className="flex flex-col h-full space-y-6 p-6">
+      {/* Header - Enterprise Style */}
+      <div className="border-b-2 border-slate-700 pb-4">
+        <h2 className="text-2xl font-bold text-white">
+          Team Combination Generator
         </h2>
-        <p className="text-sm text-slate-300 mt-2">
+        <p className="text-base text-slate-300 mt-2">
           Select teams and stack type to generate all possible combinations
         </p>
-        <p className="text-xs text-green-400 mt-1">
-          ✅ Loaded {playerData.length} players, {teams.length} teams
+        <p className="text-sm text-green-400 mt-2 font-medium">
+          Loaded {playerData.length} players across {teams.length} teams
         </p>
       </div>
 
       {/* Controls Section - Clean Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Team Selection */}
-        <div className="bg-slate-800 border border-slate-700 p-6 rounded-lg">
-          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            📋 Select Teams
+        <div className="border-2 border-slate-700 bg-slate-800/50 p-6 rounded-xl">
+          <h3 className="text-xl font-bold text-white mb-5 border-b border-slate-700 pb-3">
+            Select Teams
           </h3>
           
-          {/* Select All/Deselect All */}
-          <div className="flex gap-3 mb-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={selectAllTeams}
-              className="px-4 py-2 border-green-500/30 hover:bg-green-500/10 text-green-400 text-sm"
-            >
-              ✅ Select All Teams
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={deselectAllTeams}
-              className="px-4 py-2 border-red-500/30 hover:bg-red-500/10 text-red-400 text-sm"
-            >
-              ❌ Deselect All Teams
-            </Button>
+          {/* Select All/Deselect All - Large Enterprise Buttons in Container */}
+          <div className="bg-slate-700/30 border border-slate-600 rounded-lg p-3 mb-5">
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={selectAllTeams}
+                className="flex-1 h-12 border-2 border-green-400/50 bg-green-400/25 text-white text-base font-bold shadow-sm transition-none"
+              >
+                ✅ Select All Teams
+              </Button>
+              <Button
+                variant="outline"
+                onClick={deselectAllTeams}
+                className="flex-1 h-12 border-2 border-red-500/40 bg-red-500/10 text-white text-base font-bold shadow-sm transition-none"
+              >
+                ❌ Deselect All
+              </Button>
+            </div>
           </div>
 
-          {/* Team Checkboxes - Clean Grid */}
-          <div className="max-h-64 overflow-auto mb-4 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
+          {/* Team Checkboxes - Professional Grid */}
+          <div className="max-h-80 overflow-auto mb-4 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
             <div className="grid grid-cols-3 gap-3">
               {teams.map(team => (
-                <div key={team} className="flex items-center gap-3 p-3 bg-slate-700 rounded-lg hover:bg-slate-600 transition-colors">
+                <div key={team} className="flex items-center gap-3 p-4 bg-slate-700/50 border-2 border-slate-600 rounded-lg">
                   <Checkbox
                     checked={selectedTeams.includes(team)}
                     onCheckedChange={() => toggleTeam(team)}
-                    className="h-4 w-4 border-slate-500"
+                    className="h-5 w-5 border-2 border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
                   />
-                  <Label className="text-white cursor-pointer text-sm font-medium" onClick={() => toggleTeam(team)}>
+                  <Label className="text-white cursor-pointer text-base font-semibold" onClick={() => toggleTeam(team)}>
                     {team}
                   </Label>
                 </div>
@@ -1044,111 +1017,110 @@ const TeamCombinationsTab: React.FC<TeamCombinationsTabProps> = ({ playerData })
           </div>
 
           {/* Selection Counter */}
-          <div className="text-sm text-slate-300 bg-slate-700 p-3 rounded-lg">
-            <span className="font-semibold text-green-400">{selectedTeams.length}</span> of <span className="font-semibold">{teams.length}</span> teams selected
+          <div className="text-base text-slate-200 bg-slate-700/50 border-2 border-slate-600 p-4 rounded-lg font-medium mt-4">
+            <span className="font-bold text-green-400 text-lg">{selectedTeams.length}</span> of <span className="font-bold text-lg">{teams.length}</span> teams selected
           </div>
         </div>
 
-        {/* Right: Stack Settings - Clean */}
-        <div className="bg-slate-800 border border-slate-700 p-6 rounded-lg">
-          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            🏗️ Stack Settings
+        {/* Right: Stack Settings - Enterprise Style */}
+        <div className="border-2 border-slate-700 bg-slate-800/50 p-6 rounded-xl">
+          <h3 className="text-xl font-bold text-white mb-5 border-b border-slate-700 pb-3">
+            Stack Settings
           </h3>
 
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div>
-              <Label className="text-sm text-white block mb-2 font-medium">Stack Pattern</Label>
+              <Label className="text-base text-white block mb-3 font-semibold">Stack Pattern</Label>
               <Select value={stackPattern} onValueChange={setStackPattern}>
-                <SelectTrigger className="w-full bg-slate-700 border-slate-600 text-white text-sm h-10">
+                <SelectTrigger className="w-full bg-slate-700 border-2 border-slate-600 text-white text-base h-12 font-semibold">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-800 border-slate-700">
-                  <SelectItem value="5">5</SelectItem>
-                  <SelectItem value="4">4</SelectItem>
-                  <SelectItem value="3">3</SelectItem>
-                  <SelectItem value="No Stacks">No Stacks</SelectItem>
-                  <SelectItem value="5|2">5|2</SelectItem>
-                  <SelectItem value="4|2">4|2</SelectItem>
-                  <SelectItem value="4|2|2">4|2|2</SelectItem>
-                  <SelectItem value="3|3|2">3|3|2</SelectItem>
-                  <SelectItem value="3|2|2">3|2|2</SelectItem>
-                  <SelectItem value="2|2|2">2|2|2</SelectItem>
-                  <SelectItem value="5|3">5|3</SelectItem>
+                  <SelectItem value="5" className="text-base">5</SelectItem>
+                  <SelectItem value="4" className="text-base">4</SelectItem>
+                  <SelectItem value="3" className="text-base">3</SelectItem>
+                  <SelectItem value="No Stacks" className="text-base">No Stacks</SelectItem>
+                  <SelectItem value="5|2" className="text-base">5|2</SelectItem>
+                  <SelectItem value="4|2" className="text-base">4|2</SelectItem>
+                  <SelectItem value="4|2|2" className="text-base">4|2|2</SelectItem>
+                  <SelectItem value="3|3|2" className="text-base">3|3|2</SelectItem>
+                  <SelectItem value="3|2|2" className="text-base">3|2|2</SelectItem>
+                  <SelectItem value="2|2|2" className="text-base">2|2|2</SelectItem>
+                  <SelectItem value="5|3" className="text-base">5|3</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div>
-              <Label className="text-sm text-white block mb-2 font-medium">Lineups per Combination</Label>
+              <Label className="text-base text-white block mb-3 font-semibold">Lineups per Combination</Label>
               <input
                 type="number"
                 min="1"
                 max="50"
                 value={defaultLineupsPerCombo}
                 onChange={(e) => setDefaultLineupsPerCombo(parseInt(e.target.value) || 5)}
-                className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm"
+                className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-4 py-3 text-white text-base font-semibold"
                 placeholder="e.g., 5"
               />
             </div>
 
             <Button
               onClick={generateCombinations}
-              className="w-full bg-orange-600 hover:bg-orange-700 text-white text-sm h-10 font-bold rounded-lg"
+              className="w-full bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-700 hover:to-orange-600 text-white text-lg h-14 font-bold rounded-lg shadow-lg transition-none"
             >
-              🔄 Generate Team Combinations
+              Generate Team Combinations
             </Button>
           </div>
         </div>
       </div>
 
-      {/* Combinations Table - Clean Style */}
+      {/* Combinations Table - Enterprise Style */}
       {combinations.length > 0 && (
-        <div className="bg-slate-800 border border-slate-700 p-6 rounded-lg">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              🎯 Generated Combinations
+        <div className="border-2 border-slate-700 bg-slate-800/50 p-6 rounded-xl">
+          <div className="flex items-center justify-between mb-6 border-b border-slate-700 pb-4">
+            <h3 className="text-2xl font-bold text-white">
+              Generated Combinations
             </h3>
-            <div className="text-sm text-slate-300">
-              Total Lineups: <span className="font-bold text-orange-500">{totalLineups}</span>
+            <div className="text-lg text-slate-200 font-medium">
+              Total Lineups: <span className="font-bold text-orange-400 text-xl">{totalLineups}</span>
             </div>
           </div>
 
-          <div className="overflow-auto max-h-64 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
-            <table className="w-full text-sm">
+          <div className="overflow-auto max-h-96 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
+            <table className="w-full text-base">
               <thead>
-                <tr className="border-b border-slate-700">
-                  <th className="text-left py-3 px-4 text-slate-300 font-medium">Select</th>
-                  <th className="text-left py-3 px-4 text-slate-300 font-medium">Team Combination</th>
-                  <th className="text-left py-3 px-4 text-slate-300 font-medium">Lineups per Combo</th>
-                  <th className="text-left py-3 px-4 text-slate-300 font-medium">Actions</th>
+                <tr className="border-b-2 border-slate-700">
+                  <th className="text-left py-4 px-5 text-slate-300 font-bold">Select</th>
+                  <th className="text-left py-4 px-5 text-slate-300 font-bold">Team Combination</th>
+                  <th className="text-left py-4 px-5 text-slate-300 font-bold">Lineups per Combo</th>
+                  <th className="text-left py-4 px-5 text-slate-300 font-bold">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {combinations.map(combo => (
-                  <tr key={combo.id} className="border-b border-slate-700/50 hover:bg-slate-700/30">
-                    <td className="py-3 px-4">
+                  <tr key={combo.id} className="border-b border-slate-700/50">
+                    <td className="py-4 px-5">
                       <Checkbox
                         checked={combo.enabled}
                         onCheckedChange={() => toggleCombination(combo.id)}
-                        className="h-4 w-4 border-slate-500"
+                        className="h-6 w-6 border-2 border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
                       />
                     </td>
-                    <td className="py-3 px-4 text-white font-medium">{combo.display}</td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-5 text-white font-semibold text-base">{combo.display}</td>
+                    <td className="py-4 px-5">
                       <input
                         type="number"
                         min="1"
                         max="100"
                         value={combo.lineupsPerCombo}
                         onChange={(e) => updateLineupsPerCombo(combo.id, parseInt(e.target.value) || 5)}
-                        className="w-20 bg-slate-700 border border-slate-600 rounded px-3 py-1 text-white text-sm"
+                        className="w-24 h-11 bg-slate-700 border-2 border-slate-600 rounded-lg px-4 py-2 text-white text-base font-semibold"
                       />
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-5">
                       <Button
                         variant="outline"
-                        size="sm"
-                        className="px-3 py-1 text-sm border-slate-600 hover:bg-slate-700 text-white"
+                        className="px-5 py-2 h-11 text-base border-2 border-slate-600 bg-slate-700 text-white font-semibold transition-none"
                         onClick={() => toggleCombination(combo.id)}
                       >
                         {combo.enabled ? 'Disable' : 'Enable'}
@@ -1160,12 +1132,12 @@ const TeamCombinationsTab: React.FC<TeamCombinationsTabProps> = ({ playerData })
             </table>
           </div>
 
-          <div className="mt-4 flex justify-end">
+          <div className="mt-6 flex justify-end">
             <Button
-              className="bg-green-600 hover:bg-green-700 text-white text-sm h-10 px-6 font-bold rounded-lg"
+              className="bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white text-lg h-14 px-8 font-bold rounded-lg shadow-lg transition-none"
               disabled={totalLineups === 0}
             >
-              🚀 Generate All Combination Lineups ({totalLineups})
+              Generate All Combination Lineups ({totalLineups})
             </Button>
           </div>
         </div>
@@ -1225,7 +1197,10 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
             <Checkbox
               checked={settings.enabled}
               onCheckedChange={(checked: boolean) => updateSetting('enabled', checked as boolean)}
-              className="border-slate-500"
+              className="border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
+              style={{ 
+                accentColor: '#1f2937'
+              }}
             />
             <div>
               <Label className="text-white font-semibold text-base cursor-pointer" onClick={() => updateSetting('enabled', !settings.enabled)}>
@@ -1584,9 +1559,10 @@ interface FavoriteLineup {
 // My Entries Tab Component
 interface MyEntriesTabProps {
   results: any[];
+  sport: Sport;
 }
 
-const MyEntriesTab: React.FC<MyEntriesTabProps> = ({ results }) => {
+const MyEntriesTab: React.FC<MyEntriesTabProps> = ({ results, sport }) => {
   const [favorites, setFavorites] = useState<FavoriteLineup[]>([]);
   const [currentRun, setCurrentRun] = useState(1);
   const [sortBy, setSortBy] = useState('points-desc');
@@ -1945,7 +1921,11 @@ interface DFSOptimizerProps {
   sport: string;
 }
 
-const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
+const DFSOptimizer = React.memo(({ sport = 'NFL' }: DFSOptimizerProps) => {
+  // Use sport prop directly from Dashboard (controlled by header tabs)
+  const currentSport = sport as Sport;
+  const sportConfig = SPORT_CONFIGS[currentSport];
+  
   const [activeTab, setActiveTab] = useState('team-combos'); // Set to team-combos for testing
   const [playerData, setPlayerData] = useState<Player[]>([
     { id: '1', name: 'Josh Allen', team: 'BUF', position: 'QB', salary: 8500, projectedPoints: 25.5, minExp: 0, maxExp: 100, selected: false },
@@ -1982,20 +1962,19 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
     4: [],
     5: [],
   });
-  const [stackSettings, setStackSettings] = useState<StackType[]>([
-    { id: '5', label: '5', minExp: 0, maxExp: 100, enabled: false },
-    { id: '4', label: '4', minExp: 0, maxExp: 100, enabled: false },
-    { id: '3', label: '3', minExp: 0, maxExp: 100, enabled: false },
-    { id: '2', label: '2', minExp: 0, maxExp: 100, enabled: false },
-    { id: 'no-stacks', label: 'No Stacks', minExp: 0, maxExp: 100, enabled: false },
-    { id: '4|2|2', label: '4|2|2', minExp: 0, maxExp: 100, enabled: false },
-    { id: '4|2', label: '4|2', minExp: 0, maxExp: 100, enabled: false },
-    { id: '3|3|2', label: '3|3|2', minExp: 0, maxExp: 100, enabled: false },
-    { id: '3|2|2', label: '3|2|2', minExp: 0, maxExp: 100, enabled: false },
-    { id: '2|2|2', label: '2|2|2', minExp: 0, maxExp: 100, enabled: false },
-    { id: '5|3', label: '5|3', minExp: 0, maxExp: 100, enabled: false },
-    { id: '5|2', label: '5|2', minExp: 0, maxExp: 100, enabled: false },
-  ]);
+  // Initialize stack settings based on sport
+  const initializeStackSettings = (sport: Sport): StackType[] => {
+    const config = SPORT_CONFIGS[sport];
+    return config.stackTypes.map((stackType, index) => ({
+      id: `stack-${index}`,
+      label: stackType,
+      minExp: 0,
+      maxExp: 100,
+      enabled: false
+    }));
+  };
+
+  const [stackSettings, setStackSettings] = useState<StackType[]>(initializeStackSettings(currentSport));
   
   // Advanced Quant Settings
   const [advancedQuantSettings, setAdvancedQuantSettings] = useState<AdvancedQuantSettings>({
@@ -2018,8 +1997,18 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
   // Optimization Settings
   const [numLineups, setNumLineups] = useState(100);
   const [minUnique, setMinUnique] = useState(3);
-  const [minSalary, setMinSalary] = useState(45000);
+  const [minSalary, setMinSalary] = useState(sportConfig.defaultMinSalary);
   const [disableKelly, setDisableKelly] = useState(false);
+  
+  // Handle sport change from Dashboard header
+  useEffect(() => {
+    const newConfig = SPORT_CONFIGS[currentSport];
+    setMinSalary(newConfig.defaultMinSalary);
+    setStackSettings(initializeStackSettings(currentSport));
+    // Clear player data when switching sports
+    setPlayerData([]);
+    setSelectedPlayers([]);
+  }, [currentSport]);
   
   // Sorting
   const [sortMethod, setSortMethod] = useState('points');
@@ -2063,64 +2052,21 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
     }
   ]);
   
-  // Results
-  const [results, setResults] = useState<any[]>([
-    {
-      id: '1',
-      players: [
-        { name: 'Josh Allen', position: 'QB', team: 'BUF', salary: 8500 },
-        { name: 'Christian McCaffrey', position: 'RB', team: 'SF', salary: 9000 },
-        { name: 'Tyreek Hill', position: 'WR', team: 'MIA', salary: 8000 },
-        { name: 'Stefon Diggs', position: 'WR', team: 'BUF', salary: 7500 },
-        { name: 'Travis Kelce', position: 'TE', team: 'KC', salary: 7000 },
-        { name: 'Lamar Jackson', position: 'QB', team: 'BAL', salary: 8200 },
-        { name: 'Cooper Kupp', position: 'WR', team: 'LAR', salary: 7800 },
-        { name: 'Derrick Henry', position: 'RB', team: 'TEN', salary: 7200 },
-        { name: 'Davante Adams', position: 'WR', team: 'LV', salary: 7600 }
-      ],
-      points: 185.2,
-      salary: 49800
-    },
-    {
-      id: '2',
-      players: [
-        { name: 'Patrick Mahomes', position: 'QB', team: 'KC', salary: 8800 },
-        { name: 'Saquon Barkley', position: 'RB', team: 'NYG', salary: 6800 },
-        { name: 'Mike Evans', position: 'WR', team: 'TB', salary: 7100 },
-        { name: 'Ja\'Marr Chase', position: 'WR', team: 'CIN', salary: 7900 },
-        { name: 'Nick Chubb', position: 'RB', team: 'CLE', salary: 7400 },
-        { name: 'Amari Cooper', position: 'WR', team: 'CLE', salary: 6900 },
-        { name: 'Dak Prescott', position: 'QB', team: 'DAL', salary: 8000 },
-        { name: 'CeeDee Lamb', position: 'WR', team: 'DAL', salary: 8200 },
-        { name: 'Tony Pollard', position: 'RB', team: 'DAL', salary: 6500 }
-      ],
-      points: 178.9,
-      salary: 49600
-    },
-    {
-      id: '3',
-      players: [
-        { name: 'Russell Wilson', position: 'QB', team: 'DEN', salary: 7200 },
-        { name: 'Courtland Sutton', position: 'WR', team: 'DEN', salary: 6300 },
-        { name: 'Javonte Williams', position: 'RB', team: 'DEN', salary: 6100 },
-        { name: 'Jared Goff', position: 'QB', team: 'DET', salary: 6800 },
-        { name: 'Amon-Ra St. Brown', position: 'WR', team: 'DET', salary: 7700 },
-        { name: 'D\'Andre Swift', position: 'RB', team: 'DET', salary: 6400 },
-        { name: 'Joe Burrow', position: 'QB', team: 'CIN', salary: 8100 },
-        { name: 'Ja\'Marr Chase', position: 'WR', team: 'CIN', salary: 7900 },
-        { name: 'Nick Chubb', position: 'RB', team: 'CLE', salary: 7400 }
-      ],
-      points: 172.3,
-      salary: 49900
-    }
-  ]);
+  // Results - starts empty, filled by actual optimization
+  const [results, setResults] = useState<Array<{
+    id: string;
+    players: Array<{ name: string; position: string; team: string; salary: number }>;
+    points: number;
+    salary: number;
+  }>>([]);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isRunningCombinations, setIsRunningCombinations] = useState(false);
   const [dkEntriesLoaded, setDkEntriesLoaded] = useState(false);
   
   // Resizable panels
-  const [controlPanelWidth, setControlPanelWidth] = useState(240); // Smaller default
+  const [controlPanelWidth, setControlPanelWidth] = useState(426); // 1/3 wider than before
   const [isResizing, setIsResizing] = useState(false);
+  const [isControlPanelCollapsed, setIsControlPanelCollapsed] = useState(false);
 
   const tabs = [
     { id: 'players', label: 'Players', icon: Users },
@@ -2131,59 +2077,144 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
     { id: 'my-entries', label: 'My Entries', icon: Star },
   ];
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const text = e.target?.result as string;
-          const lines = text.split('\n');
-          const headers = lines[0].split(',').map(h => h.trim());
-          
-          const players: Player[] = lines.slice(1)
-            .filter(line => line.trim())
-            .map((line, idx) => {
-              const values = line.split(',').map(v => v.trim());
-              const row: Record<string, string> = {};
-              headers.forEach((header, i) => {
-                row[header] = values[i] || '';
-              });
-              
-              return {
-                id: `player-${idx}`,
-                name: row['Name'] || row['name'] || '',
-                team: row['Team'] || row['team'] || '',
-                position: row['Position'] || row['position'] || row['Pos'] || '',
-                salary: parseInt(row['Salary'] || row['salary'] || '0'),
-                projectedPoints: parseFloat(row['Predicted_DK_Points'] || row['projectedPoints'] || row['Points'] || '0'),
-                minExp: 0,
-                maxExp: 100,
-                selected: false,
-              };
-            })
-            .filter(p => p.name && p.salary > 0);
+    if (!file) return;
 
-          setPlayerData(players);
-          setSelectedPlayers([]);
-          console.log(`Loaded ${players.length} players from ${file.name}`);
-        } catch (error) {
-          console.error('Error parsing CSV:', error);
-          alert('Error parsing CSV file. Please check the format.');
-        }
-      };
-      reader.readAsText(file);
+    try {
+      // Upload file to backend
+      const formData = new FormData();
+      formData.append('playersFile', file);
+
+      const response = await fetch('/api/upload-players', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log(`✅ Uploaded ${result.playersCount} players to backend`);
+        
+        // Fetch players from backend
+        const playersResponse = await fetch('/api/players');
+        const playersData = await playersResponse.json();
+        
+        // Transform backend player format to frontend format
+        const transformedPlayers: Player[] = playersData.players.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          team: p.team,
+          position: p.position,
+          salary: p.salary,
+          projectedPoints: p.projection || p.projectedPoints || 0,
+          minExp: p.minExposure || 0,
+          maxExp: p.maxExposure || 100,
+          selected: p.selected || false,
+        }));
+
+        setPlayerData(transformedPlayers);
+        setSelectedPlayers([]);
+        alert(`✅ Loaded ${transformedPlayers.length} players successfully!`);
+      } else {
+        alert(`❌ Upload failed: ${result.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      alert('❌ Upload failed. Please check the file format and try again.');
     }
   };
 
-  const handleRunOptimization = () => {
+  const handleRunOptimization = async () => {
+    // Validate inputs
+    if (playerData.length === 0) {
+      alert('❌ Please load player data first');
+      return;
+    }
+
+    const selectedCount = selectedPlayers.length;
+    const minRequired = currentSport === 'NFL' ? 9 : 10;
+    
+    if (selectedCount < minRequired) {
+      alert(`❌ Please select at least ${minRequired} players for ${currentSport}`);
+      return;
+    }
+
     setIsOptimizing(true);
-    // TODO: Call backend API
-    console.log('Running optimization...');
-    setTimeout(() => {
+    
+    try {
+      // Mark selected players in backend
+      await Promise.all(
+        playerData.map(async (player) => {
+          if (selectedPlayers.includes(player.id)) {
+            await fetch(`/api/players/${player.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ selected: true }),
+            });
+          }
+        })
+      );
+
+      // Prepare stack settings
+      const enabledStacks = stackSettings.filter(s => s.enabled);
+      const stackTypes = enabledStacks.map(s => s.label);
+
+      // Run optimization
+      console.log('🚀 Starting optimization...');
+      const response = await fetch('/api/optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sport: currentSport,
+          numLineups,
+          minSalary,
+          maxSalary: 50000,
+          stackSettings: {
+            enabled: enabledStacks.length > 0,
+            types: stackTypes,
+            teams: Array.from(new Set(playerData.filter(p => selectedPlayers.includes(p.id)).map(p => p.team))),
+          },
+          uniquePlayers: minUnique,
+          maxExposure: 40,
+          contestMode: 'gpp',
+          riskTolerance: 'medium',
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log('✅ Optimization complete:', result.summary);
+        
+        // Transform lineups for display
+        const transformedResults = result.lineups.map((lineup: any) => ({
+          id: lineup.id,
+          players: lineup.players.map((p: any) => ({
+            name: p.name,
+            position: p.position,
+            team: p.team,
+            salary: p.salary,
+          })),
+          points: lineup.totalProjection,
+          salary: lineup.totalSalary,
+        }));
+
+        setResults(transformedResults);
+        
+        // Switch to My Entries tab to show results
+        setActiveTab('my-entries');
+        
+        alert(`✅ Generated ${transformedResults.length} optimal lineups!\nAvg Projection: ${result.summary.avgProjection.toFixed(1)} pts`);
+      } else {
+        alert(`❌ Optimization failed: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Optimization error:', error);
+      alert('❌ Optimization failed. Please try again.');
+    } finally {
       setIsOptimizing(false);
-      console.log('Optimization complete');
-    }, 3000);
+    }
   };
 
   const handleRunCombinations = () => {
@@ -2290,6 +2321,7 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
                 <PlayersTab
                   playerData={playerData}
                   selectedPlayers={selectedPlayers}
+                  sport={currentSport}
                   onPlayersChange={setSelectedPlayers}
                   onPlayerDataChange={setPlayerData}
                 />
@@ -2308,6 +2340,7 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
               <TabsContent value="stack-exposure" className="mt-0 h-full overflow-auto">
                 <StackExposureTab
                   stackSettings={stackSettings}
+                  sport={currentSport}
                   onStackSettingsChange={setStackSettings}
                 />
               </TabsContent>
@@ -2327,7 +2360,7 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
 
               {/* My Entries Tab */}
               <TabsContent value="my-entries" className="mt-0 h-full overflow-auto">
-                <MyEntriesTab results={results} />
+                <MyEntriesTab results={results} sport={currentSport} />
               </TabsContent>
             </div>
           </Tabs>
@@ -2351,26 +2384,55 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
         style={{ width: `${controlPanelWidth}px` }}
       >
           <div className="p-1.5 space-y-1 overflow-auto h-full">
-            {/* Header - Ultra Compact */}
-            <div className="border-b border-slate-700 pb-0.5 mb-1">
-              <h3 className="text-[12px] font-bold text-white flex items-center gap-1 uppercase tracking-wide">
-                <Settings className="w-3 h-3 text-blue-400" />
-                Control Panel
+            {/* Header - Collapsible */}
+            <div 
+              className="border-b border-cyan-500/30 pb-1 mb-2 cursor-pointer hover:bg-slate-800/50 rounded px-2 py-1.5 transition-colors group"
+              onClick={() => setIsControlPanelCollapsed(!isControlPanelCollapsed)}
+            >
+              <h3 className="text-[13px] font-bold text-cyan-400 flex items-center justify-between uppercase tracking-wide">
+                <div className="flex items-center gap-2">
+                  <Settings className="w-4 h-4 text-cyan-400" />
+                  <span>Control Panel</span>
+                </div>
+                {isControlPanelCollapsed ? (
+                  <ChevronDown className="w-4 h-4 text-cyan-400 group-hover:text-cyan-300 transition-colors" />
+                ) : (
+                  <ChevronUp className="w-4 h-4 text-cyan-400 group-hover:text-cyan-300 transition-colors" />
+                )}
               </h3>
             </div>
 
-            {/* File Operations - Ultra Compact */}
-            <div className="space-y-1">
-              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">File Operations</h4>
-              <div className="space-y-0.5">
-                <label htmlFor="csv-upload">
+            {/* Collapsible Content */}
+            {!isControlPanelCollapsed && (
+            <div className="space-y-3 px-2">
+            {/* Sport Info - Display Only */}
+            <div className="border-2 rounded-lg p-3" style={{ borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.15)' }}>
+              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2 mb-2" style={{ color: '#f59e0b', borderColor: '#f59e0b' }}>Current Sport</h4>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-white">
+                  {currentSport === 'NFL' ? '🏈 NFL' : currentSport === 'NBA' ? '🏀 NBA' : '⚾ MLB'}
+                </div>
+                <div className="text-[10px] text-slate-300 mt-1">
+                  {sportConfig.salaryCapDescription}
+                </div>
+                <div className="text-[9px] text-cyan-400 mt-1 italic">
+                  Change sport using header tabs
+                </div>
+              </div>
+            </div>
+
+            {/* File Operations */}
+            <div className="border-2 rounded-lg p-3" style={{ borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.15)' }}>
+              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2 mb-2" style={{ color: '#3b82f6', borderColor: '#3b82f6' }}>File Operations</h4>
+              <div className="space-y-2">
+                <label htmlFor="csv-upload" className="block">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="w-full border-slate-600 hover:bg-slate-800 text-white text-[11px] h-7 justify-start px-2 font-semibold"
+                    className="w-full border-blue-500/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-3 font-semibold shadow-sm"
                     onClick={() => document.getElementById('csv-upload')?.click()}
                   >
-                    <Upload className="w-2.5 h-2.5 mr-1" />
+                    <Upload className="w-4 h-4 mr-2" />
                     Load CSV
                   </Button>
                 </label>
@@ -2385,72 +2447,75 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full border-slate-600 hover:bg-slate-800 text-white text-[10px] h-6 justify-start px-2"
+                  className="w-full border-blue-500/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-3 font-semibold shadow-sm"
                 >
-                  <FileText className="w-2.5 h-2.5 mr-1" />
+                  <FileText className="w-4 h-4 mr-2" />
                   Load Predictions
                 </Button>
                 
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full border-slate-600 hover:bg-slate-800 text-white text-[10px] h-6 justify-start px-2"
+                  className="w-full border-blue-500/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-3 font-semibold shadow-sm"
                   onClick={() => setDkEntriesLoaded(true)}
                 >
-                  <Download className="w-2.5 h-2.5 mr-1" />
+                  <Download className="w-4 h-4 mr-2" />
                   Load Entries
                 </Button>
               </div>
             </div>
 
-            {/* Optimization Settings - Ultra Compact */}
-            <div className="space-y-1">
-              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Optimization</h4>
-              <div className="space-y-1">
+            {/* Optimization Settings */}
+            <div className="border-2 rounded-lg p-3 space-y-2" style={{ borderColor: '#22d3ee', backgroundColor: 'rgba(34, 211, 238, 0.15)' }}>
+              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#22d3ee', borderColor: '#22d3ee' }}>Optimization</h4>
+              <div className="space-y-2">
                 <div>
-                  <Label className="text-[11px] text-white block mb-1 font-semibold">Lineups</Label>
+                  <Label className="text-[12px] text-white block mb-1.5 font-semibold">Lineups</Label>
                   <input
                     type="number"
                     min="1"
                     max="500"
                     value={numLineups}
                     onChange={(e) => setNumLineups(parseInt(e.target.value) || 100)}
-                    className="w-full bg-white border-2 border-white rounded px-2 py-1 text-black text-[12px] font-bold"
+                    className="w-full bg-slate-700 border-2 border-cyan-500/30 rounded px-2 py-1.5 text-slate-200 text-[13px] font-bold"
                   />
                 </div>
                 
                 <div>
-                  <Label className="text-[11px] text-white block mb-1 font-semibold">Min Unique</Label>
+                  <Label className="text-[12px] text-white block mb-1.5 font-semibold">Min Unique</Label>
                   <input
                     type="number"
                     min="0"
                     max="10"
                     value={minUnique}
                     onChange={(e) => setMinUnique(parseInt(e.target.value) || 3)}
-                    className="w-full bg-white border-2 border-white rounded px-2 py-1 text-black text-[12px] font-bold"
+                    className="w-full bg-slate-700 border-2 border-cyan-500/30 rounded px-2 py-1.5 text-slate-200 text-[13px] font-bold"
                   />
                 </div>
                 
-                <div className="flex items-center space-x-1 pt-0.5">
+                <div className="flex items-center space-x-2 pt-1">
                   <Checkbox
                     id="disable-kelly"
                     checked={disableKelly}
                     onCheckedChange={(checked: boolean) => setDisableKelly(checked)}
-                    className="h-3 w-3"
+                    className="h-4 w-4 border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
+                    style={{ 
+                      accentColor: '#1f2937'
+                    }}
                   />
-                  <Label htmlFor="disable-kelly" className="text-[11px] text-white cursor-pointer font-semibold">
+                  <Label htmlFor="disable-kelly" className="text-[12px] text-white cursor-pointer font-semibold">
                     Disable Kelly
                   </Label>
                 </div>
               </div>
             </div>
 
-            {/* Salary Constraints - Ultra Compact */}
-            <div className="space-y-1">
-              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Salary</h4>
-              <div className="space-y-1">
+            {/* Salary Constraints */}
+            <div className="border-2 rounded-lg p-3 space-y-2" style={{ borderColor: '#4ade80', backgroundColor: 'rgba(74, 222, 128, 0.15)' }}>
+              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#4ade80', borderColor: '#4ade80' }}>Salary</h4>
+              <div className="space-y-2">
                 <div>
-                  <Label className="text-[11px] text-white block mb-1 font-semibold">Min ($)</Label>
+                  <Label className="text-[12px] text-white block mb-1.5 font-semibold">Min ($)</Label>
                   <input
                     type="number"
                     min="0"
@@ -2458,189 +2523,185 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
                     step="1000"
                     value={minSalary}
                     onChange={(e) => setMinSalary(parseInt(e.target.value) || 45000)}
-                    className="w-full bg-white border-2 border-white rounded px-2 py-1 text-black text-[12px] font-bold"
+                    className="w-full bg-slate-700 border-2 border-green-400/50 rounded px-2 py-1.5 text-white text-[13px] font-bold"
                   />
                 </div>
                 
                 <div>
-                  <Label className="text-[9px] text-white block mb-0.5">Max ($)</Label>
+                  <Label className="text-[12px] text-white block mb-1.5 font-semibold">Max ($)</Label>
                   <input
                     type="number"
                     value={50000}
                     disabled
-                    className="w-full bg-slate-600/50 border border-slate-600 rounded px-1.5 py-0.5 text-slate-400 text-[10px] cursor-not-allowed"
+                    className="w-full bg-slate-600/50 border-2 border-slate-600 rounded px-2 py-1.5 text-slate-200 text-[13px] cursor-not-allowed font-bold"
                   />
-                  <span className="text-[8px] text-white mt-0.5 block">Fixed by DK</span>
+                  <span className="text-[10px] text-slate-300 mt-1 block">Fixed by DK</span>
                 </div>
               </div>
             </div>
 
-            {/* Sorting - Ultra Compact */}
-            <div className="space-y-1">
-              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Sorting</h4>
+            {/* Sorting */}
+            <div className="border-2 rounded-lg p-3 space-y-2" style={{ borderColor: '#a78bfa', backgroundColor: 'rgba(167, 139, 250, 0.15)' }}>
+              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#a78bfa', borderColor: '#a78bfa' }}>Sorting</h4>
               <div>
                 <Select value={sortMethod} onValueChange={setSortMethod}>
-                  <SelectTrigger className="w-full bg-slate-700 border-slate-500 text-white text-[10px] h-6">
+                  <SelectTrigger className="w-full bg-slate-700 border-purple-500/30 text-white text-[12px] h-9 font-semibold">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-700">
-                    <SelectItem value="points" className="text-white text-[10px]">Points ↓</SelectItem>
-                    <SelectItem value="value" className="text-white text-[10px]">Value ↓</SelectItem>
-                    <SelectItem value="salary" className="text-white text-[10px]">Salary ↓</SelectItem>
+                    <SelectItem value="points" className="text-white text-[12px]">Points ↓</SelectItem>
+                    <SelectItem value="value" className="text-white text-[12px]">Value ↓</SelectItem>
+                    <SelectItem value="salary" className="text-white text-[12px]">Salary ↓</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            {/* Risk Management - Ultra Compact */}
-            <div className="space-y-1">
-              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Risk Management</h4>
-              <div className="space-y-1">
-                <div className="flex items-center space-x-1">
+            {/* Risk Management - Simple Clickable Container */}
+            <div 
+              className="border-2 rounded-lg p-3 cursor-pointer transition-colors"
+              style={enableRiskMgmt 
+                ? { borderColor: '#fb923c', backgroundColor: 'rgba(251, 146, 60, 0.15)' }
+                : { borderColor: '#475569', backgroundColor: 'rgba(71, 85, 105, 0.2)' }
+              }
+              onClick={() => setEnableRiskMgmt(!enableRiskMgmt)}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
                   <Checkbox
                     id="enable-risk"
                     checked={enableRiskMgmt}
                     onCheckedChange={(checked: boolean) => setEnableRiskMgmt(checked)}
-                    className="h-3 w-3"
+                    className="h-4 w-4 border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-orange-400"
+                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
                   />
-                  <Label htmlFor="enable-risk" className="text-[9px] text-white cursor-pointer">
-                    Enable Risk Mgmt
+                  <Label className="text-[12px] text-white cursor-pointer font-semibold">
+                    Enable Risk Management
                   </Label>
                 </div>
-                
                 {enableRiskMgmt && (
-                  <>
-                    <div>
-                      <Label className="text-[9px] text-white block mb-0.5">Bankroll ($)</Label>
-                      <input
-                        type="number"
-                        min="100"
-                        max="100000"
-                        step="100"
-                        value={bankroll}
-                        onChange={(e) => setBankroll(parseInt(e.target.value) || 1000)}
-                        className="w-full bg-white border-2 border-white rounded px-2 py-1 text-black text-[12px] font-bold"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label className="text-[9px] text-white block mb-0.5">Risk Profile</Label>
-                      <Select value={riskProfile} onValueChange={setRiskProfile}>
-                        <SelectTrigger className="w-full bg-slate-700 border-slate-500 text-white text-[10px] h-6">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-slate-900 border-slate-700">
-                          <SelectItem value="conservative" className="text-white text-[10px]">Conservative</SelectItem>
-                          <SelectItem value="medium" className="text-white text-[10px]">Medium</SelectItem>
-                          <SelectItem value="aggressive" className="text-white text-[10px]">Aggressive</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </>
+                  <span className="text-[10px] text-orange-400 font-semibold">Active</span>
                 )}
               </div>
             </div>
 
-            {/* Actions - Ultra Compact */}
-            <div className="space-y-1 pt-1 border-t border-slate-700 mt-1">
-              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Actions</h4>
-              <div className="space-y-0.5">
+            {/* Actions - Yellow Color Code */}
+            <div className="border-2 rounded-lg p-3 space-y-2 mt-1" style={{ borderColor: '#facc15', backgroundColor: 'rgba(250, 204, 21, 0.15)' }}>
+              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#facc15', borderColor: '#facc15' }}>Actions</h4>
+              <div className="space-y-2">
                 <Button
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white h-6 text-[10px] font-semibold px-2"
+                  className="w-full bg-blue-600 text-white h-9 text-[12px] font-semibold px-2 transition-none"
                   onClick={handleRunOptimization}
                   disabled={isOptimizing || playerData.length === 0}
                 >
-                  <Play className="w-2.5 h-2.5 mr-1" />
+                  <Play className="w-4 h-4 mr-2" />
                   {isOptimizing ? 'Optimizing...' : 'Optimize'}
                 </Button>
                 
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full border-slate-600 hover:bg-slate-800 text-white text-[10px] h-6 justify-start px-2"
+                  className="w-full border-yellow-400/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-2 transition-none"
                   disabled={results.length === 0}
+                  onClick={async () => {
+                    try {
+                      const response = await fetch(`/api/export/draftkings?sport=${currentSport}`);
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${currentSport.toLowerCase()}_lineups_${new Date().toISOString().split('T')[0]}.csv`;
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+                      alert(`✅ Exported ${results.length} lineups`);
+                    } catch (error) {
+                      alert('❌ Export failed');
+                    }
+                  }}
                 >
-                  <Save className="w-2.5 h-2.5 mr-1" />
+                  <Save className="w-4 h-4 mr-2" />
                   Save CSV
                 </Button>
                 
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full border-slate-600 hover:bg-slate-800 text-white text-[10px] h-6 justify-start px-2"
+                  className="w-full border-yellow-400/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-2 transition-none"
                   disabled={!dkEntriesLoaded || results.length === 0}
                 >
-                  <FileText className="w-2.5 h-2.5 mr-1" />
+                  <FileText className="w-4 h-4 mr-2" />
                   Fill Entries
                 </Button>
               </div>
             </div>
 
-            {/* Generated Teams - Ultra Compact */}
-            <div className="space-y-1">
-              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Generated Teams</h4>
+            {/* Generated Teams - Light Blue Color Code */}
+            <div className="border-2 rounded-lg p-3 space-y-2" style={{ borderColor: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.15)' }}>
+              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#38bdf8', borderColor: '#38bdf8' }}>Generated Teams</h4>
               
               {/* Run Combinations Button */}
-              <div className="mb-1">
+              <div>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full border-green-500/30 hover:bg-green-500/10 text-white text-[9px] h-5 justify-start px-1.5"
+                  className="w-full border-sky-400/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-2 transition-none"
                   onClick={handleRunCombinations}
                   disabled={generatedTeams.length === 0 || isOptimizing || isRunningCombinations}
                 >
-                  <Play className="w-2 h-2 mr-1" />
+                  <Play className="w-4 h-4 mr-2" />
                   {isRunningCombinations ? 'Running...' : 'Run Combinations'}
                 </Button>
               </div>
 
               {/* Teams List */}
-              <div className="bg-slate-800/40 border border-slate-600/50 rounded p-1.5 max-h-28 overflow-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
+              <div className="bg-slate-800/40 border border-slate-600/50 rounded p-2 max-h-28 overflow-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
                 <div className="space-y-1">
                   {generatedTeams.map((team) => (
-                    <div key={team.id} className="text-[8px] text-white bg-slate-700/50 rounded px-1.5 py-1">
+                    <div key={team.id} className="text-[10px] text-white bg-slate-700/50 rounded px-2 py-1.5">
                       <div className="font-semibold text-white">{team.name}</div>
                       <div className="text-slate-400">{team.players.join(', ')}</div>
                     </div>
                   ))}
                 </div>
                 <div className="mt-1 pt-1 border-t border-slate-600/50">
-                  <div className="text-[7px] text-slate-400 text-center">
+                  <div className="text-[9px] text-slate-400 text-center">
                     {generatedTeams.length} teams generated
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Favorites - Ultra Compact */}
-            <div className="space-y-1">
-              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Favorites</h4>
-              <div className="space-y-0.5">
+            {/* Favorites - White Color Code */}
+            <div className="border-2 rounded-lg p-3 space-y-2" style={{ borderColor: '#cbd5e1', backgroundColor: 'rgba(203, 213, 225, 0.12)' }}>
+              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#e2e8f0', borderColor: '#cbd5e1' }}>Favorites</h4>
+              <div className="space-y-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full border-slate-600 hover:bg-slate-800 text-white text-[10px] h-6 justify-start px-2"
+                  className="w-full border-slate-400/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-2 transition-none"
                   disabled={results.length === 0}
                 >
-                  <Plus className="w-2.5 h-2.5 mr-1" />
+                  <Plus className="w-4 h-4 mr-2" />
                   Add Favorite
                 </Button>
                 
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full border-slate-600 hover:bg-slate-800 text-white text-[10px] h-6 justify-start px-2"
+                  className="w-full border-slate-400/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-2 transition-none"
                 >
-                  <Download className="w-2.5 h-2.5 mr-1" />
+                  <Download className="w-4 h-4 mr-2" />
                   Export
                 </Button>
               </div>
             </div>
 
-            {/* Results Summary - Ultra Compact */}
-            <div className="space-y-1 pt-1 border-t border-slate-700">
-              <h4 className="text-[12px] font-bold text-white uppercase tracking-wider bg-slate-800 px-2 py-1 rounded">Results</h4>
-              <Card className="bg-slate-800 border-slate-700 p-1.5">
+            {/* Results Summary - White Color Code */}
+            <div className="border-2 rounded-lg p-3 space-y-2 mt-1" style={{ borderColor: '#cbd5e1', backgroundColor: 'rgba(203, 213, 225, 0.12)' }}>
+              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#e2e8f0', borderColor: '#cbd5e1' }}>Results</h4>
+              <div className="bg-slate-800/40 border border-slate-600/50 rounded p-2">
                 {results.length > 0 ? (
                   <div className="space-y-2 text-xs">
                     <div className="flex justify-between text-white">
@@ -2661,7 +2722,7 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
                     No results yet
                   </p>
                 )}
-              </Card>
+              </div>
             </div>
 
             {/* Status Bar */}
@@ -2688,6 +2749,8 @@ const DFSOptimizer = React.memo(({ sport }: DFSOptimizerProps) => {
                 </div>
               </div>
             </div>
+            </div>
+            )}
           </div>
         </div>
       </div>
