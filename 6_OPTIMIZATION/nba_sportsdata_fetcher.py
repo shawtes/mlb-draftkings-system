@@ -135,6 +135,7 @@ class NBADataFetcher:
             'Steals': 'ProjectedSteals',
             'BlockedShots': 'ProjectedBlocks',
             'Turnovers': 'ProjectedTurnovers'
+            # Note: InjuryStatus is preserved as-is from API
         })
         
         # Add required columns for optimizer

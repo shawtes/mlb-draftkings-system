@@ -690,26 +690,83 @@ def optimize_single_lineup(args):
         problem += pulp.lpSum([df.at[idx, 'Salary'] * player_vars[idx] for idx in df.index]) >= min_salary
         logging.debug(f"optimize_single_lineup: Added minimum salary constraint >= {min_salary}")
     
-    # NBA Position Constraints - SIMPLIFIED for better optimization
+    # NBA Position Constraints - ENHANCED to ensure position fillability
     # We need 8 players total: PG, SG, SF, PF, C, G, F, UTIL
-    # The G, F, UTIL slots make this flexible - we don't need exact position matching
+    # The G, F, UTIL slots make this flexible but we need enough dual-eligible players
     
-    # Minimum requirements for primary positions (at least 1 of each core position)
+    # Roster structure: [PG, SG, SF, PF, C, G, F, UTIL]
+    # Requirements:
+    # - PG slot: needs PG
+    # - SG slot: needs SG
+    # - SF slot: needs SF
+    # - PF slot: needs PF
+    # - C slot: needs C
+    # - G slot: needs PG or SG (dual-eligible preferred)
+    # - F slot: needs SF or PF (dual-eligible preferred)
+    # - UTIL slot: any position
+    
+    # Strategy: Ensure we have enough guards and forwards to fill both core AND flex positions
+    
+    # Count players by position
+    pg_count = len([idx for idx in df.index if 'PG' in str(df.at[idx, 'Position'])])
+    sg_count = len([idx for idx in df.index if 'SG' in str(df.at[idx, 'Position'])])
+    sf_count = len([idx for idx in df.index if 'SF' in str(df.at[idx, 'Position'])])
+    pf_count = len([idx for idx in df.index if 'PF' in str(df.at[idx, 'Position'])])
+    c_count = len([idx for idx in df.index if 'C' in str(df.at[idx, 'Position'])])
+    
+    logging.debug(f"Position availability: PG={pg_count}, SG={sg_count}, SF={sf_count}, PF={pf_count}, C={c_count}")
+    
+    # Constraint 1: Need at least 1 of each core position
     for position in ['PG', 'SG', 'SF', 'PF', 'C']:
-        if position in POSITION_LIMITS and POSITION_LIMITS[position] > 0:
-            available_for_position = [idx for idx in df.index if position in str(df.at[idx, 'Position'])]
-            logging.debug(f"optimize_single_lineup: Position {position} available: {len(available_for_position)}")
-            
-            if len(available_for_position) > 0:
-                # At least 1 of this position (flexible due to G/F/UTIL slots)
-                problem += pulp.lpSum([player_vars[idx] for idx in df.index if position in str(df.at[idx, 'Position'])]) >= 1
-                logging.debug(f"optimize_single_lineup: Added constraint: At least 1 {position}")
-            else:
-                logging.warning(f"⚠️ No players available for position {position}!")
+        available_for_position = [idx for idx in df.index if position in str(df.at[idx, 'Position'])]
+        
+        if len(available_for_position) > 0:
+            problem += pulp.lpSum([player_vars[idx] for idx in available_for_position]) >= 1
+            logging.debug(f"Added constraint: At least 1 {position}")
+        else:
+            logging.warning(f"⚠️ No players available for position {position}!")
     
-    # No additional constraints needed - the flexibility of G/F/UTIL means any 8-player
-    # combination with at least 1 of each primary position is valid
-    logging.debug("optimize_single_lineup: NBA constraints applied (flexible for G/F/UTIL)")
+    # Constraint 2: Need at least 2 guards total (PG and SG) to fill PG + SG + G slots
+    guards = [idx for idx in df.index if 'PG' in str(df.at[idx, 'Position']) or 'SG' in str(df.at[idx, 'Position'])]
+    if len(guards) >= 3:
+        problem += pulp.lpSum([player_vars[idx] for idx in guards]) >= 3
+        logging.debug("Added constraint: At least 3 guards (for PG + SG + G slots)")
+    else:
+        logging.warning(f"⚠️ Only {len(guards)} guards available, may not fill G slot!")
+    
+    # Constraint 3: Need at least 2 forwards total (SF and PF) to fill SF + PF + F slots
+    forwards = [idx for idx in df.index if 'SF' in str(df.at[idx, 'Position']) or 'PF' in str(df.at[idx, 'Position'])]
+    if len(forwards) >= 3:
+        problem += pulp.lpSum([player_vars[idx] for idx in forwards]) >= 3
+        logging.debug("Added constraint: At least 3 forwards (for SF + PF + F slots)")
+    else:
+        logging.warning(f"⚠️ Only {len(forwards)} forwards available, may not fill F slot!")
+    
+    # Constraint 4: Prevent all guards from being PG-only or SG-only
+    # Prefer diversity to ensure flex fillability
+    pure_pgs = [idx for idx in df.index if 'PG' in str(df.at[idx, 'Position']) and 'SG' not in str(df.at[idx, 'Position'])]
+    pure_sgs = [idx for idx in df.index if 'SG' in str(df.at[idx, 'Position']) and 'PG' not in str(df.at[idx, 'Position'])]
+    
+    # Don't allow more than 2 pure PGs OR 2 pure SGs (force some dual-eligible if available)
+    if len(pure_pgs) >= 2:
+        problem += pulp.lpSum([player_vars[idx] for idx in pure_pgs]) <= 2
+        logging.debug("Added constraint: Max 2 pure PGs (to save dual-eligible for G slot)")
+    if len(pure_sgs) >= 2:
+        problem += pulp.lpSum([player_vars[idx] for idx in pure_sgs]) <= 2
+        logging.debug("Added constraint: Max 2 pure SGs (to save dual-eligible for G slot)")
+    
+    # Similar logic for forwards
+    pure_sfs = [idx for idx in df.index if 'SF' in str(df.at[idx, 'Position']) and 'PF' not in str(df.at[idx, 'Position'])]
+    pure_pfs = [idx for idx in df.index if 'PF' in str(df.at[idx, 'Position']) and 'SF' not in str(df.at[idx, 'Position'])]
+    
+    if len(pure_sfs) >= 2:
+        problem += pulp.lpSum([player_vars[idx] for idx in pure_sfs]) <= 2
+        logging.debug("Added constraint: Max 2 pure SFs (to save dual-eligible for F slot)")
+    if len(pure_pfs) >= 2:
+        problem += pulp.lpSum([player_vars[idx] for idx in pure_pfs]) <= 2
+        logging.debug("Added constraint: Max 2 pure PFs (to save dual-eligible for F slot)")
+    
+    logging.debug("NBA position constraints applied with flex position awareness")
 
     # Handle different stack types
     stack_size = None
@@ -5030,14 +5087,23 @@ class FantasyFootballApp(QMainWindow):
         total_salary = lineup['Salary'].sum()
         risk_info = lineup_data.get('risk_info', {})
 
-        for _, player in lineup.iterrows():
+        # NBA lineup positions in order
+        nba_positions = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        
+        for idx, (_, player) in enumerate(lineup.iterrows()):
             row_position = self.results_table.rowCount()
             self.results_table.insertRow(row_position)
+            
+            # Determine the lineup position for this player
+            if idx < len(nba_positions):
+                lineup_position = nba_positions[idx]
+            else:
+                lineup_position = "UTIL"  # Fallback
             
             # Basic lineup information
             self.results_table.setItem(row_position, 0, QTableWidgetItem(str(player['Name'])))
             self.results_table.setItem(row_position, 1, QTableWidgetItem(str(player['Team'])))
-            self.results_table.setItem(row_position, 2, QTableWidgetItem(str(player['Position'])))
+            self.results_table.setItem(row_position, 2, QTableWidgetItem(lineup_position))  # Show lineup position
             self.results_table.setItem(row_position, 3, QTableWidgetItem(str(player['Salary'])))
             self.results_table.setItem(row_position, 4, QTableWidgetItem(f"{player['Predicted_DK_Points']:.2f}"))
             self.results_table.setItem(row_position, 5, QTableWidgetItem(str(total_salary)))
@@ -5088,6 +5154,67 @@ class FantasyFootballApp(QMainWindow):
             except Exception as e:
                 self.status_label.setText(f'Error loading file: {str(e)}')
                 logging.error(f"Error loading file: {e}")
+
+    def filter_injured_players(self, df):
+        """Remove injured players who are OUT or DOUBTFUL based on injury status column"""
+        print(f"\n🏥 INJURY REPORT FILTERING")
+        print(f"{'='*70}")
+        
+        # Check if InjuryStatus column exists
+        injury_cols = [col for col in df.columns if 'injury' in col.lower() or 'status' in col.lower()]
+        
+        if not injury_cols:
+            print(f"   ℹ️  No injury status column found - all players included")
+            logging.info("No injury status column found in player data")
+            return df
+        
+        # Use the first injury-related column found
+        injury_col = injury_cols[0]
+        print(f"   📋 Using injury column: '{injury_col}'")
+        logging.info(f"Filtering injuries using column: {injury_col}")
+        
+        # Track original count
+        before_filter = len(df)
+        
+        # Statuses to filter out (case-insensitive)
+        injured_statuses = ['OUT', 'DOUBTFUL', 'O', 'D']
+        
+        # Create a copy to avoid SettingWithCopyWarning
+        df = df.copy()
+        
+        # Fill NaN values with 'HEALTHY' for players without injury designation
+        if injury_col in df.columns:
+            df[injury_col] = df[injury_col].fillna('HEALTHY')
+            
+            # Convert to uppercase for consistent comparison
+            df['InjuryStatus_Upper'] = df[injury_col].astype(str).str.upper().str.strip()
+            
+            # Find injured players
+            injured_players = df[df['InjuryStatus_Upper'].isin(injured_statuses)]
+            
+            # Filter them out
+            df = df[~df['InjuryStatus_Upper'].isin(injured_statuses)]
+            
+            # Clean up temporary column
+            df = df.drop('InjuryStatus_Upper', axis=1)
+            
+            removed_count = before_filter - len(df)
+            
+            if removed_count > 0:
+                print(f"   ❌ Removed {removed_count} injured players (OUT/DOUBTFUL):")
+                for _, player in injured_players.iterrows():
+                    status = player[injury_col]
+                    position = player.get('Position', 'N/A')
+                    print(f"      {position:4s} {player['Name']:30s} - {status}")
+                logging.info(f"Removed {removed_count} injured players")
+            else:
+                print(f"   ✅ No injured players to remove (all active)")
+                logging.info("No injured players found")
+            
+            print(f"   ✅ {len(df)} healthy players remaining")
+        
+        print(f"{'='*70}\n")
+        return df
 
     def load_players(self, file_path):
         """Load players from CSV file with error handling and flexible column mapping"""
@@ -5172,6 +5299,9 @@ class FantasyFootballApp(QMainWindow):
             df = df.dropna(subset=['Salary', 'Predicted_DK_Points'])
             df = df[df['Salary'] > 0]
             df = df[df['Predicted_DK_Points'] > 0]
+            
+            # 🏥 INJURY FILTERING - Remove injured players (OUT/DOUBTFUL)
+            df = self.filter_injured_players(df)
             
             # 🏀 NBA POSITION VALIDATION
             print(f"\n{'='*70}")
@@ -5976,7 +6106,7 @@ class FantasyFootballApp(QMainWindow):
                 logging.warning("File is empty!")
                 return None
             
-            # Standard DK header (NFL FORMAT - 13 columns total)
+            # Standard DK header (NBA FORMAT - 12 columns total)
             header_line = ["Entry ID", "Contest Name", "Contest ID", "Entry Fee", "PG", "SG", "SF", "PF", "C", "G", "F", "UTIL"]
             entry_rows = []
             
@@ -6008,11 +6138,11 @@ class FantasyFootballApp(QMainWindow):
                         contest_id = row[2] if len(row) > 2 else ""
                         entry_fee = row[3] if len(row) > 3 else ""
                         
-                        # Build the clean row with exactly 13 columns (4 metadata + 9 NFL positions)
+                        # Build the clean row with exactly 12 columns (4 metadata + 8 NBA positions)
                         clean_row = [entry_id, contest_name, contest_id, entry_fee]
                         
-                        # Add the 9 player positions (QB, RB, RB, WR, WR, WR, TE, FLEX, DST)
-                        for j in range(4, 13):  # NFL has 9 positions (not 10 like baseball)
+                        # Add the 8 player positions (PG, SG, SF, PF, C, G, F, UTIL)
+                        for j in range(4, 12):  # NBA has 8 positions
                             if j < len(row):
                                 clean_row.append(row[j])
                             else:
@@ -6051,9 +6181,9 @@ class FantasyFootballApp(QMainWindow):
             return None
 
     def detect_dk_format(self):
-        """Detect the DraftKings file format (NFL)"""
+        """Detect the DraftKings file format (NBA)"""
         file_columns = list(self.dk_entries_df.columns)
-        expected_positions = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'DST']
+        expected_positions = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
         
         # Check for contest format (Entry ID, Contest Name, etc.)
         if 'Entry ID' in file_columns and 'Contest Name' in file_columns:
@@ -6061,7 +6191,7 @@ class FantasyFootballApp(QMainWindow):
         
         # Check if columns match DK position format exactly (including duplicate positions)
         dk_positions = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
-        # Count positions in file columns (NFL)
+        # Count positions in file columns (NBA)
         position_counts = {}
         legacy_position_counts = {}
         
@@ -6422,11 +6552,27 @@ class FantasyFootballApp(QMainWindow):
                 raise ValueError("No reserved entry IDs found in DK entries file. Please load a valid DKEntries.csv file first.")
             
             # CRITICAL FIX: Use actual reserved entry IDs from DK file (these are pre-existing entries to fill)
+            skipped_lineups = []
+            successful_entries = 0
+            
             for i in range(lineups_to_use):
                 lineup = self.optimized_lineups[i]
                 
+                # CRITICAL VALIDATION: Check if all players in lineup have valid DK mappings
+                if 'Name' in lineup.columns:
+                    lineup_players = lineup['Name'].tolist()
+                    unmapped_players = [p for p in lineup_players if p not in player_name_to_id_map]
+                    
+                    if unmapped_players:
+                        logging.error(f"❌ LINEUP {i+1} REJECTED: The following players are NOT in your DK entries file:")
+                        for player in unmapped_players:
+                            logging.error(f"   - {player}")
+                        logging.error(f"   → This lineup will be SKIPPED to prevent DK upload errors")
+                        skipped_lineups.append((i+1, unmapped_players))
+                        continue  # Skip this lineup entirely
+                
                 # Use the reserved entry ID from the loaded DK file
-                unique_entry_id = actual_entry_ids[i]
+                unique_entry_id = actual_entry_ids[successful_entries]
                 logging.debug(f"Filling reserved entry ID: {unique_entry_id} with lineup {i+1}")
                 
                 # Convert lineup DataFrame to player IDs with proper position mapping
@@ -6436,55 +6582,19 @@ class FantasyFootballApp(QMainWindow):
                 # This ensures we use correct DK IDs from DKEntries.csv, not wrong IDs from player pool CSV
                 formatted_positions = self.format_lineup_positions_only(lineup, player_name_to_id_map)
                 player_ids = formatted_positions
-                logging.debug(f"Using DK entries player mapping: {len([p for p in player_ids if p and p.strip()])}/9 filled")
+                logging.debug(f"Using DK entries player mapping: {len([p for p in player_ids if p and p.strip()])}/8 filled")
                 
-                # Validate that we have 9 positions and all are properly filled (NFL)
+                # Validate that we have 8 positions and all are properly filled (NBA)
                 valid_ids = [pid for pid in player_ids if pid and pid.strip() and pid != 'nan']
-                if len(valid_ids) < 7:  # Need at least 7 valid players for a reasonable NFL lineup
-                    logging.warning(f"Lineup {i+1} has only {len(valid_ids)} valid player IDs, attempting to fill gaps")
-                    
-                    # Try to get player IDs from player names as fallback
-                    if 'Name' in lineup.columns:
-                        player_names = lineup['Name'].tolist()
-                        fallback_ids = []
-                        
-                        for name in player_names:
-                            player_id_found = False
-                            
-                            # PRIORITY 1: Use the extracted DK entries player mapping
-                            if player_name_to_id_map and name in player_name_to_id_map:
-                                fallback_ids.append(str(player_name_to_id_map[name]))
-                                player_id_found = True
-                            else:
-                                # PRIORITY 2: Try to match with loaded player data if available
-                                if hasattr(self, 'df_players') and self.df_players is not None:
-                                    matching_players = self.df_players[self.df_players['Name'] == name]
-                                    if not matching_players.empty:
-                                        # Try different ID column names in player data
-                                        for id_col in ['ID', 'player_id', 'Player_ID', 'PlayerID', 'DraftKingsID']:
-                                            if id_col in matching_players.columns:
-                                                player_id = str(matching_players.iloc[0][id_col])
-                                                if player_id and player_id.strip() and player_id != 'nan':
-                                                    fallback_ids.append(player_id.strip())
-                                                    player_id_found = True
-                                                    break
-                            
-                            # FALLBACK: Use generic ID if no mapping found
-                            if not player_id_found:
-                                generic_id = str(39200000 + len(fallback_ids))
-                                fallback_ids.append(generic_id)
-                        
-                        # Ensure exactly 9 players (NFL)
-                        while len(fallback_ids) < 9:
-                            fallback_ids.append("")
-                        fallback_ids = fallback_ids[:9]
-                        
-                        player_ids = fallback_ids
-                        logging.info(f"Used fallback player ID mapping for lineup {i+1}: {len([p for p in player_ids if p])}/9 filled")
+                if len(valid_ids) < 8:  # NBA requires exactly 8 players
+                    logging.error(f"❌ LINEUP {i+1} REJECTED: Only {len(valid_ids)}/8 positions have valid player IDs")
+                    logging.error(f"   → This lineup will be SKIPPED to prevent DK upload errors")
+                    skipped_lineups.append((i+1, ["Incomplete player ID mapping"]))
+                    continue  # Skip this lineup entirely
                 
-                logging.debug(f"Position-mapped player IDs: {len([p for p in player_ids if p])}/9 filled")
+                logging.debug(f"Position-mapped player IDs: {len([p for p in player_ids if p])}/8 filled")
                 
-                # CRITICAL VALIDATION: Ensure ALL 9 positions are filled with valid IDs (NFL)
+                # CRITICAL VALIDATION: Clean and validate ALL 8 player IDs (NBA)
                 final_player_ids = []
                 for j, pid in enumerate(player_ids):
                     if pid and pid.strip() and pid != 'nan' and pid.strip() != '':
@@ -6494,25 +6604,23 @@ class FantasyFootballApp(QMainWindow):
                             cleaned_id = cleaned_id.split('.')[0]
                         final_player_ids.append(cleaned_id)
                     else:
-                        # Generate fallback ID for empty positions
-                        fallback_id = str(39200000 + (i * 9) + j)
-                        final_player_ids.append(fallback_id)
-                        logging.warning(f"Empty position {j+1} in lineup {i+1}, using fallback ID: {fallback_id}")
+                        # This should never happen due to earlier validation
+                        logging.error(f"❌ Empty position {j+1} in lineup {i+1} - This should have been caught earlier!")
+                        skipped_lineups.append((i+1, [f"Empty position {j+1}"]))
+                        break
                 
-                # Ensure exactly 9 positions (NFL)
-                while len(final_player_ids) < 9:
-                    fallback_id = str(39200000 + (i * 9) + len(final_player_ids))
-                    final_player_ids.append(fallback_id)
-                    logging.warning(f"Adding fallback ID for missing position: {fallback_id}")
+                # Skip if we didn't get all 8 positions
+                if len(final_player_ids) < 8:
+                    continue
                 
-                final_player_ids = final_player_ids[:9]  # Truncate to exactly 9
-                
-                # Final validation
+                # Final validation - all 8 positions must be filled
                 valid_count = len([p for p in final_player_ids if p and p.strip() and p != 'nan'])
-                if valid_count < 9:
-                    logging.error(f"Lineup {i+1} still has {9-valid_count} invalid positions after fallback!")
-                else:
-                    logging.debug(f"✅ Lineup {i+1} has all 9 positions filled with valid IDs")
+                if valid_count < 8:
+                    logging.error(f"❌ LINEUP {i+1} REJECTED: Only {valid_count}/8 positions have valid IDs")
+                    skipped_lineups.append((i+1, [f"Only {valid_count}/8 valid IDs"]))
+                    continue
+                
+                logging.debug(f"✅ Lineup {i+1} has all 8 positions filled with valid IDs")
                 
                 row_data = [
                     unique_entry_id,
@@ -6522,10 +6630,18 @@ class FantasyFootballApp(QMainWindow):
                 ] + final_player_ids
                 
                 filled_entries.append(row_data)
-                logging.debug(f"Created fresh entry {i+1}/{lineups_to_use}: ID={unique_entry_id}, Players={len([p for p in player_ids if p])}/9")
+                successful_entries += 1
+                logging.debug(f"✅ Created fresh entry {successful_entries}/{lineups_to_use}: ID={unique_entry_id}, Players={len([p for p in player_ids if p])}/8")
+            
+            # Log summary of skipped lineups
+            if skipped_lineups:
+                logging.warning(f"⚠️ SKIPPED {len(skipped_lineups)} LINEUPS due to validation failures:")
+                for lineup_num, reasons in skipped_lineups:
+                    logging.warning(f"   Lineup {lineup_num}: {', '.join(reasons)}")
+                logging.warning(f"✅ Successfully exported {successful_entries}/{lineups_to_use} lineups")
             
             result_df = pd.DataFrame(filled_entries, columns=correct_headers)
-            logging.info(f"Created {len(result_df)} entries using FRESH optimized lineups")
+            logging.info(f"✅ Created {len(result_df)} valid entries using FRESH optimized lineups (skipped {len(skipped_lineups)} invalid)")
             return result_df
         
         # ORIGINAL LOGIC: Check if we have the favorites file with player data (only when NOT in cache-clearing mode)
@@ -6619,9 +6735,9 @@ class FantasyFootballApp(QMainWindow):
                 favorites_row = favorites_df.iloc[i]
                 player_positions = []
                 
-                # Extract the 9 position columns (QB, RB, RB, WR, WR, WR, TE, FLEX, DST)
+                # Extract the 8 position columns (PG, SG, SF, PF, C, G, F, UTIL)
                 position_start_col = 4  # After Entry ID, Contest Name, Contest ID, Entry Fee
-                for pos_idx in range(9):  # NFL has 9 positions (not 10 like baseball)
+                for pos_idx in range(8):  # NBA has 8 positions
                     col_idx = position_start_col + pos_idx
                     if col_idx < len(favorites_row):
                         player_id = str(favorites_row.iloc[col_idx]).strip()
@@ -6639,7 +6755,7 @@ class FantasyFootballApp(QMainWindow):
                 # Add the row to the DataFrame
                 filled_entries.loc[i] = row_data
                 
-                logging.debug(f"Created entry {i+1}/{lineups_to_use}: ID={unique_entry_id}, Players={len([p for p in player_positions if p])}/9")
+                logging.debug(f"Created entry {i+1}/{lineups_to_use}: ID={unique_entry_id}, Players={len([p for p in player_positions if p])}/8")
             
             logging.info(f"Created {len(filled_entries)} entries using player data from favorites file")
             
@@ -7121,9 +7237,9 @@ class FantasyFootballApp(QMainWindow):
             
             # Only add if we found a valid player ID
             if not player_id:
-                # Generate a fallback ID as last resort
-                player_id = str(40494000 + len([p for sublist in position_players.values() for p in sublist]))
-                logging.warning(f"❌ No valid ID found for {name} ({pos}), using fallback ID: {player_id}")
+                # NO FALLBACK IDs - if we can't find a player ID, leave it empty and let validation catch it
+                logging.error(f"❌ NO VALID ID FOUND for {name} ({pos}) - player not in DK entries file!")
+                player_id = ""  # Leave empty to trigger validation failure
             
             # Handle NBA positions - match to DraftKings roster positions
             # Players can have multiple position eligibility (e.g., "PG/SG")
@@ -7147,120 +7263,310 @@ class FantasyFootballApp(QMainWindow):
             # Remove duplicates
             pos_eligible = list(set(pos_eligible))
             
-            # Add to first available position slot
-            added = False
+            # CRITICAL FIX: Add player to ALL eligible position pools (not just first one)
+            # This allows backfilling to work properly
             for eligible_pos in pos_eligible:
-                if eligible_pos in position_players and len(position_players[eligible_pos]) < POSITION_LIMITS.get(eligible_pos, 1):
+                if eligible_pos in position_players:
                     position_players[eligible_pos].append(player_id)
-                    added = True
-                    break
-            
-            if not added:
-                # If no specific position available, add to UTIL
-                if len(position_players['UTIL']) < 1:
-                    position_players['UTIL'].append(player_id)
-                else:
-                    logging.warning(f"Could not fit {name} ({pos}) into lineup - all slots full")
         
         # Create the position assignments in DK NBA format: [PG, SG, SF, PF, C, G, F, UTIL]
-        position_assignments = []
+        # Use a smarter algorithm that fills all positions with backfilling
+        position_assignments = [""] * 8
+        used_player_ids = set()
         
-        # Add PG (1)
-        if len(position_players['PG']) >= 1:
-            position_assignments.append(position_players['PG'][0])
-        else:
-            position_assignments.append("")
-            logging.error("No PG found in lineup!")
+        # Helper function to assign a player to a slot
+        def assign_player(slot_index, player_id):
+            if player_id and player_id not in used_player_ids:
+                position_assignments[slot_index] = player_id
+                used_player_ids.add(player_id)
+                return True
+            return False
         
-        # Add SG (1)
-        if len(position_players['SG']) >= 1:
-            position_assignments.append(position_players['SG'][0])
-        else:
-            position_assignments.append("")
-            logging.error("No SG found in lineup!")
+        # IMPROVED ALGORITHM: Fill positions considering flex needs
+        # Strategy: Fill positions in order that reserves dual-eligible players for flex spots
         
-        # Add SF (1)
-        if len(position_players['SF']) >= 1:
-            position_assignments.append(position_players['SF'][0])
-        else:
-            position_assignments.append("")
-            logging.error("No SF found in lineup!")
+        # Step 1: Count available players by position eligibility
+        def count_eligible_for_slot(slot_index, exclude_used=True):
+            """Count how many unused players can fill a specific slot"""
+            count = 0
+            for _, player in lineup_sorted.iterrows():
+                name = str(player['Name'])
+                if player_name_to_id_map and name in player_name_to_id_map:
+                    player_id = str(player_name_to_id_map[name])
+                    if (not exclude_used or player_id not in used_player_ids):
+                        if is_player_eligible_for_slot(player_id, slot_index):
+                            count += 1
+            return count
         
-        # Add PF (1)
-        if len(position_players['PF']) >= 1:
-            position_assignments.append(position_players['PF'][0])
-        else:
-            position_assignments.append("")
-            logging.error("No PF found in lineup!")
+        # Step 2: Fill positions in smart order - fill constrained positions first
+        # Order by flexibility: C (least flexible), PG, SG, SF, PF (core), then G, F, UTIL (flex)
         
-        # Add C (1)
-        if len(position_players['C']) >= 1:
-            position_assignments.append(position_players['C'][0])
-        else:
-            position_assignments.append("")
-            logging.error("No C found in lineup!")
-        
-        # Add G (1) - use remaining guard not already used
-        if len(position_players['G']) >= 1:
-            # Find first guard not already used
-            for g_id in position_players['G']:
-                if g_id not in position_assignments:
-                    position_assignments.append(g_id)
+        # Phase 1: Fill C (slot 4) - most constrained (only C eligible)
+        if position_players['C']:
+            for player_id in position_players['C']:
+                if assign_player(4, player_id):
                     break
-            # If all guards already used, use empty
-            if len(position_assignments) == 5:
-                position_assignments.append("")
-                logging.warning("No available guard for G slot!")
-        else:
-            position_assignments.append("")
-            logging.warning("No G player found!")
         
-        # Add F (1) - use remaining forward not already used
-        if len(position_players['F']) >= 1:
-            # Find first forward not already used
-            for f_id in position_players['F']:
-                if f_id not in position_assignments:
-                    position_assignments.append(f_id)
-                    break
-            # If all forwards already used, use empty
-            if len(position_assignments) == 6:
-                position_assignments.append("")
-                logging.warning("No available forward for F slot!")
-        else:
-            position_assignments.append("")
-            logging.warning("No F player found!")
+        # Phase 2: Fill PG (slot 0) - but reserve at least 1 guard for G slot
+        pg_candidates = [pid for pid in position_players['PG'] if pid not in used_player_ids]
+        pure_pgs = []
+        dual_pgs = []
         
-        # Add UTIL (1) - use remaining player not already used
-        if len(position_players['UTIL']) >= 1:
-            # Find first utility player not already used
-            for u_id in position_players['UTIL']:
-                if u_id not in position_assignments:
-                    position_assignments.append(u_id)
+        for pid in pg_candidates:
+            # Check if this player is also SG-eligible (would be in both PG and SG pools)
+            if pid in position_players['SG']:
+                dual_pgs.append(pid)
+            else:
+                pure_pgs.append(pid)
+        
+        # Try pure PGs first (they can't fill G slot if they're PG-only, so safer)
+        pg_filled = False
+        for player_id in pure_pgs:
+            if assign_player(0, player_id):
+                pg_filled = True
+                break
+        
+        # If no pure PG, use dual-eligible BUT reserve 1 for G slot
+        if not pg_filled:
+            for player_id in dual_pgs:
+                # Check if using this player would leave at least 1 for G slot
+                remaining_guards = len([pid for pid in position_players['G'] 
+                                       if pid not in used_player_ids and pid != player_id])
+                if remaining_guards >= 1:  # Reserve 1 for G slot
+                    if assign_player(0, player_id):
+                        break
+        
+        # Phase 3: Fill SG (slot 1) - similar reservation logic
+        sg_candidates = [pid for pid in position_players['SG'] if pid not in used_player_ids]
+        pure_sgs = []
+        dual_sgs = []
+        
+        for pid in sg_candidates:
+            if pid in position_players['PG']:
+                dual_sgs.append(pid)
+            else:
+                pure_sgs.append(pid)
+        
+        # Try pure SGs first
+        sg_filled = False
+        for player_id in pure_sgs:
+            if assign_player(1, player_id):
+                sg_filled = True
+                break
+        
+        # If no pure SG, use dual-eligible BUT reserve 1 for G slot
+        if not sg_filled:
+            for player_id in dual_sgs:
+                # Check if using this player would leave at least 1 for G slot
+                remaining_guards = len([pid for pid in position_players['G'] 
+                                       if pid not in used_player_ids and pid != player_id])
+                if remaining_guards >= 1:  # Reserve 1 for G slot
+                    if assign_player(1, player_id):
+                        break
+        
+        # Phase 4: Fill SF (slot 2) - BUT reserve at least 1 forward for F slot
+        # Count total available forwards for the F slot
+        total_forwards_available = len([pid for pid in position_players['F'] if pid not in used_player_ids])
+        
+        sf_candidates = [pid for pid in position_players['SF'] if pid not in used_player_ids]
+        pure_sfs = []
+        dual_sfs = []
+        
+        for pid in sf_candidates:
+            if pid in position_players['PF']:
+                dual_sfs.append(pid)
+            else:
+                pure_sfs.append(pid)
+        
+        # Try pure SF first (they can't fill F slot, so safe to use)
+        sf_filled = False
+        for player_id in pure_sfs:
+            if assign_player(2, player_id):
+                sf_filled = True
+                break
+        
+        # If no pure SF available, use dual-eligible BUT only if we have enough for F slot
+        if not sf_filled:
+            for player_id in dual_sfs:
+                # Check if using this player would leave at least 1 for F slot
+                remaining_forwards = len([pid for pid in position_players['F'] 
+                                         if pid not in used_player_ids and pid != player_id])
+                if remaining_forwards >= 1:  # Reserve 1 for F slot
+                    if assign_player(2, player_id):
+                        break
+        
+        # Phase 5: Fill PF (slot 3) - similar reservation logic
+        pf_candidates = [pid for pid in position_players['PF'] if pid not in used_player_ids]
+        pure_pfs = []
+        dual_pfs = []
+        
+        for pid in pf_candidates:
+            if pid in position_players['SF']:
+                dual_pfs.append(pid)
+            else:
+                pure_pfs.append(pid)
+        
+        # Try pure PF first
+        pf_filled = False
+        for player_id in pure_pfs:
+            if assign_player(3, player_id):
+                pf_filled = True
+                break
+        
+        # If no pure PF, use dual-eligible BUT reserve 1 for F slot
+        if not pf_filled:
+            for player_id in dual_pfs:
+                # Check if using this player would leave at least 1 for F slot
+                remaining_forwards = len([pid for pid in position_players['F'] 
+                                         if pid not in used_player_ids and pid != player_id])
+                if remaining_forwards >= 1:  # Reserve 1 for F slot
+                    if assign_player(3, player_id):
+                        break
+        
+        # Phase 6: Fill G slot (slot 5) - now we should have dual-eligible guards available
+        for player_id in position_players['G']:
+            if assign_player(5, player_id):
+                break
+        
+        # Phase 7: Fill F slot (slot 6) - now we should have dual-eligible forwards available
+        for player_id in position_players['F']:
+            if assign_player(6, player_id):
+                break
+        
+        # Phase 8: Fill UTIL slot (slot 7) - any remaining player
+        for player_id in position_players['UTIL']:
+            if assign_player(7, player_id):
+                break
+        
+        # Phase 9: ENHANCED BACKFILL - Fill empty positions with remaining eligible players
+        # We need to track player positions to ensure they're eligible for the slot
+        
+        # Helper to check if a player_id is eligible for a specific roster slot
+        def is_player_eligible_for_slot(player_id, slot_index):
+            """Check if player can fill a specific roster slot based on their position"""
+            # Find the player's actual position from the lineup
+            player_pos = None
+            for _, player in lineup_sorted.iterrows():
+                # Get player ID from mapping or player data
+                check_id = ""
+                name = str(player['Name'])
+                if player_name_to_id_map and name in player_name_to_id_map:
+                    check_id = str(player_name_to_id_map[name])
+                if check_id == player_id:
+                    player_pos = str(player['Position']).upper()
                     break
-            # If all utility players already used, use empty
-            if len(position_assignments) == 7:
-                position_assignments.append("")
-                logging.warning("No available player for UTIL slot!")
-        else:
-            position_assignments.append("")
-            logging.warning("No UTIL player found!")
+            
+            if not player_pos:
+                return False  # Can't validate, reject
+            
+            slot_names = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+            slot_name = slot_names[slot_index]
+            
+            # DraftKings eligibility rules
+            if slot_name == 'PG':
+                return 'PG' in player_pos
+            elif slot_name == 'SG':
+                return 'SG' in player_pos
+            elif slot_name == 'SF':
+                return 'SF' in player_pos
+            elif slot_name == 'PF':
+                return 'PF' in player_pos
+            elif slot_name == 'C':
+                return 'C' in player_pos
+            elif slot_name == 'G':
+                return 'PG' in player_pos or 'SG' in player_pos or 'G' in player_pos
+            elif slot_name == 'F':
+                return 'SF' in player_pos or 'PF' in player_pos or 'F' in player_pos
+            elif slot_name == 'UTIL':
+                return True  # Any player can be UTIL
+            
+            return False
+        
+        # Enhanced backfill - try multiple strategies
+        slot_names = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        
+        # Strategy 1: Try to fill empty slots from their specific position pools first
+        for i in range(8):
+            if not position_assignments[i]:
+                slot_name = slot_names[i]
+                # Try position-specific pool
+                if slot_name in position_players:
+                    for player_id in position_players[slot_name]:
+                        if player_id not in used_player_ids:
+                            if assign_player(i, player_id):
+                                logging.info(f"✅ Backfilled {slot_name} slot from position pool")
+                                break
+        
+        # Strategy 2: For still-empty slots, try UTIL pool with eligibility checking
+        for i in range(8):
+            if not position_assignments[i]:
+                slot_name = slot_names[i]
+                for player_id in position_players['UTIL']:
+                    if player_id not in used_player_ids and is_player_eligible_for_slot(player_id, i):
+                        if assign_player(i, player_id):
+                            logging.info(f"✅ Backfilled {slot_name} slot from UTIL pool")
+                            break
+        
+        # Strategy 3: Last resort - try ANY remaining player that's eligible
+        for i in range(8):
+            if not position_assignments[i]:
+                slot_name = slot_names[i]
+                # Search through all players in the lineup
+                for _, player in lineup_sorted.iterrows():
+                    name = str(player['Name'])
+                    if player_name_to_id_map and name in player_name_to_id_map:
+                        player_id = str(player_name_to_id_map[name])
+                        if player_id not in used_player_ids and is_player_eligible_for_slot(player_id, i):
+                            if assign_player(i, player_id):
+                                logging.info(f"✅ Backfilled {slot_name} slot with {name}")
+                                break
+                    if position_assignments[i]:  # Successfully filled
+                        break
         
         # Final validation - ensure exactly 8 positions (NBA: PG, SG, SF, PF, C, G, F, UTIL)
         while len(position_assignments) < 8:
             position_assignments.append("")
         position_assignments = position_assignments[:8]
         
-        # CRITICAL FIX: Fill any empty positions with fallback IDs
-        for i in range(8):  # NBA has 8 positions
+        # CRITICAL: Validate that each assigned player is eligible for their roster slot
+        slot_names = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        validation_errors = []
+        for i in range(8):
+            if position_assignments[i] and position_assignments[i].strip():
+                if not is_player_eligible_for_slot(position_assignments[i], i):
+                    # Find player name for logging
+                    player_name = "Unknown"
+                    for _, player in lineup_sorted.iterrows():
+                        name = str(player['Name'])
+                        if player_name_to_id_map and name in player_name_to_id_map:
+                            if str(player_name_to_id_map[name]) == position_assignments[i]:
+                                player_name = name
+                                player_pos = str(player['Position'])
+                                break
+                    
+                    error_msg = f"{player_name} (pos={player_pos}) cannot fill {slot_names[i]} slot"
+                    validation_errors.append(error_msg)
+                    logging.error(f"❌ Position eligibility error: {error_msg}")
+                    # Clear this invalid assignment
+                    position_assignments[i] = ""
+        
+        if validation_errors:
+            logging.error(f"❌ Removed {len(validation_errors)} invalid position assignments")
+        
+        # Report empty positions with names for debugging
+        empty_positions = []
+        for i in range(8):
             if not position_assignments[i] or position_assignments[i].strip() == '':
-                # Generate fallback ID for empty position
-                fallback_id = str(39200000 + i)
-                position_assignments[i] = fallback_id
-                logging.warning(f"Position {i+1} was empty, filled with fallback ID: {fallback_id}")
+                empty_positions.append(slot_names[i])
+        
+        if empty_positions:
+            logging.error(f"❌ Empty positions after backfilling: {', '.join(empty_positions)}")
+            # Show what players were available
+            logging.error(f"   Available by position: PG={len(position_players['PG'])}, SG={len(position_players['SG'])}, SF={len(position_players['SF'])}, PF={len(position_players['PF'])}, C={len(position_players['C'])}, G={len(position_players['G'])}, F={len(position_players['F'])}, UTIL={len(position_players['UTIL'])}")
         
         # Count how many positions are actually filled
         filled_count = len([p for p in position_assignments if p and p.strip()])
-        logging.debug(f"Position assignment result: {filled_count}/9 positions filled (NFL)")
+        logging.debug(f"Position assignment result: {filled_count}/8 positions filled (NBA)")
         
         return position_assignments
     
