@@ -83,35 +83,33 @@ except ImportError as e:
     print(f"⚠️ Probability Enhanced Optimizer not available: {e}")
     PROBABILITY_OPTIMIZER_AVAILABLE = False
 
-# Import the NFL Stack Engine
+# Import the NBA Stack Engine
 try:
-    from nfl_stack_engine import NFLStackEngine
-    from nfl_stack_config import NFL_STACK_TYPES, get_stack_positions
-    NFL_STACK_ENGINE_AVAILABLE = True
-    print("✅ NFL Stack Engine loaded successfully!")
+    from nba_stack_engine import NBAStackEngine
+    from nba_stack_config import NBA_STACK_TYPES, get_stack_positions
+    NBA_STACK_ENGINE_AVAILABLE = True
+    print("✅ NBA Stack Engine loaded successfully!")
 except ImportError as e:
-    print(f"⚠️ NFL Stack Engine not available: {e}")
-    NFL_STACK_ENGINE_AVAILABLE = False
+    print(f"⚠️ NBA Stack Engine not available: {e}")
+    NBA_STACK_ENGINE_AVAILABLE = False
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# NFL DraftKings Settings
+# NBA DraftKings Settings
 # ============================================================================
-# NFL STACK TYPE MAPPING - Convert GUI names to backend logic
+# NBA STACK TYPE MAPPING - Convert GUI names to backend logic
 # ============================================================================
-def map_nfl_stack_to_backend(stack_type):
+def map_nba_stack_to_backend(stack_type):
     """
-    Map new NFL stack names from GUI to backend processing format
-    Now properly integrated with nfl_stack_engine
+    Map NBA stack names from GUI to backend processing format
+    Now properly integrated with nba_stack_engine
     """
     stack_mapping = {
-        "QB + WR": "qb_wr",
-        "QB + 2 WR": "qb_2wr",
-        "QB + WR + TE": "qb_wr_te",
-        "QB + WR + RB": "qb_wr_rb",
-        "QB + 2 WR + TE": "qb_2wr_te",
-        "Game Stack": "game_stack",
-        "Bring-Back": "bring_back",
+        "PG + C": "pg_c_stack",           # Point Guard + Center correlation
+        "PG + Wing": "pg_wing_stack",     # Point Guard + Wing (SF/SG)
+        "Stars + Value": "stars_value",   # 2-3 stars + value plays
+        "Game Stack": "game_stack",        # 4+ players from one high-scoring game
+        "Balanced": "balanced",            # No specific stacking
         "No Stack": "No Stacks"
     }
     
@@ -128,23 +126,27 @@ def map_nfl_stack_to_backend(stack_type):
     return stack_mapping.get(stack_type, stack_type)
 
 SALARY_CAP = 50000
-MIN_SALARY_DEFAULT = 48000  # NFL minimum salary requirement (higher than MLB)
+MIN_SALARY_DEFAULT = 49000  # NBA minimum salary requirement
 
-# NFL DraftKings Classic Lineup Positions
-# QB (1), RB (2), WR (3), TE (1), FLEX (1), DST (1) = 9 players
+# NBA DraftKings Classic Lineup Positions
+# PG (1), SG (1), SF (1), PF (1), C (1), G (1), F (1), UTIL (1) = 8 players
 POSITION_LIMITS = {
-    'QB': 1,   # Quarterback
-    'RB': 2,   # Running Back
-    'WR': 3,   # Wide Receiver
-    'TE': 1,   # Tight End
-    'FLEX': 1, # RB/WR/TE
-    'DST': 1   # Defense/Special Teams
+    'PG': 1,   # Point Guard
+    'SG': 1,   # Shooting Guard
+    'SF': 1,   # Small Forward
+    'PF': 1,   # Power Forward
+    'C': 1,    # Center
+    'G': 1,    # Guard (PG/SG)
+    'F': 1,    # Forward (SF/PF)
+    'UTIL': 1  # Utility (any position)
 }
 
-REQUIRED_TEAM_SIZE = 9  # NFL lineups have 9 players
+REQUIRED_TEAM_SIZE = 8  # NBA lineups have 8 players
 
-# Flex eligible positions
-FLEX_POSITIONS = ['RB', 'WR', 'TE']
+# Position eligibility mapping
+GUARD_POSITIONS = ['PG', 'SG']
+FORWARD_POSITIONS = ['SF', 'PF']
+ALL_POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C']
 
 # GENETIC ALGORITHM DIVERSITY ENGINE FOR MULTIPLE UNIQUE LINEUPS
 class GeneticDiversityEngine:
