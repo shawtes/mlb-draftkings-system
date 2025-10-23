@@ -1,0 +1,40 @@
+
+🏈 NFL Today's Parlay Data Summary
+==================================================
+
+📅 Date: 2025-10-23
+🎯 Today's Games
+📊 Season: 2025
+
+📈 PARLAY OPTIONS:
+   Total Options: 18
+   Moneyline Bets: 6
+   Spread Bets: 6
+   Total Bets: 6
+
+🎲 PARLAY COMBINATIONS:
+   Total Combinations: 19
+   2-Leg Parlays: 10
+   3-Leg Parlays: 9
+   4-Leg Parlays: 0
+
+🎯 CONFIDENCE BREAKDOWN:
+   High Confidence: 6
+   Medium Confidence: 12
+
+📁 FILES CREATED:
+   - nfl_1023_parlay_options.csv
+   - nfl_1023_parlay_combinations.csv
+
+🎲 RECOMMENDED PARLAYS:
+
+🏆 HIGH CONFIDENCE PARLAYS:
+   1. 2-leg parlay (+260)
+      • Giants Moneyline
+      • 49ers +3.5 Spread
+   2. 2-leg parlay (+260)
+      • Giants Moneyline
+      • Bills Moneyline
+   3. 2-leg parlay (+260)
+      • Giants Moneyline
+      • Dolphins +3.5 Spread

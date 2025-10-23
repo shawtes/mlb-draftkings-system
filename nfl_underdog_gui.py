@@ -40,7 +40,7 @@ class NFLUnderdogFantasyGUI:
         self.prob_engine = NFLProbabilityEngine()
         
         self.setup_gui()
-        self.load_nfl_data()
+        # Don't auto-load data - let user choose via button
         self.load_underdog_props()  # Load real Underdog lines
     
     def setup_gui(self):
@@ -353,33 +353,24 @@ class NFLUnderdogFantasyGUI:
         analysis_frame.grid_columnconfigure(0, weight=1)
     
     def load_nfl_data(self):
-        """Load NFL data from sportsdata.io"""
+        """Load NFL data from sportsdata.io with file picker"""
         try:
-            # First check for SEA vs TEN tonight file
-            sea_ten_file = "sea_vs_ten_tonight.csv"
-            if os.path.exists(sea_ten_file):
-                print(f"🏈 Loading SEA vs TEN tonight game data...")
-                nfl_path = sea_ten_file
-            else:
-                # Look for SPORTSDATA files specifically (they have detailed projections)
-                nfl_files = [f for f in os.listdir(self.default_dir) 
-                            if 'SPORTSDATA' in f and f.endswith('.csv')]
-                
-                if not nfl_files:
-                    messagebox.showwarning("Warning", 
-                        "No SportsData.io files found!\n\n"
-                        "Please load a file with detailed projections like:\n"
-                        "- nfl_week7_CASH_SPORTSDATA.csv\n"
-                        "- nfl_week7_GPP_SPORTSDATA.csv")
-                    return
-                
-                # Prefer CASH file, fallback to first SPORTSDATA file
-                if any('CASH' in f for f in nfl_files):
-                    latest_nfl_file = [f for f in nfl_files if 'CASH' in f][0]
-                else:
-                    latest_nfl_file = nfl_files[0]
-                
-                nfl_path = os.path.join(self.default_dir, latest_nfl_file)
+            # Show file picker dialog
+            nfl_path = filedialog.askopenfilename(
+                title="Select NFL Player Data File (NOT parlay files)",
+                initialdir=self.default_dir,
+                filetypes=[
+                    ("NFL Player Data", "nfl_week8_DST_FIXED.csv;nfl_week8_FINAL_CLEAN.csv;nfl_week8_ENTRY_READY.csv"),
+                    ("All CSV files", "*.csv"),
+                    ("All files", "*.*")
+                ]
+            )
+            
+            if not nfl_path:
+                print("No file selected")
+                return
+            
+            print(f"🏈 Loading NFL data from: {os.path.basename(nfl_path)}")
             self.nfl_data_df = pd.read_csv(nfl_path)
             
             # Verify required columns exist
@@ -387,9 +378,19 @@ class NFLUnderdogFantasyGUI:
             missing_cols = [col for col in required_cols if col not in self.nfl_data_df.columns]
             
             if missing_cols:
-                messagebox.showerror("Error", 
-                    f"File missing required projection columns:\n{', '.join(missing_cols)}\n\n"
-                    f"Please load a SportsData.io file with detailed projections.")
+                # Check if this is a parlay file instead
+                if 'game' in self.nfl_data_df.columns and 'odds' in self.nfl_data_df.columns:
+                    messagebox.showerror("Error", 
+                        f"This appears to be a parlay file, not NFL player data!\n\n"
+                        f"Please select an NFL player data file like:\n"
+                        f"- nfl_week8_DST_FIXED.csv\n"
+                        f"- nfl_week8_FINAL_CLEAN.csv\n"
+                        f"- nfl_week8_ENTRY_READY.csv\n\n"
+                        f"Files with 'parlay' in the name are for betting, not player data.")
+                else:
+                    messagebox.showerror("Error", 
+                        f"File missing required projection columns:\n{', '.join(missing_cols)}\n\n"
+                        f"Please load a SportsData.io file with detailed projections.")
                 self.nfl_data_df = None
                 return
             

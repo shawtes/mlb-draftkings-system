@@ -1111,6 +1111,122 @@ class OptimizationWorker(QThread):
             self.risk_engine = None
             self.bankroll_manager = None
 
+    def _determine_slot_eligibility(self, position_str):
+        slots = set()
+        if not position_str:
+            position_str = ""
+        normalized = str(position_str).upper()
+        tokens = [token.strip() for token in re.split(r'[\/\-]', normalized) if token.strip()]
+        compact = re.sub(r'[^A-Z]', '', normalized)
+        
+        def has_token(*possible):
+            return any(token in tokens for token in possible) or any(p in compact for p in possible)
+        
+        if has_token('QB'):
+            slots.add('QB')
+        if has_token('RB'):
+            slots.update(['RB', 'FLEX'])
+        if has_token('WR'):
+            slots.update(['WR', 'FLEX'])
+        if has_token('TE'):
+            slots.update(['TE', 'FLEX'])
+        if has_token('DST', 'DEF'):
+            slots.add('DST')
+        if has_token('FLEX'):
+            slots.add('FLEX')
+        return slots
+
+    def _assign_lineup_slots(self, lineup):
+        slot_defs = [
+            ('QB', {'QB'}),
+            ('RB1', {'RB'}),
+            ('RB2', {'RB'}),
+            ('WR1', {'WR'}),
+            ('WR2', {'WR'}),
+            ('WR3', {'WR'}),
+            ('TE', {'TE'}),
+            ('FLEX', {'RB', 'WR', 'TE'}),
+            ('DST', {'DST', 'DEF'})
+        ]
+        slots = [name for name, _ in slot_defs]
+        
+        if lineup is None or lineup.empty:
+            logging.warning("⚠️ Cannot assign slots: lineup is empty")
+            return None
+        
+        if len(lineup) != REQUIRED_TEAM_SIZE:
+            logging.warning(f"⚠️ Cannot assign slots: expected {REQUIRED_TEAM_SIZE} players, got {len(lineup)}")
+            return None
+        
+        projection_cols = ['Predicted_DK_Points', 'Fantasy_Points', 'FantasyPoints', 'Projection', 'Points']
+        proj_col = next((col for col in projection_cols if col in lineup.columns), None)
+        
+        slot_to_players = {slot: [] for slot in slots}
+        player_priority = {}
+        
+        for player_iloc, (_, row) in enumerate(lineup.iterrows()):
+            eligible_tokens = self._determine_slot_eligibility(row.get('Position', ''))
+            if 'DST' in eligible_tokens:
+                eligible_tokens = {'DST'}
+            else:
+                flex_candidates = eligible_tokens.intersection({'RB', 'WR', 'TE'})
+                if flex_candidates:
+                    eligible_tokens = eligible_tokens.union({'FLEX'})
+                if not eligible_tokens:
+                    eligible_tokens = {'FLEX'}
+
+            projection = 0.0
+            if proj_col and pd.notnull(row.get(proj_col)):
+                try:
+                    projection = float(row[proj_col])
+                except Exception:
+                    projection = 0.0
+            player_priority[player_iloc] = projection
+            
+            for slot_name, allowed_positions in slot_defs:
+                if allowed_positions.intersection(eligible_tokens):
+                    slot_to_players[slot_name].append(player_iloc)
+        
+        for slot, allowed_positions in slot_defs:
+            if not slot_to_players[slot]:
+                logging.warning(f"⚠️ No candidates available for slot {slot}")
+                return None
+            slot_to_players[slot].sort(key=lambda idx: player_priority.get(idx, 0.0), reverse=True)
+        
+        base_slots = {'QB', 'RB1', 'RB2', 'WR1', 'WR2', 'WR3', 'TE'}
+        slot_order = sorted(
+            slots,
+            key=lambda s: (
+                len(slot_to_players[s]),
+                0 if s in base_slots else (1 if s == 'FLEX' else 2),
+                slots.index(s)
+            )
+        )
+        
+        assignment = {}
+        used_players = set()
+        
+        def backtrack(position):
+            if position == len(slot_order):
+                return True
+            slot = slot_order[position]
+            for player_idx in slot_to_players[slot]:
+                if player_idx in used_players:
+                    continue
+                assignment[slot] = player_idx
+                used_players.add(player_idx)
+                if backtrack(position + 1):
+                    return True
+                used_players.remove(player_idx)
+                assignment.pop(slot, None)
+            return False
+        
+        if backtrack(0):
+            return assignment
+        
+        logging.error("❌ Unable to assign players to NFL DraftKings slots without conflicts")
+        return None
+
     def _validate_dst_in_lineups(self, results):
         """Validate that all lineups have DST and remove invalid ones"""
         print(f"\n{'='*70}")
@@ -2208,7 +2324,7 @@ class FantasyFootballApp(QMainWindow):
             print("✅ Checkbox managers initialized")
         else:
             self.checkbox_managers = None
-        
+    
         self.setup_ui()
         
         self.included_players = []
@@ -2309,6 +2425,122 @@ class FantasyFootballApp(QMainWindow):
         self.create_advanced_quant_tab()  # Add advanced quantitative optimization tab
         self.create_favorites_tab()  # Add favorites tab
         self.load_favorites()  # Load saved favorites on startup
+    
+    def _determine_slot_eligibility(self, position_str):
+        slots = set()
+        if not position_str:
+            position_str = ""
+        normalized = str(position_str).upper()
+        tokens = [token.strip() for token in re.split(r'[\/\-]', normalized) if token.strip()]
+        compact = re.sub(r'[^A-Z]', '', normalized)
+        
+        def has_token(*possible):
+            return any(token in tokens for token in possible) or any(p in compact for p in possible)
+        
+        if has_token('QB'):
+            slots.add('QB')
+        if has_token('RB'):
+            slots.update(['RB', 'FLEX'])
+        if has_token('WR'):
+            slots.update(['WR', 'FLEX'])
+        if has_token('TE'):
+            slots.update(['TE', 'FLEX'])
+        if has_token('DST', 'DEF'):
+            slots.add('DST')
+        if has_token('FLEX'):
+            slots.add('FLEX')
+        return slots
+
+    def _assign_lineup_slots(self, lineup):
+        slot_defs = [
+            ('QB', {'QB'}),
+            ('RB1', {'RB'}),
+            ('RB2', {'RB'}),
+            ('WR1', {'WR'}),
+            ('WR2', {'WR'}),
+            ('WR3', {'WR'}),
+            ('TE', {'TE'}),
+            ('FLEX', {'RB', 'WR', 'TE'}),
+            ('DST', {'DST', 'DEF'})
+        ]
+        slots = [name for name, _ in slot_defs]
+        
+        if lineup is None or lineup.empty:
+            logging.warning("⚠️ Cannot assign slots: lineup is empty")
+            return None
+        
+        if len(lineup) != REQUIRED_TEAM_SIZE:
+            logging.warning(f"⚠️ Cannot assign slots: expected {REQUIRED_TEAM_SIZE} players, got {len(lineup)}")
+            return None
+        
+        projection_cols = ['Predicted_DK_Points', 'Fantasy_Points', 'FantasyPoints', 'Projection', 'Points']
+        proj_col = next((col for col in projection_cols if col in lineup.columns), None)
+        
+        slot_to_players = {slot: [] for slot in slots}
+        player_priority = {}
+        
+        for player_iloc, (_, row) in enumerate(lineup.iterrows()):
+            eligible_tokens = self._determine_slot_eligibility(row.get('Position', ''))
+            if 'DST' in eligible_tokens:
+                eligible_tokens = {'DST'}
+            else:
+                flex_candidates = eligible_tokens.intersection({'RB', 'WR', 'TE'})
+                if flex_candidates:
+                    eligible_tokens = eligible_tokens.union({'FLEX'})
+                if not eligible_tokens:
+                    eligible_tokens = {'FLEX'}
+
+            projection = 0.0
+            if proj_col and pd.notnull(row.get(proj_col)):
+                try:
+                    projection = float(row[proj_col])
+                except Exception:
+                    projection = 0.0
+            player_priority[player_iloc] = projection
+            
+            for slot_name, allowed_positions in slot_defs:
+                if allowed_positions.intersection(eligible_tokens):
+                    slot_to_players[slot_name].append(player_iloc)
+        
+        for slot, allowed_positions in slot_defs:
+            if not slot_to_players[slot]:
+                logging.warning(f"⚠️ No candidates available for slot {slot}")
+                return None
+            slot_to_players[slot].sort(key=lambda idx: player_priority.get(idx, 0.0), reverse=True)
+        
+        base_slots = {'QB', 'RB1', 'RB2', 'WR1', 'WR2', 'WR3', 'TE'}
+        slot_order = sorted(
+            slots,
+            key=lambda s: (
+                len(slot_to_players[s]),
+                0 if s in base_slots else (1 if s == 'FLEX' else 2),
+                slots.index(s)
+            )
+        )
+        
+        assignment = {}
+        used_players = set()
+        
+        def backtrack(position):
+            if position == len(slot_order):
+                return True
+            slot = slot_order[position]
+            for player_idx in slot_to_players[slot]:
+                if player_idx in used_players:
+                    continue
+                assignment[slot] = player_idx
+                used_players.add(player_idx)
+                if backtrack(position + 1):
+                    return True
+                used_players.remove(player_idx)
+                assignment.pop(slot, None)
+            return False
+        
+        if backtrack(0):
+            return assignment
+        
+        logging.error("❌ Unable to assign players to NFL DraftKings slots without conflicts")
+        return None
 
     def get_advanced_quant_params_for_worker(self):
         """Get advanced quantitative optimization parameters for worker"""
@@ -5419,6 +5651,10 @@ class FantasyFootballApp(QMainWindow):
             if lineup['Name'].duplicated().any():
                 return False, "Duplicate players in lineup"
             
+            slot_assignment = self._assign_lineup_slots(lineup)
+            if slot_assignment is None or len(slot_assignment) != REQUIRED_TEAM_SIZE:
+                return False, "Unable to assign players to DraftKings roster slots"
+            
             # Check salary cap (if Salary column exists)
             if 'Salary' in lineup.columns:
                 total_salary = lineup['Salary'].sum()
@@ -5542,195 +5778,122 @@ class FantasyFootballApp(QMainWindow):
         Returns:
             DataFrame with same players but reordered by position and projection
         """
-        if lineup.empty:
+        if lineup is None or lineup.empty:
             return lineup
         
-        # Find projection column
-        projection_cols = ['Fantasy_Points', 'FantasyPoints', 'Predicted_DK_Points', 'Projection', 'Points']
-        proj_col = None
-        for col in projection_cols:
-            if col in lineup.columns:
-                proj_col = col
-                break
+        slot_sequence = ['QB', 'RB1', 'RB2', 'WR1', 'WR2', 'WR3', 'TE', 'FLEX', 'DST']
+        assignment = self._assign_lineup_slots(lineup)
+        if assignment is None:
+            logging.error("❌ Failed to assign NFL slots while reordering lineup; returning original order")
+            return lineup.copy()
         
-        if not proj_col:
-            # No projection column found, return as-is
-            return lineup
+        try:
+            ordered_ilocs = [assignment[slot] for slot in slot_sequence]
+        except KeyError as e:
+            logging.error(f"❌ Slot assignment incomplete ({e}); returning original lineup order")
+            return lineup.copy()
         
-        # Sort entire lineup by projection (descending)
-        lineup_sorted = lineup.sort_values(by=proj_col, ascending=False).copy()
-        
-        return lineup_sorted
+        lineup_reordered = lineup.iloc[ordered_ilocs].copy().reset_index(drop=True)
+        return lineup_reordered
     
     def format_lineup_for_dk(self, lineup, dk_positions):
         """Group players by position and assign to DraftKings NFL positions"""
-        position_players = {
-            'QB': [],
-            'RB': [],
-            'WR': [],
-            'TE': [],
-            'DST': []
-        }
+        slot_sequence = ['QB', 'RB1', 'RB2', 'WR1', 'WR2', 'WR3', 'TE', 'FLEX', 'DST']
         
-        # CRITICAL FIX: Sort lineup by projection DESCENDING before grouping
-        # This ensures best RBs fill RB slots, best WRs fill WR slots, THEN FLEX gets remaining
-        projection_cols = ['Fantasy_Points', 'FantasyPoints', 'Predicted_DK_Points', 'Projection', 'Points']
-        proj_col = None
-        for col in projection_cols:
-            if col in lineup.columns:
-                proj_col = col
-                break
+        if lineup is None or lineup.empty:
+            return [""] * len(dk_positions)
         
-        if proj_col:
-            lineup_sorted = lineup.sort_values(by=proj_col, ascending=False)
-        else:
-            lineup_sorted = lineup  # If no projection column, use original order
+        assignment = self._assign_lineup_slots(lineup)
+        if assignment is None:
+            logging.error("❌ Failed to format lineup for DK export: slot assignment unavailable")
+            return [""] * len(dk_positions)
         
-        for _, player in lineup_sorted.iterrows():
-            pos = str(player['Position']).upper()
-            name = str(player['Name'])
-            
-            # Group players by NFL position (now in descending order by projection)
-            if pos in position_players:
-                position_players[pos].append(name)
-        
-        # NFL DraftKings Classic lineup: QB, RB, RB, WR, WR, WR, TE, FLEX, DST
         dk_lineup = []
-        position_usage = {pos: 0 for pos in position_players.keys()}
+        for slot_name, dk_pos in zip(slot_sequence, dk_positions):
+            player_idx = assignment.get(slot_name)
+            if player_idx is None or player_idx >= len(lineup):
+                logging.error(f"❌ Slot {dk_pos} ({slot_name}) could not be filled during export")
+                dk_lineup.append("")
+                continue
+            row = lineup.iloc[player_idx]
+            raw_name = row.get('Name', '')
+            cleaned_name = "" if pd.isna(raw_name) else self.clean_player_name_for_dk(str(raw_name))
+            dk_lineup.append(cleaned_name)
         
-        for dk_pos in dk_positions:
-            if dk_pos == 'FLEX':
-                # FLEX can be RB, WR, or TE - pick best remaining
-                assigned = False
-                for flex_pos in ['RB', 'WR', 'TE']:
-                    if position_usage[flex_pos] < len(position_players[flex_pos]):
-                        dk_lineup.append(position_players[flex_pos][position_usage[flex_pos]])
-                        position_usage[flex_pos] += 1
-                        assigned = True
-                        break
-                if not assigned:
-                    dk_lineup.append("")  # Empty FLEX slot
-            elif dk_pos in position_players and position_usage[dk_pos] < len(position_players[dk_pos]):
-                # Assign player to their position
-                dk_lineup.append(position_players[dk_pos][position_usage[dk_pos]])
-                position_usage[dk_pos] += 1
-            else:
-                dk_lineup.append("")  # Empty slot if no player available
-
-        return dk_lineup
+        return dk_lineup[:len(dk_positions)]
     
     def format_lineup_for_dk_with_ids(self, lineup, dk_positions):
         """
         Format lineup with both names and DraftKings Player IDs
         Returns alternating: Name1, ID1, Name2, ID2, ...
         """
-        position_players = {
-            'QB': [],
-            'RB': [],
-            'WR': [],
-            'TE': [],
-            'DST': []
-        }
+        slot_sequence = ['QB', 'RB1', 'RB2', 'WR1', 'WR2', 'WR3', 'TE', 'FLEX', 'DST']
         
-        # Sort by projection
-        projection_cols = ['Fantasy_Points', 'FantasyPoints', 'Predicted_DK_Points', 'Projection', 'Points']
-        proj_col = None
-        for col in projection_cols:
-            if col in lineup.columns:
-                proj_col = col
-                break
+        if lineup is None or lineup.empty:
+            return ["", ""] * len(dk_positions)
         
-        lineup_sorted = lineup.sort_values(by=proj_col, ascending=False) if proj_col else lineup
+        assignment = self._assign_lineup_slots(lineup)
+        if assignment is None:
+            logging.error("❌ Failed to format lineup (names+IDs) for DK export: slot assignment unavailable")
+            return ["", ""] * len(dk_positions)
         
-        # Store both name and ID for each player
-        for _, player in lineup_sorted.iterrows():
-            pos = str(player['Position']).upper()
-            name = str(player['Name'])
-            player_id = str(player.get('OperatorPlayerID', '')) if 'OperatorPlayerID' in lineup.columns else ''
-            
-            if pos in position_players:
-                position_players[pos].append((name, player_id))
-        
-        # Build lineup with alternating names and IDs
         dk_lineup = []
-        position_usage = {pos: 0 for pos in position_players.keys()}
-        
-        for dk_pos in dk_positions:
-            if dk_pos == 'FLEX':
-                assigned = False
-                for flex_pos in ['RB', 'WR', 'TE']:
-                    if position_usage[flex_pos] < len(position_players[flex_pos]):
-                        name, player_id = position_players[flex_pos][position_usage[flex_pos]]
-                        dk_lineup.append(self.clean_player_name_for_dk(name))
-                        dk_lineup.append(player_id)
-                        position_usage[flex_pos] += 1
-                        assigned = True
-                        break
-                if not assigned:
-                    dk_lineup.extend(["", ""])
-            elif dk_pos in position_players and position_usage[dk_pos] < len(position_players[dk_pos]):
-                name, player_id = position_players[dk_pos][position_usage[dk_pos]]
-                dk_lineup.append(self.clean_player_name_for_dk(name))
-                dk_lineup.append(player_id)
-                position_usage[dk_pos] += 1
-            else:
-                dk_lineup.extend(["", ""])
-        
-        return dk_lineup
+        fallback_counter = 0
+        for slot_name, dk_pos in zip(slot_sequence, dk_positions):
+            player_idx = assignment.get(slot_name)
+            if player_idx is None or player_idx >= len(lineup):
+                logging.error(f"❌ Slot {dk_pos} ({slot_name}) could not be filled during export (names+IDs)")
+                fallback_id = str(39200000 + fallback_counter)
+                fallback_counter += 1
+                dk_lineup.extend(["", fallback_id])
+                continue
+            row = lineup.iloc[player_idx]
+            raw_name = row.get('Name', '')
+            name = "" if pd.isna(raw_name) else self.clean_player_name_for_dk(str(raw_name))
+            player_id = str(row.get('OperatorPlayerID', '')) if 'OperatorPlayerID' in lineup.columns else ''
+            if not player_id or player_id.strip() == '' or player_id == 'nan':
+                fallback_id = str(39200000 + fallback_counter)
+                fallback_counter += 1
+                logging.warning(f"❌ Missing player ID for slot {slot_name}, using fallback ID: {fallback_id}")
+                player_id = fallback_id
+            dk_lineup.extend([name, player_id])
+
+        return dk_lineup[:len(dk_positions) * 2]
     
     def format_lineup_ids_only(self, lineup, dk_positions):
         """
         Format lineup with only DraftKings Player IDs
         Some contests accept ID-only uploads
         """
-        position_players = {
-            'QB': [],
-            'RB': [],
-            'WR': [],
-            'TE': [],
-            'DST': []
-        }
-        
-        # Sort by projection
-        projection_cols = ['Fantasy_Points', 'FantasyPoints', 'Predicted_DK_Points', 'Projection', 'Points']
-        proj_col = None
-        for col in projection_cols:
-            if col in lineup.columns:
-                proj_col = col
-                break
-        
-        lineup_sorted = lineup.sort_values(by=proj_col, ascending=False) if proj_col else lineup
-        
-        # Store player IDs
-        for _, player in lineup_sorted.iterrows():
-            pos = str(player['Position']).upper()
-            player_id = str(player.get('OperatorPlayerID', '')) if 'OperatorPlayerID' in lineup.columns else ''
-            
-            if pos in position_players:
-                position_players[pos].append(player_id)
-        
-        # Build lineup with IDs only
+        slot_sequence = ['QB', 'RB1', 'RB2', 'WR1', 'WR2', 'WR3', 'TE', 'FLEX', 'DST']
+        if lineup is None or lineup.empty:
+            return [""] * len(dk_positions)
+
+        assignment = self._assign_lineup_slots(lineup)
+        if assignment is None:
+            logging.error("❌ Failed to format lineup (IDs only) for DK export: slot assignment unavailable")
+            return [""] * len(dk_positions)
+
         dk_lineup = []
-        position_usage = {pos: 0 for pos in position_players.keys()}
-        
-        for dk_pos in dk_positions:
-            if dk_pos == 'FLEX':
-                assigned = False
-                for flex_pos in ['RB', 'WR', 'TE']:
-                    if position_usage[flex_pos] < len(position_players[flex_pos]):
-                        dk_lineup.append(position_players[flex_pos][position_usage[flex_pos]])
-                        position_usage[flex_pos] += 1
-                        assigned = True
-                        break
-                if not assigned:
-                    dk_lineup.append("")
-            elif dk_pos in position_players and position_usage[dk_pos] < len(position_players[dk_pos]):
-                dk_lineup.append(position_players[dk_pos][position_usage[dk_pos]])
-                position_usage[dk_pos] += 1
-            else:
-                dk_lineup.append("")
-        
-        return dk_lineup
+        fallback_counter = 0
+        for slot_name, dk_pos in zip(slot_sequence, dk_positions):
+            player_idx = assignment.get(slot_name)
+            if player_idx is None or player_idx >= len(lineup):
+                logging.error(f"❌ Slot {dk_pos} ({slot_name}) could not be filled during export (IDs only)")
+                fallback_id = str(39200000 + fallback_counter)
+                fallback_counter += 1
+                dk_lineup.append(fallback_id)
+                continue
+            row = lineup.iloc[player_idx]
+            player_id = str(row.get('OperatorPlayerID', '')) if 'OperatorPlayerID' in lineup.columns else ''
+            if not player_id or player_id.strip() == '' or player_id == 'nan':
+                fallback_id = str(39200000 + fallback_counter)
+                fallback_counter += 1
+                logging.warning(f"❌ Missing player ID for slot {slot_name}, using fallback ID: {fallback_id}")
+                player_id = fallback_id
+            dk_lineup.append(player_id)
+
+        return dk_lineup[:len(dk_positions)]
 
     def load_dk_predictions(self):
         """Load DraftKings predictions from CSV file"""
@@ -6908,182 +7071,52 @@ class FantasyFootballApp(QMainWindow):
 
     def format_lineup_positions_only(self, lineup, player_name_to_id_map):
         """Format a lineup to return only the position assignments with player IDs in DK format (QB, RB, RB, WR, WR, WR, TE, FLEX, DST)"""
-        # Create position mapping from lineup
-        position_players = {'QB': [], 'RB': [], 'WR': [], 'TE': [], 'DST': []}
-        
-        # CRITICAL FIX: Sort lineup by projection DESCENDING before grouping
-        projection_cols = ['Fantasy_Points', 'FantasyPoints', 'Predicted_DK_Points', 'Projection', 'Points']
-        proj_col = None
-        for col in projection_cols:
-            if col in lineup.columns:
-                proj_col = col
-                break
-        
-        if proj_col:
-            lineup_sorted = lineup.sort_values(by=proj_col, ascending=False)
-        else:
-            lineup_sorted = lineup
-        
-        # Group players by position with numeric IDs only
-        for _, player in lineup_sorted.iterrows():
-            pos = str(player['Position']).upper()
-            name = str(player['Name'])
-            
-            # Get the numeric ID for this player
-            player_id = ""
-            
-            # PRIORITY 1: Use DK entries mapping
+        slot_sequence = ['QB', 'RB1', 'RB2', 'WR1', 'WR2', 'WR3', 'TE', 'FLEX', 'DST']
+        position_assignments = []
+        fallback_counter = 0
+
+        assignment = self._assign_lineup_slots(lineup)
+        if assignment is None:
+            logging.error("❌ Unable to assign lineup to NFL slots; returning fallback IDs")
+            return [str(39200000 + i) for i in range(len(slot_sequence))]
+
+        for slot_name in slot_sequence:
+            player_idx = assignment.get(slot_name)
+            if player_idx is None or player_idx >= len(lineup):
+                fallback_id = str(39200000 + fallback_counter)
+                fallback_counter += 1
+                logging.warning(f"Position {slot_name} missing, using fallback ID: {fallback_id}")
+                position_assignments.append(fallback_id)
+                continue
+
+            row = lineup.iloc[player_idx]
+            name = str(row.get('Name', '')).strip()
+            player_id = ''
+
             if player_name_to_id_map and name in player_name_to_id_map:
                 player_id = str(player_name_to_id_map[name])
             else:
-                # PRIORITY 2: Try to get ID from player data columns
-                for id_col in ['ID', 'player_id', 'Player_ID', 'PlayerID', 'DraftKingsID', 'DK_ID']:
-                    if id_col in player and pd.notna(player[id_col]):
-                        potential_id = str(player[id_col]).strip()
+                for id_col in ['OperatorPlayerID', 'ID', 'player_id', 'Player_ID', 'PlayerID', 'DraftKingsID', 'DK_ID']:
+                    if id_col in row and pd.notna(row[id_col]):
+                        potential_id = str(row[id_col]).strip()
                         if potential_id.isdigit() and len(potential_id) >= 6:
                             player_id = potential_id
                             break
-                
-                # PRIORITY 3: Check if the name already contains an ID
-                if not player_id and '(' in name and ')' in name and name.endswith(')'):
-                    try:
-                        id_part = name.split('(')[1].replace(')', '').strip()
-                        if id_part.isdigit() and len(id_part) >= 6:
-                            player_id = id_part
-                    except:
-                        pass
-                
-                # PRIORITY 4: Try any column that might contain an ID
-                if not player_id:
-                    for col_name, col_value in player.items():
-                        if 'id' in str(col_name).lower() and pd.notna(col_value):
-                            potential_id = str(col_value).strip()
-                            if potential_id.isdigit() and len(potential_id) >= 6:
-                                player_id = potential_id
-                                break
-            
-            # Only add if we found a valid player ID
+
+            if not player_id and '(' in name and ')' in name and name.endswith(')'):
+                id_part = name.split('(')[1].replace(')', '').strip()
+                if id_part.isdigit() and len(id_part) >= 6:
+                    player_id = id_part
+
             if not player_id:
-                # 🏈 SPECIAL HANDLING FOR DST: Try fuzzy matching on team abbreviation
-                if pos == 'DST' or 'DEF' in pos:
-                    # DST names might be "Eagles", "Chiefs", etc. but need to map to team abbrev
-                    dst_team_map = {
-                        'EAGLES': 'PHI', 'PATRIOTS': 'NE', 'CHIEFS': 'KC', 
-                        'DOLPHINS': 'MIA', 'BEARS': 'CHI', 'BROWNS': 'CLE',
-                        'JETS': 'NYJ', 'VIKINGS': 'MIN', 'SAINTS': 'NO',
-                        'PANTHERS': 'CAR', 'TITANS': 'TEN', 'RAIDERS': 'LV',
-                        'SEAHAWKS': 'SEA', 'LIONS': 'DET', '49ERS': 'SF',
-                        'FALCONS': 'ATL', 'TEXANS': 'HOU', 'BUCCANEERS': 'TB'
-                    }
-                    name_upper = name.upper().replace(' ', '')
-                    
-                    # Try to find team abbreviation
-                    found_dst = False
-                    for dst_name, abbrev in dst_team_map.items():
-                        if dst_name in name_upper:
-                            # Look for this team in player_name_to_id_map
-                            for map_name, map_id in player_name_to_id_map.items():
-                                if abbrev in map_name.upper() or dst_name in map_name.upper():
-                                    player_id = str(map_id)
-                                    logging.info(f"✅ DST MATCHED: {name} -> {map_name} (ID: {player_id})")
-                                    found_dst = True
-                                    break
-                            if found_dst:
-                                break
-                    
-                    if not found_dst:
-                        logging.error(f"❌ DST {name} could not be matched to DK player pool!")
-                
-                # Generate a fallback ID as last resort
-                if not player_id:
-                    player_id = str(39200000 + len([p for sublist in position_players.values() for p in sublist]))
-                    logging.warning(f"❌ No valid ID found for {name} ({pos}), using fallback ID: {player_id}")
-            
-            # Handle NFL positions
-            if pos in ['QB', 'RB', 'WR', 'TE', 'DST']:
-                position_players[pos].append(player_id)
-            elif 'DEF' in pos or 'D/ST' in pos:
-                position_players['DST'].append(player_id)
-            else:
-                # If position is unclear, try to guess
-                logging.warning(f"Unclear position '{pos}' for {name}, skipping")
-        
-        # Create the position assignments in DK NFL format: [QB, RB, RB, WR, WR, WR, TE, FLEX, DST]
-        position_assignments = []
-        
-        # Add QB (1)
-        if len(position_players['QB']) >= 1:
-            position_assignments.append(position_players['QB'][0])
-        else:
-            position_assignments.append("")
-            logging.error("No QB found in lineup!")
-        
-        # Add RBs (2)
-        for i in range(2):
-            if len(position_players['RB']) > i:
-                position_assignments.append(position_players['RB'][i])
-            else:
-                position_assignments.append("")
-                logging.warning(f"Missing RB at position {i+1}")
-        
-        # Add WRs (3)
-        for i in range(3):
-            if len(position_players['WR']) > i:
-                position_assignments.append(position_players['WR'][i])
-            else:
-                position_assignments.append("")
-                logging.warning(f"Missing WR at position {i+1}")
-        
-        # Add TE (1)
-        if len(position_players['TE']) >= 1:
-            position_assignments.append(position_players['TE'][0])
-        else:
-            position_assignments.append("")
-            logging.warning("No TE found in lineup!")
-        
-        # Add FLEX (1) - use remaining RB/WR/TE
-        flex_added = False
-        for pos in ['RB', 'WR', 'TE']:
-            used_count = sum(1 for p in position_assignments if p in position_players[pos])
-            if len(position_players[pos]) > used_count:
-                # Find next unused player from this position
-                for player_id in position_players[pos]:
-                    if player_id not in position_assignments:
-                        position_assignments.append(player_id)
-                        flex_added = True
-                        break
-                if flex_added:
-                    break
-        
-        if not flex_added:
-            position_assignments.append("")
-            logging.warning("No FLEX player found!")
-        
-        # Add DST (1)
-        if len(position_players['DST']) >= 1:
-            position_assignments.append(position_players['DST'][0])
-        else:
-            position_assignments.append("")
-            logging.error("No DST found in lineup!")
-        
-        # Final validation - ensure exactly 9 positions (NFL)
-        while len(position_assignments) < 9:
-            position_assignments.append("")
-        position_assignments = position_assignments[:9]
-        
-        # CRITICAL FIX: Fill any empty positions with fallback IDs
-        for i in range(9):  # NFL has 9 positions
-            if not position_assignments[i] or position_assignments[i].strip() == '':
-                # Generate fallback ID for empty position
-                fallback_id = str(39200000 + i)
-                position_assignments[i] = fallback_id
-                logging.warning(f"Position {i+1} was empty, filled with fallback ID: {fallback_id}")
-        
-        # Count how many positions are actually filled
-        filled_count = len([p for p in position_assignments if p and p.strip()])
-        logging.debug(f"Position assignment result: {filled_count}/9 positions filled (NFL)")
-        
-        return position_assignments
+                fallback_id = str(39200000 + fallback_counter)
+                fallback_counter += 1
+                logging.warning(f"❌ No valid ID found for {name} ({slot_name}), using fallback ID: {fallback_id}")
+                player_id = fallback_id
+
+            position_assignments.append(player_id)
+
+        return position_assignments[:len(slot_sequence)]
     
     def get_bankroll_setting(self):
         """Get the bankroll setting from UI"""

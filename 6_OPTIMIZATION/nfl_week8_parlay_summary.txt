@@ -1,0 +1,40 @@
+
+🏈 NFL Week 8 Parlay Data Summary
+==================================================
+
+📅 Date: 2025-10-23
+🎯 Week: 8
+📊 Season: 2025
+
+📈 PARLAY OPTIONS:
+   Total Options: 78
+   Moneyline Bets: 26
+   Spread Bets: 26
+   Total Bets: 26
+
+🎲 PARLAY COMBINATIONS:
+   Total Combinations: 19
+   2-Leg Parlays: 10
+   3-Leg Parlays: 9
+   4-Leg Parlays: 0
+
+🎯 CONFIDENCE BREAKDOWN:
+   High Confidence: 26
+   Medium Confidence: 52
+
+📁 FILES CREATED:
+   - nfl_week8_parlay_options.csv
+   - nfl_week8_parlay_combinations.csv
+
+🎲 RECOMMENDED PARLAYS:
+
+🏆 HIGH CONFIDENCE PARLAYS:
+   1. 2-leg parlay (+260)
+      • Eagles Moneyline
+      • Cowboys +3.5 Spread
+   2. 2-leg parlay (+260)
+      • Eagles Moneyline
+      • Chiefs Moneyline
+   3. 2-leg parlay (+260)
+      • Eagles Moneyline
+      • Raiders +3.5 Spread
