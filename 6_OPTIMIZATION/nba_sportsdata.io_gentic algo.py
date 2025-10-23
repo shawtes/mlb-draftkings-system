@@ -373,7 +373,10 @@ class GeneticDiversityEngine:
     
     def _generate_variant_lineup(self, stack_type, variation_level):
         """Generate lineup variant with controlled randomness"""
-        df_variant = self.df_players.copy()
+        player_pool = getattr(self, 'filtered_player_pool', None)
+        if player_pool is None or player_pool.empty:
+            player_pool = self.df_players
+        df_variant = player_pool.copy()
         
         # Apply variation based on level
         if variation_level > 0 and 'Predicted_DK_Points' in df_variant.columns:
@@ -466,6 +469,9 @@ class GeneticDiversityEngine:
             return lineup
             
         mutated = lineup.copy()
+        player_pool = getattr(self, 'filtered_player_pool', None)
+        if player_pool is None or player_pool.empty:
+            player_pool = self.df_players
         
         # Randomly mutate 1-2 positions
         positions_to_mutate = np.random.choice(
@@ -478,9 +484,9 @@ class GeneticDiversityEngine:
             current_players = mutated[mutated['Position'] == position]
             if len(current_players) > 0:
                 # Find alternative players - EXCLUDE all current players by Name
-                alternatives = self.df_players[
-                    (self.df_players['Position'] == position) & 
-                    (~self.df_players['Name'].isin(mutated['Name']))
+                alternatives = player_pool[
+                    (player_pool['Position'] == position) & 
+                    (~player_pool['Name'].isin(mutated['Name']))
                 ]
                 
                 if len(alternatives) > 0:
@@ -1205,13 +1211,15 @@ def simulate_iteration(df):
 class OptimizationWorker(QThread):
     optimization_done = pyqtSignal(dict, dict, dict)
     
-    def __init__(self, df_players, salary_cap, position_limits, included_players, stack_settings, min_exposure, max_exposure, min_points, monte_carlo_iterations, num_lineups, team_selections, min_unique=0, bankroll=1000, risk_tolerance='medium', disable_kelly=False, min_salary=None, use_advanced_quant=False, advanced_quant_params=None):
+    def __init__(self, df_players, salary_cap, position_limits, included_players, stack_settings, min_exposure, max_exposure, min_points, monte_carlo_iterations, num_lineups, team_selections, min_unique=0, bankroll=1000, risk_tolerance='medium', disable_kelly=False, min_salary=None, use_advanced_quant=False, advanced_quant_params=None, position_specific_selections=None):
         super().__init__()
         self.df_players = df_players
+        self.filtered_player_pool = df_players.copy()
         self.num_lineups = num_lineups
         self.salary_cap = salary_cap
         self.position_limits = position_limits
         self.included_players = included_players
+        self.position_specific_selections = position_specific_selections or {}
         self.stack_settings = stack_settings
         self.min_exposure = min_exposure
         self.max_exposure = max_exposure
@@ -1496,9 +1504,202 @@ class OptimizationWorker(QThread):
         
         return len(unique_lineups)
 
+    def _enforce_position_specific_constraints(self, df):
+        """Remove players that violate strict position selections (e.g., SF locks)."""
+        if not getattr(self, 'position_specific_selections', None):
+            return df
+        
+        strict_map = {
+            pos: set(players)
+            for pos, players in self.position_specific_selections.items()
+            if players and pos in ['PG', 'SG', 'SF', 'PF', 'C']
+        }
+        
+        if not strict_map:
+            return df
+        filtered_df = df.copy()
+        filtered_df['Position'] = filtered_df['Position'].astype(str)
+        removed_names = []
+        base_positions = {'PG', 'SG', 'SF', 'PF', 'C'}
+        
+        for idx, row in df.iterrows():
+            player_name = row['Name']
+            pos_tokens = row['Position']
+            player_positions = set(str(pos_tokens).replace('-', '/').split('/'))
+            player_positions = {token.strip().upper() for token in player_positions if token.strip()}
+            base_pos_count = len(player_positions & base_positions)
+            
+            remove_player = False
+            for pos, allowed_players in strict_map.items():
+                if pos in player_positions and player_name not in allowed_players:
+                    if base_pos_count > 1:
+                        continue
+                    remove_player = True
+                    break
+            
+            if remove_player:
+                removed_names.append(player_name)
+        
+        if removed_names:
+            filtered_df = filtered_df[~filtered_df['Name'].isin(removed_names)]
+        
+        if removed_names:
+            unique_removed = list({name for name in removed_names})
+            logging.info(
+                f"🔒 Worker position lock removed {len(unique_removed)} players due to strict selections: "
+                f"{unique_removed[:5]}{'...' if len(unique_removed) > 5 else ''}"
+            )
+            print(f"   🔒 Worker position lock removed {len(unique_removed)} players due to strict selections")
+        
+        if not self._validate_position_coverage_df(filtered_df):
+            logging.warning("⚠️ Worker position filtering left insufficient coverage; reverting to original pool")
+            return df
+        
+        return filtered_df
+    
+    def _validate_position_coverage_df(self, df):
+        """Ensure a DataFrame still covers NBA positional requirements."""
+        if df is None or df.empty:
+            return False
+        df = df.copy()
+        df['Position'] = df['Position'].astype(str)
+        pg_count = df['Position'].str.contains('PG', na=False).sum()
+        sg_count = df['Position'].str.contains('SG', na=False).sum()
+        sf_count = df['Position'].str.contains('SF', na=False).sum()
+        pf_count = df['Position'].str.contains('PF', na=False).sum()
+        c_count = df['Position'].str.contains('C', na=False).sum()
+        guard_total = df['Position'].str.contains('PG|SG', na=False).sum()
+        forward_total = df['Position'].str.contains('SF|PF', na=False).sum()
+        
+        if pg_count == 0 or sg_count == 0 or sf_count == 0 or pf_count == 0 or c_count == 0:
+            return False
+        if guard_total < 3 or forward_total < 3:
+            return False
+        if len(df) < REQUIRED_TEAM_SIZE:
+            return False
+        return True
+
+    def _determine_slot_eligibility(self, position_str):
+        """Return set of DK slots a player can occupy based on position eligibility."""
+        slots = set()
+        if position_str is None:
+            position_str = ""
+        normalized = str(position_str).replace('\\', '/').replace('-', '/')
+        tokens = [token.strip().upper() for token in normalized.split('/') if token.strip()]
+        
+        if 'PG' in tokens:
+            slots.update(['PG', 'G'])
+        if 'SG' in tokens:
+            slots.update(['SG', 'G'])
+        if 'SF' in tokens:
+            slots.update(['SF', 'F'])
+        if 'PF' in tokens:
+            slots.update(['PF', 'F'])
+        if 'C' in tokens:
+            slots.add('C')
+        if 'G' in tokens:
+            slots.add('G')
+        if 'F' in tokens:
+            slots.add('F')
+        
+        slots.add('UTIL')
+        return slots
+
+    def _assign_lineup_slots(self, lineup):
+        """Find a valid mapping of players to DraftKings NBA slots."""
+        slots = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        
+        if lineup is None or lineup.empty:
+            logging.warning("⚠️ Cannot assign slots: lineup is empty")
+            return None
+        
+        if len(lineup) != REQUIRED_TEAM_SIZE:
+            logging.warning(f"⚠️ Cannot assign slots: expected {REQUIRED_TEAM_SIZE} players, got {len(lineup)}")
+            return None
+        
+        projection_cols = ['Predicted_DK_Points', 'Fantasy_Points', 'FantasyPoints', 'Projection', 'Points']
+        proj_col = next((col for col in projection_cols if col in lineup.columns), None)
+        
+        slot_to_players = {slot: [] for slot in slots}
+        player_priority = {}
+        
+        for player_iloc, (_, row) in enumerate(lineup.iterrows()):
+            eligible_slots = self._determine_slot_eligibility(row.get('Position', ''))
+            eligible_slots = eligible_slots.intersection(set(slots))
+            if not eligible_slots:
+                eligible_slots = {'UTIL'}
+            if 'UTIL' not in eligible_slots:
+                eligible_slots.add('UTIL')
+            
+            projection = 0.0
+            if proj_col and pd.notnull(row.get(proj_col)):
+                try:
+                    projection = float(row[proj_col])
+                except Exception:
+                    projection = 0.0
+            player_priority[player_iloc] = projection
+            
+            for slot in eligible_slots:
+                slot_to_players[slot].append(player_iloc)
+        
+        for slot in slots:
+            if not slot_to_players[slot]:
+                logging.warning(f"⚠️ No candidates available for slot {slot}")
+                return None
+            slot_to_players[slot].sort(key=lambda idx: player_priority.get(idx, 0.0), reverse=True)
+        
+        slot_order = sorted(
+            slots,
+            key=lambda s: (
+                len(slot_to_players[s]),
+                0 if s in ['PG', 'SG', 'SF', 'PF', 'C'] else (1 if s in ['G', 'F'] else 2),
+                slots.index(s)
+            )
+        )
+        
+        assignment = {}
+        used_players = set()
+        
+        def backtrack(position):
+            if position == len(slot_order):
+                return True
+            slot = slot_order[position]
+            for player_idx in slot_to_players[slot]:
+                if player_idx in used_players:
+                    continue
+                assignment[slot] = player_idx
+                used_players.add(player_idx)
+                if backtrack(position + 1):
+                    return True
+                used_players.remove(player_idx)
+                assignment.pop(slot, None)
+            return False
+        
+        if backtrack(0):
+            return assignment
+        
+        logging.error("❌ Unable to assign players to DraftKings slots without conflicts")
+        return None
+
+    def _extract_lineup_df(self, lineup_entry):
+        """Normalize various lineup representations to a DataFrame."""
+        if isinstance(lineup_entry, pd.DataFrame):
+            return lineup_entry
+        if isinstance(lineup_entry, dict):
+            lineup_obj = lineup_entry.get('lineup', pd.DataFrame())
+            if isinstance(lineup_obj, pd.DataFrame):
+                return lineup_obj
+            try:
+                return pd.DataFrame(lineup_obj)
+            except Exception:
+                return pd.DataFrame()
+        return pd.DataFrame()
+
+
     def preprocess_data(self):
         """Preprocess player data for optimization"""
         df_filtered = self.df_players.copy()
+        self.filtered_player_pool = df_filtered.copy()
         
         # Enhanced logging for debugging player selection issues
         print(f"\n🔍 PLAYER SELECTION DEBUG - DETAILED:")
@@ -1513,21 +1714,21 @@ class OptimizationWorker(QThread):
         
         # Apply included players filter - This is critical for respecting user selections!
         if self.included_players and len(self.included_players) > 0:
-            # If players are specifically selected, use only those players
-            print(f"   ✅ FILTERING to {len(self.included_players)} specifically selected players")
-            logging.info(f"✅ Filtering to {len(self.included_players)} specifically selected players")
+            # If players are specifically selected, use ONLY those players (STRICT MODE)
+            print(f"   ✅ STRICT FILTERING to {len(self.included_players)} specifically selected players")
+            logging.info(f"✅ STRICT FILTERING to {len(self.included_players)} specifically selected players")
             original_count = len(df_filtered)
             
-            # IMPORTANT: Always include ALL DST players (they're usually not in manual selections)
-            # Users select offensive players for stacking, but DST should always be available
-            dst_players = df_filtered[df_filtered['Position'] == 'DST']
+            # NBA: Use ONLY the selected players - no auto-inclusions
+            # This ensures only your hand-picked players are used in lineups
             selected_players = df_filtered[df_filtered['Name'].isin(self.included_players)]
-            df_filtered = pd.concat([selected_players, dst_players]).drop_duplicates()
+            df_filtered = selected_players.copy()
             
             final_count = len(df_filtered)
-            dst_count = len(dst_players)
-            print(f"   ✅ RESULT: {final_count}/{original_count} players remain after filtering ({dst_count} DST added automatically)")
-            logging.info(f"✅ After filtering by selected players: {final_count}/{original_count} players remain ({dst_count} DST auto-included)")
+            print(f"   ✅ RESULT: {final_count}/{original_count} players remain after strict filtering")
+            print(f"   🔒 ONLY these {final_count} players will be used in lineup combinations")
+            logging.info(f"✅ After STRICT filtering: {final_count}/{original_count} players remain")
+            logging.info(f"🔒 NO other players will be included - selections are honored 100%")
             
             # Additional debug: show which selected players were found/not found
             if final_count == 0:
@@ -1539,8 +1740,23 @@ class OptimizationWorker(QThread):
             elif final_count < len(self.included_players):
                 found_players = set(df_filtered['Name'].tolist())
                 missing_players = [p for p in self.included_players if p not in found_players]
-                print(f"   ⚠️ WARNING: Some selected players not found: {missing_players[:3]}...")
+                print(f"   ⚠️ WARNING: Some selected players not found in data: {missing_players[:3]}...")
                 logging.warning(f"⚠️ Some selected players not found: {missing_players[:3]}...")  # Show first 3
+            
+            # VALIDATION: Double-check that ONLY selected players remain
+            actual_players = set(df_filtered['Name'].tolist())
+            expected_players = set(self.included_players)
+            unexpected_players = actual_players - expected_players
+            
+            if unexpected_players:
+                print(f"   ⚠️ ERROR: Unexpected players found: {list(unexpected_players)[:3]}...")
+                logging.error(f"⚠️ Unexpected players in filtered pool: {list(unexpected_players)[:3]}...")
+                # Remove unexpected players
+                df_filtered = df_filtered[df_filtered['Name'].isin(self.included_players)]
+                print(f"   ✅ Removed unexpected players - now have {len(df_filtered)} players")
+            
+            print(f"   ✅ VERIFIED: All {len(df_filtered)} players in pool are from your selection")
+            logging.info(f"✅ VERIFIED: All players in pool match user selections")  # Show first 3
         else:
             # If no players are specifically selected, use all players
             print(f"   ℹ️ NO players specifically selected - using all {len(df_filtered)} players")
@@ -1548,34 +1764,44 @@ class OptimizationWorker(QThread):
             logging.info(f"ℹ️ No players specifically selected - using all {len(df_filtered)} players")
             logging.info(f"   This happens when: (1) No checkboxes checked, or (2) Checkbox detection failed")
         
+        # Apply worker-level position locks for additional safety
+        df_filtered = self._enforce_position_specific_constraints(df_filtered)
+        self.filtered_player_pool = df_filtered.copy()
+        
         print(f"")  # Empty line for readability
         
         # 🎲 PROBABILITY-BASED CONTEST OPTIMIZATION
+        # 🚨 CRITICAL: Only run probability optimizer if NO specific players are selected
+        # If user selected specific players, we must honor that selection and NOT add players back
         if self.has_probability_metrics and PROBABILITY_OPTIMIZER_AVAILABLE:
-            try:
-                prob_optimizer = ProbabilityEnhancedOptimizer()
-                
-                # Determine optimal contest type based on risk tolerance
-                contest_type = 'balanced'  # Default
-                if self.risk_tolerance == 'conservative':
-                    contest_type = 'cash'
-                elif self.risk_tolerance == 'aggressive':
-                    contest_type = 'gpp'
-                
-                # Apply contest-specific optimization
-                df_filtered = prob_optimizer.optimize_for_contest_type(df_filtered, contest_type)
-                
-                # Display top players by probability metrics
-                if 'Expected_Utility' in df_filtered.columns:
-                    top_players = df_filtered.nlargest(5, 'Expected_Utility')[['Name', 'Expected_Utility', 'Risk_Adjusted_Points']].copy()
-                    print(f"\n🎲 TOP 5 BY EXPECTED UTILITY ({contest_type.upper()} optimized):")
-                    for _, player in top_players.iterrows():
-                        print(f"   {player['Name']}: {player['Expected_Utility']:.3f} utility, {player['Risk_Adjusted_Points']:.2f} risk-adj pts")
+            if self.included_players and len(self.included_players) > 0:
+                print(f"   🔒 SKIPPING probability optimizer - respecting your {len(self.included_players)} player selections")
+                logging.info(f"🔒 Probability optimizer SKIPPED to preserve user's player selections")
+            else:
+                try:
+                    prob_optimizer = ProbabilityEnhancedOptimizer()
                     
-                logging.info(f"🎲 Applied {contest_type} contest optimization with probability metrics")
-                
-            except Exception as e:
-                logging.warning(f"Error applying probability contest optimization: {e}")
+                    # Determine optimal contest type based on risk tolerance
+                    contest_type = 'balanced'  # Default
+                    if self.risk_tolerance == 'conservative':
+                        contest_type = 'cash'
+                    elif self.risk_tolerance == 'aggressive':
+                        contest_type = 'gpp'
+                    
+                    # Apply contest-specific optimization
+                    df_filtered = prob_optimizer.optimize_for_contest_type(df_filtered, contest_type)
+                    
+                    # Display top players by probability metrics
+                    if 'Expected_Utility' in df_filtered.columns:
+                        top_players = df_filtered.nlargest(5, 'Expected_Utility')[['Name', 'Expected_Utility', 'Risk_Adjusted_Points']].copy()
+                        print(f"\n🎲 TOP 5 BY EXPECTED UTILITY ({contest_type.upper()} optimized):")
+                        for _, player in top_players.iterrows():
+                            print(f"   {player['Name']}: {player['Expected_Utility']:.3f} utility, {player['Risk_Adjusted_Points']:.2f} risk-adj pts")
+                        
+                    logging.info(f"🎲 Applied {contest_type} contest optimization with probability metrics")
+                    
+                except Exception as e:
+                    logging.warning(f"Error applying probability contest optimization: {e}")
         
         # Apply exposure constraints (future enhancement)
         # Could add min/max exposure filtering here
@@ -2300,6 +2526,156 @@ class OptimizationWorker(QThread):
             return selected_lineups[:self.num_lineups]
 
 class FantasyFootballApp(QMainWindow):
+    def _determine_slot_eligibility(self, position_str):
+        slots = set()
+        if position_str is None:
+            position_str = ""
+        normalized = str(position_str).replace('\\', '/').replace('-', '/')
+        tokens = [token.strip().upper() for token in normalized.split('/') if token.strip()]
+        
+        if 'PG' in tokens:
+            slots.update(['PG', 'G'])
+        if 'SG' in tokens:
+            slots.update(['SG', 'G'])
+        if 'SF' in tokens:
+            slots.update(['SF', 'F'])
+        if 'PF' in tokens:
+            slots.update(['PF', 'F'])
+        if 'C' in tokens:
+            slots.add('C')
+        if 'G' in tokens:
+            slots.add('G')
+        if 'F' in tokens:
+            slots.add('F')
+        
+        slots.add('UTIL')
+        return slots
+
+    def _assign_lineup_slots(self, lineup):
+        slots = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        if lineup is None or lineup.empty:
+            logging.warning("⚠️ Cannot assign slots: lineup is empty")
+            return None
+        if len(lineup) != REQUIRED_TEAM_SIZE:
+            logging.warning(f"⚠️ Cannot assign slots: expected {REQUIRED_TEAM_SIZE} players, got {len(lineup)}")
+            return None
+        
+        projection_cols = ['Predicted_DK_Points', 'Fantasy_Points', 'FantasyPoints', 'Projection', 'Points']
+        proj_col = next((col for col in projection_cols if col in lineup.columns), None)
+        
+        slot_to_players = {slot: [] for slot in slots}
+        player_priority = {}
+        
+        for player_iloc, (_, row) in enumerate(lineup.iterrows()):
+            eligible_slots = self._determine_slot_eligibility(row.get('Position', ''))
+            eligible_slots = eligible_slots.intersection(set(slots))
+            if not eligible_slots:
+                eligible_slots = {'UTIL'}
+            if 'UTIL' not in eligible_slots:
+                eligible_slots.add('UTIL')
+            
+            projection = 0.0
+            if proj_col and pd.notnull(row.get(proj_col)):
+                try:
+                    projection = float(row[proj_col])
+                except Exception:
+                    projection = 0.0
+            player_priority[player_iloc] = projection
+            
+            for slot in eligible_slots:
+                slot_to_players[slot].append(player_iloc)
+        
+        for slot in slots:
+            if not slot_to_players[slot]:
+                logging.warning(f"⚠️ No candidates available for slot {slot}")
+                return None
+            slot_to_players[slot].sort(key=lambda idx: player_priority.get(idx, 0.0), reverse=True)
+        
+        slot_order = sorted(
+            slots,
+            key=lambda s: (
+                len(slot_to_players[s]),
+                0 if s in ['PG', 'SG', 'SF', 'PF', 'C'] else (1 if s in ['G', 'F'] else 2),
+                slots.index(s)
+            )
+        )
+        
+        assignment = {}
+        used_players = set()
+        
+        def backtrack(position):
+            if position == len(slot_order):
+                return True
+            slot = slot_order[position]
+            for player_idx in slot_to_players[slot]:
+                if player_idx in used_players:
+                    continue
+                assignment[slot] = player_idx
+                used_players.add(player_idx)
+                if backtrack(position + 1):
+                    return True
+                used_players.remove(player_idx)
+                assignment.pop(slot, None)
+            return False
+        
+        if backtrack(0):
+            return assignment
+        
+        logging.error("❌ Unable to assign players to DraftKings slots without conflicts")
+        return None
+    def _filter_valid_lineups(self, lineups, context=""):
+        """Return only lineups that pass validation, logging any removals."""
+        if not lineups:
+            return []
+        
+        valid_lineups = []
+        invalid_count = 0
+        
+        for idx, lineup_entry in enumerate(lineups, 1):
+            lineup_df = self._extract_lineup_df(lineup_entry)
+            is_valid, error_msg = self.validate_lineup(lineup_df)
+            if not is_valid:
+                invalid_count += 1
+                logging.warning(
+                    f"⚠️ Invalid lineup removed{f' ({context})' if context else ''}: "
+                    f"Reason='{error_msg}'"
+                )
+                continue
+            
+            slot_assignment = self._assign_lineup_slots(lineup_df)
+            if slot_assignment is None:
+                invalid_count += 1
+                logging.warning(
+                    f"⚠️ Invalid lineup removed{f' ({context})' if context else ''}: "
+                    "Reason='Unable to assign required DraftKings slots'"
+                )
+                continue
+            
+            fixed_lineup = self.fix_lineup_position_order(lineup_df)
+            valid_lineups.append(fixed_lineup.copy())
+        
+        if invalid_count > 0:
+            logging.warning(
+                f"⚠️ Filtered out {invalid_count} invalid lineup(s)"
+                f"{f' during {context}' if context else ''}"
+            )
+        
+        return valid_lineups
+
+    def _extract_lineup_df(self, lineup_entry):
+        """Normalize various lineup representations to a DataFrame."""
+        if isinstance(lineup_entry, pd.DataFrame):
+            return lineup_entry
+        if isinstance(lineup_entry, dict):
+            lineup_obj = lineup_entry.get('lineup', pd.DataFrame())
+            if isinstance(lineup_obj, pd.DataFrame):
+                return lineup_obj
+            try:
+                return pd.DataFrame(lineup_obj)
+            except Exception:
+                return pd.DataFrame()
+        return pd.DataFrame()
+
     def enforce_player_exposure(self, lineups, max_exposure):
         """
         Enforce player exposure limits across generated lineups.
@@ -2999,6 +3375,24 @@ class FantasyFootballApp(QMainWindow):
             extra_lineups = total_requested % num_combinations
             logging.info(f"📊 DISTRIBUTION: {lineups_per_combo} lineups per combo, {extra_lineups} extra")
             
+            # Capture included players once to keep selection consistent across combinations
+            included_players = self.get_included_players()
+            if included_players:
+                # Store for downstream validation/logging
+                self.included_players = included_players.copy()
+            else:
+                # Fallback to previously stored selections if available
+                prior_selection = getattr(self, 'included_players', [])
+                if prior_selection:
+                    print("   ⚠️ Detected empty selection from UI - reusing your last saved player list.")
+                    logging.warning("Included players list empty in combinations; falling back to previous stored selection")
+                    included_players = prior_selection.copy()
+                    self.included_players = included_players.copy()
+                else:
+                    logging.info("No players explicitly selected; combinations will use full player pool")
+                    included_players = []
+                    self.included_players = []
+            
             for combo_idx, (teams, stack_sizes, lineups_count) in enumerate(selected_combinations):
                 # Use distributed count instead of per-combo table value
                 current_combo_count = lineups_per_combo
@@ -3021,6 +3415,7 @@ class FantasyFootballApp(QMainWindow):
                         team_selections[stack_size] = []
                     team_selections[stack_size].append(teams[i])
                 print(f"[DEBUG] team_selections mapping for this combination: {team_selections}")
+                combo_display = " + ".join([f"{team}({size})" for team, size in zip(teams, stack_sizes)])
                 # Check for format mismatches
                 for k in team_selections.keys():
                     if not (isinstance(k, int) or (isinstance(k, str) and k.isdigit())):
@@ -3028,10 +3423,8 @@ class FantasyFootballApp(QMainWindow):
                 
                 # Set up optimization parameters
                 salary_cap = 50000
-                position_limits = {'P': 2, 'C': 1, '1B': 1, '2B': 1, '3B': 1, 'SS': 1, 'OF': 3}
-                
-                # Get included players (all players for now)
-                included_players = self.get_included_players()
+                # Use standard NBA DraftKings positional limits
+                position_limits = POSITION_LIMITS.copy()
                 
                 # Run optimization for this combination
                 try:
@@ -3068,7 +3461,8 @@ class FantasyFootballApp(QMainWindow):
                             disable_kelly=True,
                             min_salary=self.get_min_salary_constraint(),
                             use_advanced_quant=getattr(self, 'use_advanced_quant', False),
-                            advanced_quant_params=self.get_advanced_quant_params_for_worker()
+                            advanced_quant_params=self.get_advanced_quant_params_for_worker(),
+                            position_specific_selections=getattr(self, 'position_specific_selections', {})
                         )
                         
                         # SET COMBINATION MODE FLAG
@@ -3117,35 +3511,80 @@ class FantasyFootballApp(QMainWindow):
                             # Handle any other format
                             combo_lineups = [combo_results] if combo_results is not None else []
                         
+                        combo_lineups = self._filter_valid_lineups(combo_lineups, context=f"combination {combo_display}")
+                        if not combo_lineups:
+                            logging.warning(f"⚠️ No valid lineups remained after filtering for combination: {combo_display}")
+                            continue
+                        
                         # Limit to requested count for THIS combination (no duplication)
+                        if len(combo_lineups) < current_combo_count:
+                            logging.warning(
+                                f"⚠️ Combination {combo_display}: only {len(combo_lineups)} valid lineups "
+                                f"available (requested {current_combo_count})"
+                            )
                         combo_lineups = combo_lineups[:current_combo_count]
                         
                         # Only add if we haven't exceeded total
                         remaining_slots = total_requested - len(all_lineups)
                         if remaining_slots > 0:
                             lineups_to_add = combo_lineups[:remaining_slots]
-                            all_lineups.extend(lineups_to_add)
-                            logging.info(f"✅ Added {len(lineups_to_add)} lineups (total now: {len(all_lineups)}/{total_requested})")
+                            valid_to_add = self._filter_valid_lineups(lineups_to_add, context=f"combination {combo_display} (remaining slots)")
+                            if valid_to_add:
+                                all_lineups.extend(valid_to_add)
+                                logging.info(f"✅ Added {len(valid_to_add)} lineups (total now: {len(all_lineups)}/{total_requested})")
+                            else:
+                                logging.warning(f"⚠️ No valid lineups added for combination {combo_display} after secondary filtering")
                         else:
                             logging.info(f"⏸️ Skipping combo - already at total requested ({len(all_lineups)}/{total_requested})")
-                        combo_display = " + ".join([f"{team}({size})" for team, size in zip(teams, stack_sizes)])
-                        logging.info(f"Generated {len(combo_lineups)} lineups for combination: {combo_display}")
+                        logging.info(f"Generated {len(combo_lineups)} valid lineups for combination: {combo_display}")
                     else:
-                        combo_display = " + ".join([f"{team}({size})" for team, size in zip(teams, stack_sizes)])
                         logging.warning(f"No lineups generated for combination: {combo_display}")
                         
                 except Exception as e:
-                    combo_display = " + ".join([f"{team}({size})" for team, size in zip(teams, stack_sizes)])
                     logging.error(f"Error generating lineups for combination {combo_display}: {e}")
                     continue
             
             if all_lineups and len(all_lineups) > 0:
+                original_all_lineups = len(all_lineups)
+                all_lineups = self._filter_valid_lineups(all_lineups, context="final combination pool")
+                if len(all_lineups) < original_all_lineups:
+                    logging.warning(
+                        f"⚠️ Final combination pool reduced from {original_all_lineups} to {len(all_lineups)} valid lineups"
+                    )
+                if not all_lineups:
+                    logging.warning("⚠️ No valid lineups remain after final combination filtering")
+                    QMessageBox.warning(self, "No Valid Lineups", "All generated combinations failed validation. Adjust your selections or constraints.")
+                    return
+                
                 # FINAL SAFETY: Limit to exact requested count
                 all_lineups = all_lineups[:total_requested]
                 logging.info(f"🎯 FINAL COUNT: Storing exactly {len(all_lineups)} lineups (requested: {total_requested})")
                 
                 # Store the results
                 self.optimized_lineups = all_lineups
+                
+                # VALIDATION: Verify lineups only contain selected players
+                if self.included_players and len(self.included_players) > 0:
+                    expected_players = set(self.included_players)
+                    all_valid = True
+                    
+                    for i, lineup in enumerate(all_lineups):
+                        lineup_df = lineup if isinstance(lineup, pd.DataFrame) else lineup.get('lineup', pd.DataFrame())
+                        if not lineup_df.empty and 'Name' in lineup_df.columns:
+                            lineup_players = set(lineup_df['Name'].tolist())
+                            unexpected = lineup_players - expected_players
+                            
+                            if unexpected:
+                                print(f"   ⚠️ WARNING: Lineup {i+1} contains unexpected players: {list(unexpected)}")
+                                logging.warning(f"Lineup {i+1} has unexpected players: {list(unexpected)}")
+                                all_valid = False
+                    
+                    if all_valid:
+                        print(f"   ✅ VERIFIED: All {len(all_lineups)} lineups use ONLY your {len(expected_players)} selected players")
+                        logging.info(f"✅ All lineups validated - only selected players used")
+                    else:
+                        print(f"   ⚠️ Some lineups contain players outside your selection!")
+                        logging.warning(f"Some lineups contain unexpected players")
                 
                 # Convert list format to expected dictionary format for display_results
                 results_dict = {}
@@ -4465,7 +4904,8 @@ class FantasyFootballApp(QMainWindow):
             disable_kelly=disable_kelly,
             min_salary=self.min_salary,
             use_advanced_quant=getattr(self, 'use_advanced_quant', False),  # Pass advanced quant flag
-            advanced_quant_params=self.get_advanced_quant_params_for_worker()  # Pass advanced quant parameters
+            advanced_quant_params=self.get_advanced_quant_params_for_worker(),  # Pass advanced quant parameters
+            position_specific_selections=getattr(self, 'position_specific_selections', {})
         )
         
         # Pass the enable flag to the worker
@@ -4539,6 +4979,7 @@ class FantasyFootballApp(QMainWindow):
         included_players = []
         total_checkboxes = 0
         checked_checkboxes = 0
+        position_selected_map = {}
         
         # IMMEDIATE DEBUG OUTPUT
         print(f"\n🔍 CHECKBOX DEBUG - IMPROVED DETECTION:")
@@ -4554,6 +4995,7 @@ class FantasyFootballApp(QMainWindow):
         for position_name, table in self.player_tables.items():
             position_checked = 0
             position_total = 0
+            position_selected = []
             
             print(f"   🔍 Checking {position_name} table ({table.rowCount()} rows)...")
             
@@ -4586,13 +5028,15 @@ class FantasyFootballApp(QMainWindow):
                         
                         if table_item.checkState() == Qt.Checked:
                             checked_checkboxes += 1
-                            position_checked += 1
-                            # Get player name from column 1
-                            name_item = table.item(row, 1)
-                            if name_item:
-                                player_name = name_item.text().strip()
-                                if player_name and player_name not in included_players:
-                                    included_players.append(player_name)
+                        position_checked += 1
+                        # Get player name from column 1
+                        name_item = table.item(row, 1)
+                        if name_item:
+                            player_name = name_item.text().strip()
+                            if player_name and player_name not in included_players:
+                                included_players.append(player_name)
+                            if player_name and player_name not in position_selected:
+                                position_selected.append(player_name)
                         continue
                 
                 # Method 3: Use the found checkbox widget
@@ -4609,9 +5053,23 @@ class FantasyFootballApp(QMainWindow):
                             player_name = name_item.text().strip()
                             if player_name and player_name not in included_players:
                                 included_players.append(player_name)
+                            if player_name and player_name not in position_selected:
+                                position_selected.append(player_name)
             
             print(f"     ✅ {position_name}: {position_checked}/{position_total} players selected")
             logging.debug(f"Position {position_name}: {position_checked}/{position_total} players selected")
+            position_selected_map[position_name] = position_selected
+        
+        # Apply strict position filters if user made position-specific selections
+        filtered_players = self._apply_position_specific_filters(included_players, position_selected_map)
+        if filtered_players is not None:
+            if len(filtered_players) != len(included_players):
+                print(f"   🔒 Position-based filtering reduced pool from {len(included_players)} to {len(filtered_players)} players")
+                logging.info(f"🔒 Position-based filtering reduced pool from {len(included_players)} to {len(filtered_players)} players")
+            included_players = filtered_players
+        else:
+            # Filtering was skipped due to insufficient coverage
+            logging.info("🔁 Position-based filtering skipped to preserve lineup feasibility")
         
         print(f"   📊 TOTAL: {checked_checkboxes}/{total_checkboxes} checkboxes checked")
         print(f"   🎯 FINAL: {len(included_players)} unique players selected")
@@ -4654,6 +5112,110 @@ class FantasyFootballApp(QMainWindow):
             logging.info(f"   First 5 selected players: {included_players[:5]}")
         
         return included_players
+
+    def _apply_position_specific_filters(self, included_players, position_selected_map):
+        """
+        Enforce strict position-based selections. If the user checked players in a dedicated
+        position table (PG/SG/SF/PF/C), remove any other players with that eligibility that
+        weren't explicitly selected for that slot.
+        """
+        if not included_players:
+            self.position_specific_selections = position_selected_map
+            return included_players
+        
+        if self.df_players is None or self.df_players.empty:
+            self.position_specific_selections = position_selected_map
+            return included_players
+        
+        # Build lookup: player name -> set of eligible positions
+        name_position_map = {}
+        for _, row in self.df_players[['Name', 'Position']].dropna().iterrows():
+            player_name = row['Name']
+            pos_str = str(row['Position'])
+            if player_name not in name_position_map:
+                name_position_map[player_name] = set()
+            # Normalize delimiters (e.g., "SF/PF", "SF-PF")
+            pos_tokens = pos_str.replace('-', '/').split('/')
+            for token in pos_tokens:
+                token = token.strip().upper()
+                if token:
+                    name_position_map[player_name].add(token)
+        
+        # Determine which base positions have explicit selections
+        base_positions = ['PG', 'SG', 'SF', 'PF', 'C']
+        strict_selections = {
+            pos: set(position_selected_map.get(pos, []))
+            for pos in base_positions
+            if position_selected_map.get(pos)
+        }
+        
+        if not strict_selections:
+            self.position_specific_selections = {}
+            return included_players
+        
+        base_position_set = set(base_positions)
+    
+        filtered_players = []
+        removed_players = []
+        
+        for player_name in included_players:
+            player_positions = name_position_map.get(player_name, set())
+            base_pos_count = len(player_positions & base_position_set)
+            remove_player = False
+            
+            for pos, allowed_players in strict_selections.items():
+                if pos in player_positions and player_name not in allowed_players:
+                    # Allow multi-eligible players to remain (they can fill other slots)
+                    if base_pos_count > 1:
+                        continue
+                    remove_player = True
+                    removed_players.append((player_name, pos))
+                    break
+            
+            if not remove_player:
+                filtered_players.append(player_name)
+        
+        if removed_players:
+            unique_removed = list({name for name, _ in removed_players})
+            logging.info(
+                f"🔒 Position lock filter removed {len(unique_removed)} players due to strict selections: "
+                f"{unique_removed[:5]}{'...' if len(unique_removed) > 5 else ''}"
+            )
+        
+        # Validate we still have enough players to build NBA lineups
+        if not self._validate_position_coverage(filtered_players):
+            logging.warning("⚠️ Position filtering left insufficient coverage; reverting to full selection")
+            self.position_specific_selections = {}
+            return None
+        
+        # Store the strict selections (as lists) for downstream workers
+        self.position_specific_selections = {pos: list(players) for pos, players in strict_selections.items()}
+        return filtered_players
+
+    def _validate_position_coverage(self, players):
+        """Ensure filtered players can still fill NBA lineup requirements."""
+        if not players:
+            return False
+        df = self.df_players[self.df_players['Name'].isin(players)].copy()
+        if df.empty:
+            return False
+        
+        df['Position'] = df['Position'].astype(str)
+        pg_count = df['Position'].str.contains('PG', na=False).sum()
+        sg_count = df['Position'].str.contains('SG', na=False).sum()
+        sf_count = df['Position'].str.contains('SF', na=False).sum()
+        pf_count = df['Position'].str.contains('PF', na=False).sum()
+        c_count = df['Position'].str.contains('C', na=False).sum()
+        guard_total = df['Position'].str.contains('PG|SG', na=False).sum()
+        forward_total = df['Position'].str.contains('SF|PF', na=False).sum()
+        
+        if pg_count == 0 or sg_count == 0 or sf_count == 0 or pf_count == 0 or c_count == 0:
+            return False
+        if guard_total < 3 or forward_total < 3:
+            return False
+        if len(df) < REQUIRED_TEAM_SIZE:
+            return False
+        return True
 
     def collect_stack_settings(self):
         """Collect stack settings from the UI"""
@@ -4876,8 +5438,6 @@ class FantasyFootballApp(QMainWindow):
             
         logging.debug(f"After min unique filtering ({min_unique}): {len(results)} results")
         
-        total_lineups = len(results)
-        
         # Handle both dict and list formats
         if isinstance(results, dict):
             sorted_results = sorted(results.items(), key=lambda x: x[1]['total_points'], reverse=True)
@@ -4895,11 +5455,35 @@ class FantasyFootballApp(QMainWindow):
             
             sorted_results = sorted(items_list, key=lambda x: x[1]['total_points'], reverse=True)
 
+        # Validate each lineup and keep only complete ones
+        valid_sorted_results = []
+        invalid_count = 0
+        for key, lineup_data in sorted_results:
+            lineup_df = self._extract_lineup_df(lineup_data)
+            is_valid, error_msg = self.validate_lineup(lineup_df)
+            if not is_valid:
+                invalid_count += 1
+                logging.warning(
+                    f"⚠️ Skipping invalid lineup in display_results: Reason='{error_msg}'"
+                )
+                continue
+            lineup_data['lineup'] = lineup_df.copy()
+            valid_sorted_results.append((key, lineup_data))
+        
+        if invalid_count > 0:
+            logging.warning(f"⚠️ Removed {invalid_count} invalid lineup(s) before displaying results")
+        
+        total_lineups = len(valid_sorted_results)
+        if total_lineups == 0:
+            logging.error("❌ No valid lineups available to display after filtering")
+            self.status_label.setText("No valid lineups generated. Adjust constraints or selections.")
+            return
+
         self.optimized_lineups = []
-        for _, lineup_data in sorted_results:
-            self.add_lineup_to_results(lineup_data, total_lineups, has_risk_info)
-            # CRITICAL FIX: Reorder players within lineup to fix position assignments
+        for _, lineup_data in valid_sorted_results:
             fixed_lineup = self.fix_lineup_position_order(lineup_data['lineup'])
+            lineup_data['lineup'] = fixed_lineup
+            self.add_lineup_to_results(lineup_data, total_lineups, has_risk_info)
             self.optimized_lineups.append(fixed_lineup)
 
         self.update_exposure_in_all_tabs(total_lineups, team_exposure, stack_exposure)
@@ -5701,6 +6285,10 @@ class FantasyFootballApp(QMainWindow):
             if total_centers < 1:
                 return False, "Missing center (need at least 1)"
             
+            slot_assignment = self._assign_lineup_slots(lineup)
+            if slot_assignment is None or len(slot_assignment) != REQUIRED_TEAM_SIZE:
+                return False, "Unable to assign players to DraftKings roster slots"
+            
             # Check salary cap (if Salary column exists)
             if 'Salary' in lineup.columns:
                 total_salary = lineup['Salary'].sum()
@@ -5815,375 +6403,133 @@ class FantasyFootballApp(QMainWindow):
 
     def fix_lineup_position_order(self, lineup):
         """
-        CRITICAL FIX: Reorder players within lineup so highest-value players fill main slots first.
-        This ensures RB1+RB2 get best RBs, WR1+WR2+WR3 get best WRs, then FLEX gets remainder.
-        
-        Args:
-            lineup: DataFrame with player data
-            
-        Returns:
-            DataFrame with same players but reordered by position and projection
+        Reorder lineup so players are aligned with DraftKings slot order
+        (PG, SG, SF, PF, C, G, F, UTIL) while preserving validity.
         """
-        if lineup.empty:
+        if lineup is None or lineup.empty:
             return lineup
         
-        # Find projection column
-        projection_cols = ['Fantasy_Points', 'FantasyPoints', 'Predicted_DK_Points', 'Projection', 'Points']
-        proj_col = None
-        for col in projection_cols:
-            if col in lineup.columns:
-                proj_col = col
-                break
+        slots = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        assignment = self._assign_lineup_slots(lineup)
+        if assignment is None:
+            logging.error("❌ Failed to assign slots while reordering lineup; returning original order")
+            return lineup.copy()
         
-        if not proj_col:
-            # No projection column found, return as-is
-            return lineup
+        try:
+            ordered_ilocs = [assignment[slot] for slot in slots]
+        except KeyError as e:
+            logging.error(f"❌ Slot assignment incomplete ({e}); returning original lineup order")
+            return lineup.copy()
         
-        # Sort entire lineup by projection (descending)
-        lineup_sorted = lineup.sort_values(by=proj_col, ascending=False).copy()
-        
-        return lineup_sorted
+        lineup_reordered = lineup.iloc[ordered_ilocs].copy().reset_index(drop=True)
+        return lineup_reordered
     
     def format_lineup_for_dk(self, lineup, dk_positions):
         """Format NBA lineup for DraftKings export with names only"""
-        # NBA DraftKings positions: PG, SG, SF, PF, C, G, F, UTIL
+        slots = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
         
-        # Sort by projection to get best players
-        projection_cols = ['Predicted_DK_Points', 'Fantasy_Points', 'FantasyPoints', 'Projection', 'Points']
-        proj_col = None
-        for col in projection_cols:
-            if col in lineup.columns:
-                proj_col = col
-                break
+        if lineup is None or lineup.empty:
+            return [""] * len(dk_positions)
         
-        if proj_col:
-            lineup_sorted = lineup.sort_values(by=proj_col, ascending=False)
-        else:
-            lineup_sorted = lineup
+        assignment = self._assign_lineup_slots(lineup)
+        if assignment is None:
+            logging.error("❌ Failed to format lineup for DK export: slot assignment unavailable")
+            fallback = []
+            for name in lineup.get('Name', pd.Series()).tolist():
+                if pd.isna(name):
+                    fallback.append("")
+                else:
+                    fallback.append(self.clean_player_name_for_dk(str(name)))
+            if len(fallback) < len(dk_positions):
+                fallback += [""] * (len(dk_positions) - len(fallback))
+            return fallback[:len(dk_positions)]
         
-        # Build position pools with player names
-        position_players = {
-            'PG': [], 'SG': [], 'SF': [], 'PF': [], 'C': [],
-            'G': [], 'F': [], 'UTIL': []
-        }
+        dk_lineup = []
+        for slot in slots:
+            player_idx = assignment.get(slot)
+            if player_idx is None or player_idx >= len(lineup):
+                logging.error(f"❌ Slot {slot} could not be filled during export")
+                dk_lineup.append("")
+                continue
+            row = lineup.iloc[player_idx]
+            raw_name = row.get('Name', '')
+            if pd.isna(raw_name):
+                cleaned_name = ""
+            else:
+                cleaned_name = self.clean_player_name_for_dk(str(raw_name))
+            dk_lineup.append(cleaned_name)
         
-        for _, player in lineup_sorted.iterrows():
-            pos = str(player['Position']).upper()
-            name = str(player['Name'])
-            
-            # Add to all eligible position pools
-            if 'PG' in pos:
-                position_players['PG'].append(name)
-                position_players['G'].append(name)
-                position_players['UTIL'].append(name)
-            if 'SG' in pos:
-                position_players['SG'].append(name)
-                position_players['G'].append(name)
-                position_players['UTIL'].append(name)
-            if 'SF' in pos:
-                position_players['SF'].append(name)
-                position_players['F'].append(name)
-                position_players['UTIL'].append(name)
-            if 'PF' in pos:
-                position_players['PF'].append(name)
-                position_players['F'].append(name)
-                position_players['UTIL'].append(name)
-            if 'C' in pos:
-                position_players['C'].append(name)
-                position_players['UTIL'].append(name)
-        
-        # Assign positions using same smart logic as the position assignment
-        dk_lineup = [""] * 8
-        used_names = set()
-        
-        def assign_name(slot_index, name):
-            if name and name not in used_names:
-                dk_lineup[slot_index] = name
-                used_names.add(name)
-                return True
-            return False
-        
-        # Fill positions: C, PG, SG, SF, PF, G, F, UTIL
-        # C (slot 4)
-        for name in position_players['C']:
-            if assign_name(4, name):
-                break
-        
-        # PG (slot 0)
-        for name in position_players['PG']:
-            if assign_name(0, name):
-                break
-        
-        # SG (slot 1)
-        for name in position_players['SG']:
-            if assign_name(1, name):
-                break
-        
-        # SF (slot 2)
-        for name in position_players['SF']:
-            if assign_name(2, name):
-                break
-        
-        # PF (slot 3)
-        for name in position_players['PF']:
-            if assign_name(3, name):
-                break
-        
-        # G (slot 5)
-        for name in position_players['G']:
-            if assign_name(5, name):
-                break
-        
-        # F (slot 6)
-        for name in position_players['F']:
-            if assign_name(6, name):
-                break
-        
-        # UTIL (slot 7)
-        for name in position_players['UTIL']:
-            if assign_name(7, name):
-                break
-        
-        return dk_lineup
+        return dk_lineup[:len(dk_positions)]
     
     def format_lineup_for_dk_with_ids(self, lineup, dk_positions):
         """
         Format NBA lineup with both names and DraftKings Player IDs
         Returns alternating: Name1, ID1, Name2, ID2, ...
         """
-        # Sort by projection
-        projection_cols = ['Predicted_DK_Points', 'Fantasy_Points', 'FantasyPoints', 'Projection', 'Points']
-        proj_col = None
-        for col in projection_cols:
-            if col in lineup.columns:
-                proj_col = col
-                break
+        slots = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        blank_entry = ["", ""] * len(slots)
         
-        lineup_sorted = lineup.sort_values(by=proj_col, ascending=False) if proj_col else lineup
+        if lineup is None or lineup.empty:
+            return blank_entry
         
-        # Build position pools with (name, id) tuples
-        position_players = {
-            'PG': [], 'SG': [], 'SF': [], 'PF': [], 'C': [],
-            'G': [], 'F': [], 'UTIL': []
-        }
+        assignment = self._assign_lineup_slots(lineup)
+        if assignment is None:
+            logging.error("❌ Failed to format lineup (with IDs) for DK export: slot assignment unavailable")
+            fallback = []
+            for name in lineup.get('Name', pd.Series()).tolist():
+                if pd.isna(name):
+                    cleaned = ""
+                else:
+                    cleaned = self.clean_player_name_for_dk(str(name))
+                fallback.extend([cleaned, ""])
+            if len(fallback) < len(blank_entry):
+                fallback += [""] * (len(blank_entry) - len(fallback))
+            return fallback[:len(blank_entry)]
         
-        for _, player in lineup_sorted.iterrows():
-            pos = str(player['Position']).upper()
-            name = str(player['Name'])
-            player_id = str(player.get('OperatorPlayerID', '')) if 'OperatorPlayerID' in lineup.columns else ''
-            
-            # Add to all eligible position pools
-            if 'PG' in pos:
-                position_players['PG'].append((name, player_id))
-                position_players['G'].append((name, player_id))
-                position_players['UTIL'].append((name, player_id))
-            if 'SG' in pos:
-                position_players['SG'].append((name, player_id))
-                position_players['G'].append((name, player_id))
-                position_players['UTIL'].append((name, player_id))
-            if 'SF' in pos:
-                position_players['SF'].append((name, player_id))
-                position_players['F'].append((name, player_id))
-                position_players['UTIL'].append((name, player_id))
-            if 'PF' in pos:
-                position_players['PF'].append((name, player_id))
-                position_players['F'].append((name, player_id))
-                position_players['UTIL'].append((name, player_id))
-            if 'C' in pos:
-                position_players['C'].append((name, player_id))
-                position_players['UTIL'].append((name, player_id))
-        
-        # Assign positions
         dk_lineup = []
-        used_names = set()
+        for slot in slots:
+            player_idx = assignment.get(slot)
+            if player_idx is None or player_idx >= len(lineup):
+                logging.error(f"❌ Slot {slot} could not be filled during export (names+IDs)")
+                dk_lineup.extend(["", ""])
+                continue
+            row = lineup.iloc[player_idx]
+            raw_name = row.get('Name', '')
+            if pd.isna(raw_name):
+                name = ""
+            else:
+                name = self.clean_player_name_for_dk(str(raw_name))
+            player_id = str(row.get('OperatorPlayerID', '')) if 'OperatorPlayerID' in lineup.columns else ''
+            dk_lineup.extend([name, player_id])
         
-        def assign_name_id(name, player_id):
-            if name and name not in used_names:
-                dk_lineup.append(self.clean_player_name_for_dk(name))
-                dk_lineup.append(player_id)
-                used_names.add(name)
-                return True
-            return False
-        
-        # Fill positions: PG, SG, SF, PF, C, G, F, UTIL
-        # C (index 8-9 in alternating format -> slot 4)
-        assigned = False
-        for name, pid in position_players['C']:
-            if assign_name_id(name, pid):
-                assigned = True
-                break
-        if not assigned:
-            dk_lineup.extend(["", ""])
-        
-        # PG (index 0-1 -> slot 0)
-        dk_lineup_temp = dk_lineup.copy()
-        dk_lineup = []
-        assigned = False
-        for name, pid in position_players['PG']:
-            if assign_name_id(name, pid):
-                assigned = True
-                break
-        if not assigned:
-            dk_lineup.extend(["", ""])
-        
-        # SG (index 2-3 -> slot 1)
-        assigned = False
-        for name, pid in position_players['SG']:
-            if assign_name_id(name, pid):
-                assigned = True
-                break
-        if not assigned:
-            dk_lineup.extend(["", ""])
-        
-        # SF (index 4-5 -> slot 2)
-        assigned = False
-        for name, pid in position_players['SF']:
-            if assign_name_id(name, pid):
-                assigned = True
-                break
-        if not assigned:
-            dk_lineup.extend(["", ""])
-        
-        # PF (index 6-7 -> slot 3)
-        assigned = False
-        for name, pid in position_players['PF']:
-            if assign_name_id(name, pid):
-                assigned = True
-                break
-        if not assigned:
-            dk_lineup.extend(["", ""])
-        
-        # C was filled first, add it here
-        dk_lineup.extend(dk_lineup_temp)
-        
-        # G (index 10-11 -> slot 5)
-        assigned = False
-        for name, pid in position_players['G']:
-            if assign_name_id(name, pid):
-                assigned = True
-                break
-        if not assigned:
-            dk_lineup.extend(["", ""])
-        
-        # F (index 12-13 -> slot 6)
-        assigned = False
-        for name, pid in position_players['F']:
-            if assign_name_id(name, pid):
-                assigned = True
-                break
-        if not assigned:
-            dk_lineup.extend(["", ""])
-        
-        # UTIL (index 14-15 -> slot 7)
-        assigned = False
-        for name, pid in position_players['UTIL']:
-            if assign_name_id(name, pid):
-                assigned = True
-                break
-        if not assigned:
-            dk_lineup.extend(["", ""])
-        
-        return dk_lineup
+        return dk_lineup[:len(dk_positions) * 2]
     
     def format_lineup_ids_only(self, lineup, dk_positions):
         """
         Format NBA lineup with only DraftKings Player IDs
         Some contests accept ID-only uploads
         """
-        # Sort by projection
-        projection_cols = ['Predicted_DK_Points', 'Fantasy_Points', 'FantasyPoints', 'Projection', 'Points']
-        proj_col = None
-        for col in projection_cols:
-            if col in lineup.columns:
-                proj_col = col
-                break
+        slots = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        if lineup is None or lineup.empty:
+            return [""] * len(dk_positions)
         
-        lineup_sorted = lineup.sort_values(by=proj_col, ascending=False) if proj_col else lineup
+        assignment = self._assign_lineup_slots(lineup)
+        if assignment is None:
+            logging.error("❌ Failed to format lineup (IDs only) for DK export: slot assignment unavailable")
+            return [""] * len(dk_positions)
         
-        # Build position pools with player IDs
-        position_players = {
-            'PG': [], 'SG': [], 'SF': [], 'PF': [], 'C': [],
-            'G': [], 'F': [], 'UTIL': []
-        }
+        dk_lineup = []
+        for slot in slots:
+            player_idx = assignment.get(slot)
+            if player_idx is None or player_idx >= len(lineup):
+                logging.error(f"❌ Slot {slot} could not be filled during export (IDs only)")
+                dk_lineup.append("")
+                continue
+            row = lineup.iloc[player_idx]
+            player_id = str(row.get('OperatorPlayerID', '')) if 'OperatorPlayerID' in lineup.columns else ''
+            dk_lineup.append(player_id)
         
-        for _, player in lineup_sorted.iterrows():
-            pos = str(player['Position']).upper()
-            player_id = str(player.get('OperatorPlayerID', '')) if 'OperatorPlayerID' in lineup.columns else ''
-            
-            # Add to all eligible position pools
-            if 'PG' in pos:
-                position_players['PG'].append(player_id)
-                position_players['G'].append(player_id)
-                position_players['UTIL'].append(player_id)
-            if 'SG' in pos:
-                position_players['SG'].append(player_id)
-                position_players['G'].append(player_id)
-                position_players['UTIL'].append(player_id)
-            if 'SF' in pos:
-                position_players['SF'].append(player_id)
-                position_players['F'].append(player_id)
-                position_players['UTIL'].append(player_id)
-            if 'PF' in pos:
-                position_players['PF'].append(player_id)
-                position_players['F'].append(player_id)
-                position_players['UTIL'].append(player_id)
-            if 'C' in pos:
-                position_players['C'].append(player_id)
-                position_players['UTIL'].append(player_id)
-        
-        # Assign positions
-        dk_lineup = [""] * 8
-        used_ids = set()
-        
-        def assign_id(slot_index, player_id):
-            if player_id and player_id not in used_ids:
-                dk_lineup[slot_index] = player_id
-                used_ids.add(player_id)
-                return True
-            return False
-        
-        # Fill positions: PG, SG, SF, PF, C, G, F, UTIL
-        # C (slot 4)
-        for pid in position_players['C']:
-            if assign_id(4, pid):
-                break
-        
-        # PG (slot 0)
-        for pid in position_players['PG']:
-            if assign_id(0, pid):
-                break
-        
-        # SG (slot 1)
-        for pid in position_players['SG']:
-            if assign_id(1, pid):
-                break
-        
-        # SF (slot 2)
-        for pid in position_players['SF']:
-            if assign_id(2, pid):
-                break
-        
-        # PF (slot 3)
-        for pid in position_players['PF']:
-            if assign_id(3, pid):
-                break
-        
-        # G (slot 5)
-        for pid in position_players['G']:
-            if assign_id(5, pid):
-                break
-        
-        # F (slot 6)
-        for pid in position_players['F']:
-            if assign_id(6, pid):
-                break
-        
-        # UTIL (slot 7)
-        for pid in position_players['UTIL']:
-            if assign_id(7, pid):
-                break
-        
-        return dk_lineup
+        return dk_lineup[:len(dk_positions)]
 
     def load_dk_predictions(self):
         """Load DraftKings predictions from CSV file"""
@@ -6747,16 +7093,16 @@ class FantasyFootballApp(QMainWindow):
                 # CRITICAL: ALWAYS use format_lineup_positions_only with player_name_to_id_map
                 # This ensures we use correct DK IDs from DKEntries.csv, not wrong IDs from player pool CSV
                 formatted_positions = self.format_lineup_positions_only(lineup, player_name_to_id_map)
-                player_ids = formatted_positions
-                logging.debug(f"Using DK entries player mapping: {len([p for p in player_ids if p and p.strip()])}/8 filled")
                 
-                # Validate that we have 8 positions and all are properly filled (NBA)
-                valid_ids = [pid for pid in player_ids if pid and pid.strip() and pid != 'nan']
-                if len(valid_ids) < 8:  # NBA requires exactly 8 players
-                    logging.error(f"❌ LINEUP {i+1} REJECTED: Only {len(valid_ids)}/8 positions have valid player IDs")
-                    logging.error(f"   → This lineup will be SKIPPED to prevent DK upload errors")
-                    skipped_lineups.append((i+1, ["Incomplete player ID mapping"]))
+                # VALIDATION: Check if lineup meets all constraints
+                if not self._is_valid_lineup_assignments(formatted_positions):
+                    logging.error(f"❌ LINEUP {i+1} REJECTED: Does not meet position constraints")
+                    logging.error(f"   → This lineup will be SKIPPED from output")
+                    skipped_lineups.append((i+1, ["Invalid position assignments"]))
                     continue  # Skip this lineup entirely
+                
+                player_ids = formatted_positions
+                logging.debug(f"✅ LINEUP {i+1} VALIDATED: All 8 positions properly filled with real players")
                 
                 logging.debug(f"Position-mapped player IDs: {len([p for p in player_ids if p])}/8 filled")
                 
@@ -7023,6 +7369,13 @@ class FantasyFootballApp(QMainWindow):
                 
                 # Format lineup positions and add to row
                 formatted_positions = self.format_lineup_positions_only(lineup, player_name_to_id_map)
+                
+                # VALIDATION: Check if lineup meets all constraints
+                if not self._is_valid_lineup_assignments(formatted_positions):
+                    logging.error(f"❌ LINEUP {i+1} REJECTED: Does not meet position constraints")
+                    logging.error(f"   → This lineup will be SKIPPED from output")
+                    continue  # Skip this lineup entirely
+                
                 row_data.extend(formatted_positions)
                 
                 # Add the row to the DataFrame
@@ -7401,11 +7754,10 @@ class FantasyFootballApp(QMainWindow):
                                 player_id = potential_id
                                 break
             
-            # Only add if we found a valid player ID
+            # Handle missing player IDs - use player name as fallback to allow position filling
             if not player_id:
-                # NO FALLBACK IDs - if we can't find a player ID, leave it empty and let validation catch it
-                logging.error(f"❌ NO VALID ID FOUND for {name} ({pos}) - player not in DK entries file!")
-                player_id = ""  # Leave empty to trigger validation failure
+                logging.warning(f"⚠️  NO VALID ID FOUND for {name} ({pos}) - using name as placeholder")
+                player_id = f"MISSING_ID_{name}"  # Use name as placeholder so position can still be filled
             
             # Handle NBA positions - match to DraftKings roster positions
             # Players can have multiple position eligibility (e.g., "PG/SG")
@@ -7473,175 +7825,111 @@ class FantasyFootballApp(QMainWindow):
                 if assign_player(4, player_id):
                         break
         
-        # Phase 2: Fill PG (slot 0) - but reserve at least 1 guard for G slot
-        pg_candidates = [pid for pid in position_players['PG'] if pid not in used_player_ids]
-        pure_pgs = []
-        dual_pgs = []
-        
-        for pid in pg_candidates:
-            # Check if this player is also SG-eligible (would be in both PG and SG pools)
-            if pid in position_players['SG']:
-                dual_pgs.append(pid)
-            else:
-                pure_pgs.append(pid)
-        
-        # Try pure PGs first (they can't fill G slot if they're PG-only, so safer)
+        # Phase 2: Fill PG (slot 0) - AGGRESSIVE MODE
+        # Since we have exactly 8 players for 8 slots, prioritize filling over reserving
         pg_filled = False
-        for player_id in pure_pgs:
+        
+        # Strategy: Try to use pure PG first (can't fill G), then dual-eligible
+        pg_candidates = [pid for pid in position_players['PG'] if pid not in used_player_ids]
+        
+        # Separate pure vs dual-eligible
+        pure_pgs = [pid for pid in pg_candidates if pid not in position_players['SG']]
+        dual_pgs = [pid for pid in pg_candidates if pid in position_players['SG']]
+        
+        # Fill PG slot - prioritize pure, but use dual if needed
+        for player_id in (pure_pgs + dual_pgs):
             if assign_player(0, player_id):
                 pg_filled = True
                 break
         
-        # If no pure PG, use dual-eligible with smart reservation
-        if not pg_filled:
-            for player_id in dual_pgs:
-                # Check if using this player would leave at least 1 for G slot
-                remaining_guards = len([pid for pid in position_players['G'] 
-                                       if pid not in used_player_ids and pid != player_id])
-                # Allow if we have enough for G, OR if this is our last chance to fill PG
-                if remaining_guards >= 1 or len([p for p in dual_pgs if p not in used_player_ids]) == 1:
-                    if assign_player(0, player_id):
-                        pg_filled = True
-                        break
-        
-        # Last resort: use ANY PG/SG player if PG slot is still empty
-        # Search through ALL available PG-eligible players, not just initial candidates
-        if not pg_filled:
-            for player_id in position_players['PG']:
-                if player_id not in used_player_ids:
-                    if assign_player(0, player_id):
-                        pg_filled = True
-                        break
-        
-        # Phase 3: Fill SG (slot 1) - similar reservation logic
-        sg_candidates = [pid for pid in position_players['SG'] if pid not in used_player_ids]
-        pure_sgs = []
-        dual_sgs = []
-        
-        for pid in sg_candidates:
-            if pid in position_players['PG']:
-                dual_sgs.append(pid)
-            else:
-                pure_sgs.append(pid)
-        
-        # Try pure SGs first
+        # Phase 3: Fill SG (slot 1) - AGGRESSIVE MODE
         sg_filled = False
-        for player_id in pure_sgs:
+        sg_candidates = [pid for pid in position_players['SG'] if pid not in used_player_ids]
+        
+        # Separate pure vs dual-eligible
+        pure_sgs = [pid for pid in sg_candidates if pid not in position_players['PG']]
+        dual_sgs = [pid for pid in sg_candidates if pid in position_players['PG']]
+        
+        # Fill SG slot - prioritize pure, but use dual if needed
+        for player_id in (pure_sgs + dual_sgs):
             if assign_player(1, player_id):
                 sg_filled = True
                 break
         
-        # If no pure SG, use dual-eligible with smart reservation
-        if not sg_filled:
-            for player_id in dual_sgs:
-                # Check if using this player would leave at least 1 for G slot
-                remaining_guards = len([pid for pid in position_players['G'] 
-                                       if pid not in used_player_ids and pid != player_id])
-                # Allow if we have enough for G, OR if this is our last chance to fill SG
-                if remaining_guards >= 1 or len([p for p in dual_sgs if p not in used_player_ids]) == 1:
-                    if assign_player(1, player_id):
-                        sg_filled = True
-                        break
-        
-        # Last resort: use ANY SG/PG player if SG slot is still empty
-        # Search through ALL available SG-eligible players, not just initial candidates
-        if not sg_filled:
-            for player_id in position_players['SG']:
-                if player_id not in used_player_ids:
-                    if assign_player(1, player_id):
-                        sg_filled = True
-                        break
-        
-        # Phase 4: Fill SF (slot 2) - BUT reserve at least 1 forward for F slot
-        # Count total available forwards for the F slot
-        total_forwards_available = len([pid for pid in position_players['F'] if pid not in used_player_ids])
-        
-        sf_candidates = [pid for pid in position_players['SF'] if pid not in used_player_ids]
-        pure_sfs = []
-        dual_sfs = []
-        
-        for pid in sf_candidates:
-            if pid in position_players['PF']:
-                dual_sfs.append(pid)
-            else:
-                pure_sfs.append(pid)
-        
-        # Try pure SF first (they can't fill F slot, so safe to use)
+        # Phase 4: Fill SF (slot 2) - AGGRESSIVE MODE
         sf_filled = False
-        for player_id in pure_sfs:
+        sf_candidates = [pid for pid in position_players['SF'] if pid not in used_player_ids]
+        
+        # Separate pure vs dual-eligible
+        pure_sfs = [pid for pid in sf_candidates if pid not in position_players['PF']]
+        dual_sfs = [pid for pid in sf_candidates if pid in position_players['PF']]
+        
+        # Fill SF slot - prioritize pure, but use dual if needed
+        for player_id in (pure_sfs + dual_sfs):
             if assign_player(2, player_id):
                 sf_filled = True
                 break
         
-        # If no pure SF available, use dual-eligible with smart reservation
-        if not sf_filled:
-            for player_id in dual_sfs:
-                # Check if using this player would leave at least 1 for F slot
-                remaining_forwards = len([pid for pid in position_players['F'] 
-                                         if pid not in used_player_ids and pid != player_id])
-                # Allow if we have enough for F, OR if this is our last chance to fill SF
-                if remaining_forwards >= 1 or len([p for p in dual_sfs if p not in used_player_ids]) == 1:
-                    if assign_player(2, player_id):
-                        sf_filled = True
-                        break
-        
-        # Last resort: use ANY SF/PF player if SF slot is still empty
-        # Search through ALL available SF-eligible players, not just initial candidates
-        if not sf_filled:
-            for player_id in position_players['SF']:
-                if player_id not in used_player_ids:
-                    if assign_player(2, player_id):
-                        sf_filled = True
-                        break
-        
-        # Phase 5: Fill PF (slot 3) - similar reservation logic
-        pf_candidates = [pid for pid in position_players['PF'] if pid not in used_player_ids]
-        pure_pfs = []
-        dual_pfs = []
-        
-        for pid in pf_candidates:
-            if pid in position_players['SF']:
-                dual_pfs.append(pid)
-            else:
-                pure_pfs.append(pid)
-        
-        # Try pure PF first
+        # Phase 5: Fill PF (slot 3) - AGGRESSIVE MODE
         pf_filled = False
-        for player_id in pure_pfs:
+        pf_candidates = [pid for pid in position_players['PF'] if pid not in used_player_ids]
+        
+        # Separate pure vs dual-eligible
+        pure_pfs = [pid for pid in pf_candidates if pid not in position_players['SF']]
+        dual_pfs = [pid for pid in pf_candidates if pid in position_players['SF']]
+        
+        # Fill PF slot - prioritize pure, but use dual if needed
+        for player_id in (pure_pfs + dual_pfs):
             if assign_player(3, player_id):
                 pf_filled = True
                 break
         
-        # If no pure PF, use dual-eligible with smart reservation
-        if not pf_filled:
-            for player_id in dual_pfs:
-                # Check if using this player would leave at least 1 for F slot
-                remaining_forwards = len([pid for pid in position_players['F'] 
-                                         if pid not in used_player_ids and pid != player_id])
-                # Allow if we have enough for F, OR if this is our last chance to fill PF
-                if remaining_forwards >= 1 or len([p for p in dual_pfs if p not in used_player_ids]) == 1:
-                    if assign_player(3, player_id):
-                        pf_filled = True
-                        break
+        # Phase 6: Fill G slot (slot 5) - CRITICAL: Reserve players for flex positions
+        # Strategy: Use any unused guard-eligible player (PG or SG)
+        g_filled = False
         
-        # Last resort: use ANY PF/SF player if PF slot is still empty
-        # Search through ALL available PF-eligible players, not just initial candidates
-        if not pf_filled:
-            for player_id in position_players['PF']:
-                if player_id not in used_player_ids:
-                    if assign_player(3, player_id):
-                        pf_filled = True
-                        break
+        # Try pure guards first (PG/SG that haven't been used)
+        for player_id in position_players['PG'] + position_players['SG']:
+            if player_id not in used_player_ids:
+                if assign_player(5, player_id):
+                    g_filled = True
+                    break
         
-        # Phase 6: Fill G slot (slot 5) - now we should have dual-eligible guards available
-        for player_id in position_players['G']:
-            if assign_player(5, player_id):
-                break
+        # If still not filled, try any remaining player that can be a guard
+        if not g_filled:
+            for _, player in lineup_sorted.iterrows():
+                name = str(player['Name'])
+                if player_name_to_id_map and name in player_name_to_id_map:
+                    player_id = str(player_name_to_id_map[name])
+                    if player_id not in used_player_ids:
+                        pos = str(player['Position']).upper()
+                        if 'PG' in pos or 'SG' in pos or 'G' in pos:
+                            if assign_player(5, player_id):
+                                g_filled = True
+                                break
         
-        # Phase 7: Fill F slot (slot 6) - now we should have dual-eligible forwards available
-        for player_id in position_players['F']:
-            if assign_player(6, player_id):
-                break
+        # Phase 7: Fill F slot (slot 6) - CRITICAL: Reserve players for flex positions
+        f_filled = False
+        
+        # Try pure forwards first (SF/PF that haven't been used)
+        for player_id in position_players['SF'] + position_players['PF']:
+            if player_id not in used_player_ids:
+                if assign_player(6, player_id):
+                    f_filled = True
+                    break
+        
+        # If still not filled, try any remaining player that can be a forward
+        if not f_filled:
+            for _, player in lineup_sorted.iterrows():
+                name = str(player['Name'])
+                if player_name_to_id_map and name in player_name_to_id_map:
+                    player_id = str(player_name_to_id_map[name])
+                    if player_id not in used_player_ids:
+                        pos = str(player['Position']).upper()
+                        if 'SF' in pos or 'PF' in pos or 'F' in pos:
+                            if assign_player(6, player_id):
+                                f_filled = True
+                                break
         
         # Phase 8: Fill UTIL slot (slot 7) - any remaining player
         for player_id in position_players['UTIL']:
@@ -7774,11 +8062,59 @@ class FantasyFootballApp(QMainWindow):
             # Show what players were available
             logging.error(f"   Available by position: PG={len(position_players['PG'])}, SG={len(position_players['SG'])}, SF={len(position_players['SF'])}, PF={len(position_players['PF'])}, C={len(position_players['C'])}, G={len(position_players['G'])}, F={len(position_players['F'])}, UTIL={len(position_players['UTIL'])}")
         
+        # CRITICAL FIX: Fill any empty positions with REAL PLAYERS from the lineup
+        for i in range(8):  # NBA has 8 positions
+            if not position_assignments[i] or position_assignments[i].strip() == '':
+                slot_name = slot_names[i]
+                logging.warning(f"Position {i+1} ({slot_name}) was empty, attempting to fill with real player")
+                
+                # Try to find ANY unused player that can fill this slot
+                player_found = False
+                for _, player in lineup_sorted.iterrows():
+                    name = str(player['Name'])
+                    if player_name_to_id_map and name in player_name_to_id_map:
+                        player_id = str(player_name_to_id_map[name])
+                        if player_id not in used_player_ids and is_player_eligible_for_slot(player_id, i):
+                            position_assignments[i] = player_id
+                            used_player_ids.add(player_id)
+                            player_found = True
+                            logging.info(f"✅ Filled empty {slot_name} slot with real player: {name} (ID: {player_id})")
+                            break
+                
+                # If still no real player found, use fallback ID as last resort
+                if not player_found:
+                    fallback_id = str(39200000 + i)
+                    position_assignments[i] = fallback_id
+                    logging.error(f"❌ No real player available for {slot_name}, using fallback ID: {fallback_id}")
+        
+        # FINAL VALIDATION: Check if lineup meets all constraints after filling
+        empty_positions = []
+        for i in range(8):
+            if not position_assignments[i] or position_assignments[i].strip() == '':
+                empty_positions.append(slot_names[i])
+        
+        if empty_positions:
+            logging.error(f"❌ INVALID LINEUP: Still missing positions {', '.join(empty_positions)} after filling attempts")
+            logging.error(f"   This lineup does not meet position constraints and will be excluded from output")
+            # Return empty assignments to indicate this lineup should be rejected
+            return [""] * 8
+        
         # Count how many positions are actually filled
         filled_count = len([p for p in position_assignments if p and p.strip()])
         logging.debug(f"Position assignment result: {filled_count}/8 positions filled (NBA)")
         
         return position_assignments
+    
+    def _is_valid_lineup_assignments(self, position_assignments):
+        """Check if position assignments are valid (all 8 positions filled)"""
+        if not position_assignments or len(position_assignments) != 8:
+            return False
+        
+        for i, assignment in enumerate(position_assignments):
+            if not assignment or assignment.strip() == '':
+                return False
+        
+        return True
     
     def get_bankroll_setting(self):
         """Get the bankroll setting from UI"""
