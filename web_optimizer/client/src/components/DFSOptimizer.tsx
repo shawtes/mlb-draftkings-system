@@ -6,8 +6,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
-import { Users, Link2, BarChart3, Target, Cpu, Star, Upload, Play, Save, Settings, FileText, Download, Plus, CheckSquare, XSquare, ChevronDown, ChevronUp } from 'lucide-react';
+import { Users, Link2, BarChart3, Target, Cpu, Star, Upload, Play, Save, Settings, FileText, Download, Plus, CheckSquare, XSquare, ChevronDown, ChevronUp, Trophy } from 'lucide-react';
 import { Sport, SPORT_CONFIGS, getPositionFilters, filterPlayersByPosition, getPositionCount } from './sport-config';
+import LineupsTab from './LineupsTab';
 
 // Player data interface
 interface Player {
@@ -45,7 +46,7 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
   // Position counts
   const positionCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    playerData.forEach(p => {
+    (playerData || []).forEach(p => {
       if (sport === 'MLB') {
         const positions = p.position.split('/');
         positions.forEach(pos => {
@@ -61,7 +62,7 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
 
   // Filter players by position using sport config
   const filteredPlayers = useMemo(() => {
-    const filtered = filterPlayersByPosition(playerData, positionFilter, sport);
+    const filtered = filterPlayersByPosition(playerData || [], positionFilter, sport);
 
     // Sort
     const sorted = [...filtered].sort((a, b) => {
@@ -838,7 +839,7 @@ const TeamCombinationsTab: React.FC<TeamCombinationsTabProps> = ({ playerData })
 
   // Extract teams from player data
   const teams = useMemo(() => {
-    const teamSet = new Set(playerData.map(p => p.team));
+    const teamSet = new Set((playerData || []).map(p => p.team));
     return Array.from(teamSet).sort();
   }, [playerData]);
 
@@ -1917,51 +1918,140 @@ const MyEntriesTab: React.FC<MyEntriesTabProps> = ({ results, sport }) => {
   );
 };
 
-interface DFSOptimizerProps {
-  sport: string;
+// Build state interface for multi-build support
+interface BuildState {
+  id: string;
+  name: string;
+  sport: Sport;
+  activeTab: string;
+  playerData: Player[];
+  selectedPlayers: string[];
+  teamSelections: Record<number | 'all', string[]>;
+  stackSettings: StackType[];
+  advancedQuantSettings: any;
+  results: any[];
+  generatedCombinations: any[];
 }
 
-const DFSOptimizer = React.memo(({ sport = 'NFL' }: DFSOptimizerProps) => {
-  // Use sport prop directly from Dashboard (controlled by header tabs)
-  const currentSport = sport as Sport;
+interface DFSOptimizerProps {}
+
+const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
+  // Build management state
+  const [builds, setBuilds] = useState<BuildState[]>([
+    {
+      id: 'build-1',
+      name: 'Build 1',
+      sport: 'NFL',
+      activeTab: 'team-combos',
+      playerData: [
+        { id: '1', name: 'Josh Allen', team: 'BUF', position: 'QB', salary: 8500, projectedPoints: 25.5, minExp: 0, maxExp: 100, selected: false },
+        { id: '2', name: 'Stefon Diggs', team: 'BUF', position: 'WR', salary: 7500, projectedPoints: 18.2, minExp: 0, maxExp: 100, selected: false },
+        { id: '3', name: 'Travis Kelce', team: 'KC', position: 'TE', salary: 7000, projectedPoints: 15.8, minExp: 0, maxExp: 100, selected: false },
+        { id: '4', name: 'Tyreek Hill', team: 'MIA', position: 'WR', salary: 8000, projectedPoints: 20.1, minExp: 0, maxExp: 100, selected: false },
+        { id: '5', name: 'Christian McCaffrey', team: 'SF', position: 'RB', salary: 9000, projectedPoints: 22.3, minExp: 0, maxExp: 100, selected: false },
+        { id: '6', name: 'Lamar Jackson', team: 'BAL', position: 'QB', salary: 8200, projectedPoints: 24.1, minExp: 0, maxExp: 100, selected: false },
+        { id: '7', name: 'Cooper Kupp', team: 'LAR', position: 'WR', salary: 7800, projectedPoints: 19.5, minExp: 0, maxExp: 100, selected: false },
+        { id: '8', name: 'Derrick Henry', team: 'TEN', position: 'RB', salary: 7200, projectedPoints: 18.7, minExp: 0, maxExp: 100, selected: false },
+        { id: '9', name: 'Davante Adams', team: 'LV', position: 'WR', salary: 7600, projectedPoints: 17.9, minExp: 0, maxExp: 100, selected: false },
+        { id: '10', name: 'Patrick Mahomes', team: 'KC', position: 'QB', salary: 8800, projectedPoints: 26.2, minExp: 0, maxExp: 100, selected: false },
+        { id: '11', name: 'Saquon Barkley', team: 'NYG', position: 'RB', salary: 6800, projectedPoints: 16.8, minExp: 0, maxExp: 100, selected: false },
+        { id: '12', name: 'Mike Evans', team: 'TB', position: 'WR', salary: 7100, projectedPoints: 16.5, minExp: 0, maxExp: 100, selected: false },
+        { id: '13', name: 'Joe Burrow', team: 'CIN', position: 'QB', salary: 8100, projectedPoints: 23.8, minExp: 0, maxExp: 100, selected: false },
+        { id: '14', name: 'Ja\'Marr Chase', team: 'CIN', position: 'WR', salary: 7900, projectedPoints: 19.8, minExp: 0, maxExp: 100, selected: false },
+        { id: '15', name: 'Nick Chubb', team: 'CLE', position: 'RB', salary: 7400, projectedPoints: 17.9, minExp: 0, maxExp: 100, selected: false },
+        { id: '16', name: 'Amari Cooper', team: 'CLE', position: 'WR', salary: 6900, projectedPoints: 16.2, minExp: 0, maxExp: 100, selected: false },
+        { id: '17', name: 'Dak Prescott', team: 'DAL', position: 'QB', salary: 8000, projectedPoints: 23.5, minExp: 0, maxExp: 100, selected: false },
+        { id: '18', name: 'CeeDee Lamb', team: 'DAL', position: 'WR', salary: 8200, projectedPoints: 20.5, minExp: 0, maxExp: 100, selected: false },
+        { id: '19', name: 'Tony Pollard', team: 'DAL', position: 'RB', salary: 6500, projectedPoints: 15.8, minExp: 0, maxExp: 100, selected: false },
+        { id: '20', name: 'Russell Wilson', team: 'DEN', position: 'QB', salary: 7200, projectedPoints: 21.2, minExp: 0, maxExp: 100, selected: false },
+        { id: '21', name: 'Courtland Sutton', team: 'DEN', position: 'WR', salary: 6300, projectedPoints: 14.9, minExp: 0, maxExp: 100, selected: false },
+        { id: '22', name: 'Javonte Williams', team: 'DEN', position: 'RB', salary: 6100, projectedPoints: 14.2, minExp: 0, maxExp: 100, selected: false },
+        { id: '23', name: 'Jared Goff', team: 'DET', position: 'QB', salary: 6800, projectedPoints: 20.8, minExp: 0, maxExp: 100, selected: false },
+        { id: '24', name: 'Amon-Ra St. Brown', team: 'DET', position: 'WR', salary: 7700, projectedPoints: 18.6, minExp: 0, maxExp: 100, selected: false },
+        { id: '25', name: 'D\'Andre Swift', team: 'DET', position: 'RB', salary: 6400, projectedPoints: 15.1, minExp: 0, maxExp: 100, selected: false },
+      ],
+      selectedPlayers: [],
+      teamSelections: {
+        all: [],
+        2: [],
+        3: [],
+        4: [],
+        5: [],
+      },
+      stackSettings: [],
+      advancedQuantSettings: {},
+      results: [],
+      generatedCombinations: [],
+    }
+  ]);
+  const [activeBuildId, setActiveBuildId] = useState<string>('build-1');
+
+  // Get current build
+  const currentBuild = builds.find(build => build.id === activeBuildId) || builds[0];
+  const currentSport = currentBuild.sport;
   const sportConfig = SPORT_CONFIGS[currentSport];
   
-  const [activeTab, setActiveTab] = useState('team-combos'); // Set to team-combos for testing
-  const [playerData, setPlayerData] = useState<Player[]>([
-    { id: '1', name: 'Josh Allen', team: 'BUF', position: 'QB', salary: 8500, projectedPoints: 25.5, minExp: 0, maxExp: 100, selected: false },
-    { id: '2', name: 'Stefon Diggs', team: 'BUF', position: 'WR', salary: 7500, projectedPoints: 18.2, minExp: 0, maxExp: 100, selected: false },
-    { id: '3', name: 'Travis Kelce', team: 'KC', position: 'TE', salary: 7000, projectedPoints: 15.8, minExp: 0, maxExp: 100, selected: false },
-    { id: '4', name: 'Tyreek Hill', team: 'MIA', position: 'WR', salary: 8000, projectedPoints: 20.1, minExp: 0, maxExp: 100, selected: false },
-    { id: '5', name: 'Christian McCaffrey', team: 'SF', position: 'RB', salary: 9000, projectedPoints: 22.3, minExp: 0, maxExp: 100, selected: false },
-    { id: '6', name: 'Lamar Jackson', team: 'BAL', position: 'QB', salary: 8200, projectedPoints: 24.1, minExp: 0, maxExp: 100, selected: false },
-    { id: '7', name: 'Cooper Kupp', team: 'LAR', position: 'WR', salary: 7800, projectedPoints: 19.5, minExp: 0, maxExp: 100, selected: false },
-    { id: '8', name: 'Derrick Henry', team: 'TEN', position: 'RB', salary: 7200, projectedPoints: 18.7, minExp: 0, maxExp: 100, selected: false },
-    { id: '9', name: 'Davante Adams', team: 'LV', position: 'WR', salary: 7600, projectedPoints: 17.9, minExp: 0, maxExp: 100, selected: false },
-    { id: '10', name: 'Patrick Mahomes', team: 'KC', position: 'QB', salary: 8800, projectedPoints: 26.2, minExp: 0, maxExp: 100, selected: false },
-    { id: '11', name: 'Saquon Barkley', team: 'NYG', position: 'RB', salary: 6800, projectedPoints: 16.8, minExp: 0, maxExp: 100, selected: false },
-    { id: '12', name: 'Mike Evans', team: 'TB', position: 'WR', salary: 7100, projectedPoints: 16.5, minExp: 0, maxExp: 100, selected: false },
-    { id: '13', name: 'Joe Burrow', team: 'CIN', position: 'QB', salary: 8100, projectedPoints: 23.8, minExp: 0, maxExp: 100, selected: false },
-    { id: '14', name: 'Ja\'Marr Chase', team: 'CIN', position: 'WR', salary: 7900, projectedPoints: 19.8, minExp: 0, maxExp: 100, selected: false },
-    { id: '15', name: 'Nick Chubb', team: 'CLE', position: 'RB', salary: 7400, projectedPoints: 17.9, minExp: 0, maxExp: 100, selected: false },
-    { id: '16', name: 'Amari Cooper', team: 'CLE', position: 'WR', salary: 6900, projectedPoints: 16.2, minExp: 0, maxExp: 100, selected: false },
-    { id: '17', name: 'Dak Prescott', team: 'DAL', position: 'QB', salary: 8000, projectedPoints: 23.5, minExp: 0, maxExp: 100, selected: false },
-    { id: '18', name: 'CeeDee Lamb', team: 'DAL', position: 'WR', salary: 8200, projectedPoints: 20.5, minExp: 0, maxExp: 100, selected: false },
-    { id: '19', name: 'Tony Pollard', team: 'DAL', position: 'RB', salary: 6500, projectedPoints: 15.8, minExp: 0, maxExp: 100, selected: false },
-    { id: '20', name: 'Russell Wilson', team: 'DEN', position: 'QB', salary: 7200, projectedPoints: 21.2, minExp: 0, maxExp: 100, selected: false },
-    { id: '21', name: 'Courtland Sutton', team: 'DEN', position: 'WR', salary: 6300, projectedPoints: 14.9, minExp: 0, maxExp: 100, selected: false },
-    { id: '22', name: 'Javonte Williams', team: 'DEN', position: 'RB', salary: 6100, projectedPoints: 14.2, minExp: 0, maxExp: 100, selected: false },
-    { id: '23', name: 'Jared Goff', team: 'DET', position: 'QB', salary: 6800, projectedPoints: 20.8, minExp: 0, maxExp: 100, selected: false },
-    { id: '24', name: 'Amon-Ra St. Brown', team: 'DET', position: 'WR', salary: 7700, projectedPoints: 18.6, minExp: 0, maxExp: 100, selected: false },
-    { id: '25', name: 'D\'Andre Swift', team: 'DET', position: 'RB', salary: 6400, projectedPoints: 15.1, minExp: 0, maxExp: 100, selected: false },
-  ]);
-  const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
-  const [teamSelections, setTeamSelections] = useState<Record<number | 'all', string[]>>({
-    all: [],
-    2: [],
-    3: [],
-    4: [],
-    5: [],
-  });
+  // Build management functions
+  const addNewBuild = () => {
+    if (builds.length >= 5) return; // Max 5 builds
+    
+    const newBuildNumber = builds.length + 1;
+    const newBuild: BuildState = {
+      id: `build-${newBuildNumber}`,
+      name: `Build ${newBuildNumber}`,
+      sport: 'NFL',
+      activeTab: 'team-combos',
+      playerData: [],
+      selectedPlayers: [],
+      teamSelections: {
+        all: [],
+        2: [],
+        3: [],
+        4: [],
+        5: [],
+      },
+      stackSettings: [],
+      advancedQuantSettings: {},
+      results: [],
+      generatedCombinations: [],
+    };
+    
+    setBuilds(prev => [...prev, newBuild]);
+    setActiveBuildId(newBuild.id);
+  };
+
+  const removeBuild = (buildId: string) => {
+    if (builds.length <= 1) return; // Keep at least one build
+    
+    setBuilds(prev => {
+      const newBuilds = prev.filter(build => build.id !== buildId);
+      // If we're removing the active build, switch to the first remaining build
+      if (buildId === activeBuildId) {
+        setActiveBuildId(newBuilds[0].id);
+      }
+      return newBuilds;
+    });
+  };
+
+  const switchBuild = (buildId: string) => {
+    setActiveBuildId(buildId);
+  };
+
+  const updateCurrentBuild = (updates: Partial<BuildState>) => {
+    setBuilds(prev => prev.map(build => 
+      build.id === activeBuildId ? { ...build, ...updates } : build
+    ));
+  };
+
+  // Get current build data
+  const activeTab = currentBuild.activeTab;
+  const playerData = currentBuild.playerData;
+  const selectedPlayers = currentBuild.selectedPlayers;
+  const teamSelections = currentBuild.teamSelections;
+  const stackSettings = currentBuild.stackSettings;
+  const advancedQuantSettings = currentBuild.advancedQuantSettings;
+  const results = currentBuild.results;
+  const generatedCombinations = currentBuild.generatedCombinations;
   // Initialize stack settings based on sport
   const initializeStackSettings = (sport: Sport): StackType[] => {
     const config = SPORT_CONFIGS[sport];
@@ -1974,41 +2064,40 @@ const DFSOptimizer = React.memo(({ sport = 'NFL' }: DFSOptimizerProps) => {
     }));
   };
 
-  const [stackSettings, setStackSettings] = useState<StackType[]>(initializeStackSettings(currentSport));
-  
-  // Advanced Quant Settings
-  const [advancedQuantSettings, setAdvancedQuantSettings] = useState<AdvancedQuantSettings>({
-    enabled: false,
-    strategy: 'combined',
-    riskTolerance: 1.0,
-    varConfidence: 0.95,
-    targetVolatility: 0.15,
-    monteCarloSims: 10000,
-    timeHorizon: 1,
-    garchP: 1,
-    garchQ: 1,
-    lookbackPeriod: 100,
-    copulaFamily: 'gaussian',
-    dependencyThreshold: 0.3,
-    maxKellyFraction: 0.25,
-    expectedWinRate: 0.2,
-  });
+  // Initialize stack settings for current build if not set
+  useEffect(() => {
+    if (stackSettings.length === 0) {
+      updateCurrentBuild({ stackSettings: initializeStackSettings(currentSport) });
+    }
+  }, [currentSport]);
+
+  // Build state setters
+  const setActiveTab = (tab: string) => updateCurrentBuild({ activeTab: tab });
+  const setPlayerData = (data: Player[]) => updateCurrentBuild({ playerData: data });
+  const setSelectedPlayers = (players: string[]) => updateCurrentBuild({ selectedPlayers: players });
+  const setTeamSelections = (selections: Record<number | 'all', string[]>) => updateCurrentBuild({ teamSelections: selections });
+  const setStackSettings = (settings: StackType[]) => updateCurrentBuild({ stackSettings: settings });
+  const setAdvancedQuantSettings = (settings: any) => updateCurrentBuild({ advancedQuantSettings: settings });
+  const setResults = (newResults: any[]) => updateCurrentBuild({ results: newResults });
+  const setGeneratedCombinations = (combinations: any[]) => updateCurrentBuild({ generatedCombinations: combinations });
+
+  // Sport change handler
+  const handleSportChange = (newSport: Sport) => {
+    updateCurrentBuild({ 
+      sport: newSport,
+      stackSettings: initializeStackSettings(newSport),
+      playerData: [],
+      selectedPlayers: [],
+      results: [],
+      generatedCombinations: []
+    });
+  };
   
   // Optimization Settings
   const [numLineups, setNumLineups] = useState(100);
   const [minUnique, setMinUnique] = useState(3);
   const [minSalary, setMinSalary] = useState(sportConfig.defaultMinSalary);
   const [disableKelly, setDisableKelly] = useState(false);
-  
-  // Handle sport change from Dashboard header
-  useEffect(() => {
-    const newConfig = SPORT_CONFIGS[currentSport];
-    setMinSalary(newConfig.defaultMinSalary);
-    setStackSettings(initializeStackSettings(currentSport));
-    // Clear player data when switching sports
-    setPlayerData([]);
-    setSelectedPlayers([]);
-  }, [currentSport]);
   
   // Sorting
   const [sortMethod, setSortMethod] = useState('points');
@@ -2018,50 +2107,93 @@ const DFSOptimizer = React.memo(({ sport = 'NFL' }: DFSOptimizerProps) => {
   const [riskProfile, setRiskProfile] = useState('medium');
   const [enableRiskMgmt, setEnableRiskMgmt] = useState(false);
   
-  // Generated Teams
-  const [generatedTeams, setGeneratedTeams] = useState<any[]>([
-    {
-      id: '1',
-      name: 'BUF + KC Stack',
-      players: ['QB: Allen', 'WR: Diggs', 'TE: Kelce'],
-      type: 'stack'
-    },
-    {
-      id: '2', 
-      name: 'MIA + SF Stack',
-      players: ['WR: Hill', 'RB: McCaffrey'],
-      type: 'stack'
-    },
-    {
-      id: '3',
-      name: 'LAR + TEN Stack', 
-      players: ['WR: Kupp', 'RB: Henry'],
-      type: 'stack'
-    },
-    {
-      id: '4',
-      name: 'CIN + CLE Stack',
-      players: ['QB: Burrow', 'WR: Chase', 'RB: Chubb'],
-      type: 'stack'
-    },
-    {
-      id: '5',
-      name: 'DAL + DEN Stack',
-      players: ['QB: Prescott', 'WR: Lamb', 'QB: Wilson'],
-      type: 'stack'
-    }
-  ]);
+  // Generated Teams - Now connected to backend
+  const [generatedTeams, setGeneratedTeams] = useState<any[]>([]);
   
-  // Results - starts empty, filled by actual optimization
-  const [results, setResults] = useState<Array<{
-    id: string;
-    players: Array<{ name: string; position: string; team: string; salary: number }>;
-    points: number;
-    salary: number;
-  }>>([]);
+  // Optimization state
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isRunningCombinations, setIsRunningCombinations] = useState(false);
   const [dkEntriesLoaded, setDkEntriesLoaded] = useState(false);
+  
+  // Lineups state management
+  const [lineups, setLineups] = useState<Array<{
+    id: string;
+    players: Array<{
+      id: string;
+      name: string;
+      team: string;
+      position: string;
+      salary: number;
+      projection: number;
+      value: number;
+    }>;
+    totalSalary: number;
+    totalProjection: number;
+    value: number;
+    strategy: string;
+    stacks: Array<{
+      team: string;
+      players: number;
+      positions: string;
+      type: string;
+    }>;
+    timestamp: string;
+  }>>([]);
+  const [isLoadingLineups, setIsLoadingLineups] = useState(false);
+  
+  // Function to fetch lineups from backend
+  const fetchLineups = async () => {
+    setIsLoadingLineups(true);
+    try {
+      // First try to get lineups from local results state
+      if (results.length > 0) {
+        // Transform results to lineups format
+        const transformedLineups = results.map(result => ({
+          id: result.id,
+          players: result.players.map((p: any) => ({
+            id: `${p.name}_${p.position}`,
+            name: p.name,
+            team: p.team,
+            position: p.position,
+            salary: p.salary,
+            projection: p.projectedPoints || 0,
+            value: p.projectedPoints ? (p.projectedPoints / p.salary * 1000) : 0
+          })),
+          totalSalary: result.salary,
+          totalProjection: result.points,
+          value: result.points / result.salary * 1000,
+          strategy: 'Optimized',
+          stacks: [],
+          timestamp: new Date().toISOString()
+        }));
+        setLineups(transformedLineups);
+        setIsLoadingLineups(false);
+        return;
+      }
+
+      // If no local results, try to fetch from backend
+      const response = await fetch(`/api/lineups/${currentSport}`);
+      if (response.ok) {
+        const data = await response.json();
+        setLineups(data.lineups || []);
+      } else {
+        console.error('Failed to fetch lineups:', response.statusText);
+        setLineups([]);
+      }
+    } catch (error) {
+      console.error('Error fetching lineups:', error);
+      setLineups([]);
+    } finally {
+      setIsLoadingLineups(false);
+    }
+  };
+
+  // Fetch lineups when lineups tab is activated or when results change
+  useEffect(() => {
+    if (activeTab === 'lineups') {
+      fetchLineups();
+    }
+  }, [activeTab, currentSport, results]);
   
   // Resizable panels
   const [controlPanelWidth, setControlPanelWidth] = useState(426); // 1/3 wider than before
@@ -2074,6 +2206,7 @@ const DFSOptimizer = React.memo(({ sport = 'NFL' }: DFSOptimizerProps) => {
     { id: 'stack-exposure', label: 'Stack Exposure', icon: BarChart3 },
     { id: 'team-combos', label: 'Team Combinations', icon: Target },
     { id: 'advanced-quant', label: 'Advanced Quant', icon: Cpu },
+    { id: 'lineups', label: 'Generated Lineups', icon: Trophy },
     { id: 'my-entries', label: 'My Entries', icon: Star },
   ];
 
@@ -2201,9 +2334,11 @@ const DFSOptimizer = React.memo(({ sport = 'NFL' }: DFSOptimizerProps) => {
         }));
 
         setResults(transformedResults);
+        // Also update lineups state for the lineups tab
+        setLineups(result.lineups || []);
         
-        // Switch to My Entries tab to show results
-        setActiveTab('my-entries');
+        // Switch to Generated Lineups tab to show results
+        setActiveTab('lineups');
         
         alert(`✅ Generated ${transformedResults.length} optimal lineups!\nAvg Projection: ${result.summary.avgProjection.toFixed(1)} pts`);
       } else {
@@ -2217,7 +2352,7 @@ const DFSOptimizer = React.memo(({ sport = 'NFL' }: DFSOptimizerProps) => {
     }
   };
 
-  const handleRunCombinations = () => {
+  const handleRunCombinations = async () => {
     if (generatedTeams.length === 0) {
       alert('No teams available to run combinations. Generate teams first.');
       return;
@@ -2226,12 +2361,101 @@ const DFSOptimizer = React.memo(({ sport = 'NFL' }: DFSOptimizerProps) => {
     setIsRunningCombinations(true);
     console.log('Running combinations for teams:', generatedTeams);
     
-    // TODO: Call backend API to run combinations
-    setTimeout(() => {
+    try {
+      // Call backend API to run combinations
+      const response = await fetch('/api/optimize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sport: currentSport,
+          numLineups: 5, // Generate 5 lineups from combinations
+          minSalary: minSalary,
+          maxSalary: 50000,
+          stackSettings: {
+            enabled: true,
+            teams: generatedTeams.map(team => team.team || team.name.split(' ')[0]), // Extract team names
+            types: ['QB + WR', 'QB + 2 WR', 'Game Stack']
+          },
+          players: playerData.filter(p => p.selected)
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Combinations complete:', data);
+      
+      // Update results with backend-generated lineups
+      if (data.lineups && data.lineups.length > 0) {
+        setResults(data.lineups);
+        // Also update lineups state for the lineups tab
+        setLineups(data.lineups);
+        // Switch to Generated Lineups tab to show results
+        setActiveTab('lineups');
+        console.log(`✅ Generated ${data.lineups.length} lineups from backend`);
+      }
+      
+    } catch (error) {
+      console.error('Error running combinations:', error);
+      alert('Failed to run combinations. Please try again.');
+    } finally {
       setIsRunningCombinations(false);
-      console.log('Combinations complete');
-      // TODO: Update results with combination lineups
-    }, 2000);
+    }
+  };
+
+  // Function to generate teams from backend
+  const handleGenerateTeams = async () => {
+    if (playerData.length === 0) {
+      alert('Please load player data first.');
+      return;
+    }
+    
+    try {
+      // Call backend to generate team combinations
+      const response = await fetch('/api/generate-teams', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sport: currentSport,
+          players: playerData.filter(p => p.selected),
+          numTeams: 5
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Generated teams:', data);
+      
+      // Update generated teams with backend data
+      if (data.teams && data.teams.length > 0) {
+        setGeneratedTeams(data.teams);
+        console.log(`✅ Generated ${data.teams.length} teams from backend`);
+      }
+      
+    } catch (error) {
+      console.error('Error generating teams:', error);
+      // Fallback: Create teams from selected players
+      const selectedPlayers = playerData.filter(p => p.selected);
+      const teams = [...new Set(selectedPlayers.map(p => p.team))].slice(0, 5);
+      const generatedTeams = teams.map((team, index) => ({
+        id: `team_${index + 1}`,
+        name: `${team} Stack`,
+        team: team,
+        players: selectedPlayers.filter(p => p.team === team).map(p => `${p.position}: ${p.name}`),
+        type: 'stack'
+      }));
+      setGeneratedTeams(generatedTeams);
+      console.log(`✅ Generated ${generatedTeams.length} fallback teams`);
+    }
   };
 
   // Function to update generated teams (called by backend)
@@ -2291,11 +2515,52 @@ const DFSOptimizer = React.memo(({ sport = 'NFL' }: DFSOptimizerProps) => {
 
   return (
     <div className="h-full w-full flex p-2">
-      {/* MAIN CONTENT AREA - Desktop-Style Tabs (matches PyQt x.py) */}
-      <div 
-        className="bg-slate-900 border border-slate-700 overflow-hidden flex flex-col"
-        style={{ width: `calc(100% - ${controlPanelWidth}px - 8px)` }}
-      >
+      {/* DFS OPTIMIZER CONTAINER - Thin Black Border */}
+      <div className="border border-black flex flex-1">
+        {/* MAIN CONTENT AREA - Desktop-Style Tabs (matches PyQt x.py) */}
+        <div 
+          className="bg-slate-900 border border-slate-700 overflow-hidden flex flex-col"
+          style={{ width: `calc(100% - ${controlPanelWidth}px - 8px)` }}
+        >
+          {/* Build Tabs Row - Browser Style */}
+          <div className="bg-slate-800 border-b border-slate-700 flex items-center px-2 py-1">
+            <div className="flex items-center gap-1">
+              {builds.map((build) => (
+                <div
+                  key={build.id}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-t-lg text-sm cursor-pointer transition-colors ${
+                    build.id === activeBuildId
+                      ? 'bg-slate-900 text-cyan-400 border-b-2 border-cyan-400'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+                  onClick={() => switchBuild(build.id)}
+                >
+                  <span className="font-medium">{build.name}</span>
+                  {builds.length > 1 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeBuild(build.id);
+                      }}
+                      className="ml-1 hover:text-red-400 transition-colors"
+                    >
+                      <XSquare className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {builds.length < 5 && (
+                <button
+                  onClick={addNewBuild}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-t-lg text-sm bg-slate-700 text-slate-300 hover:bg-slate-600 transition-colors"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>New Build</span>
+                </button>
+              )}
+            </div>
+          </div>
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col h-full">
             {/* Tab Headers - Desktop Style */}
             <TabsList className="bg-slate-800 border-b border-slate-700 w-full rounded-none h-auto flex flex-nowrap">
@@ -2358,6 +2623,50 @@ const DFSOptimizer = React.memo(({ sport = 'NFL' }: DFSOptimizerProps) => {
                 />
               </TabsContent>
 
+              {/* Generated Lineups Tab */}
+              <TabsContent value="lineups" className="mt-0 h-full overflow-auto">
+                <LineupsTab
+                  sport={currentSport}
+                  lineups={lineups}
+                  isLoading={isLoadingLineups}
+                  onExportLineups={async (format) => {
+                    try {
+                      const response = await fetch(`/api/export/${format}?sport=${currentSport}`);
+                      if (response.ok) {
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${currentSport.toLowerCase()}_lineups.${format === 'draftkings' ? 'csv' : 'csv'}`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                      }
+                    } catch (error) {
+                      console.error('Export failed:', error);
+                    }
+                  }}
+                  onSaveFavorite={async (lineup) => {
+                    try {
+                      const response = await fetch('/api/favorites', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                          lineup, 
+                          name: `${currentSport} Lineup ${lineup.id.slice(0, 8)}` 
+                        })
+                      });
+                      if (response.ok) {
+                        console.log('Favorite saved successfully');
+                      }
+                    } catch (error) {
+                      console.error('Save favorite failed:', error);
+                    }
+                  }}
+                />
+              </TabsContent>
+
               {/* My Entries Tab */}
               <TabsContent value="my-entries" className="mt-0 h-full overflow-auto">
                 <MyEntriesTab results={results} sport={currentSport} />
@@ -2405,18 +2714,27 @@ const DFSOptimizer = React.memo(({ sport = 'NFL' }: DFSOptimizerProps) => {
             {/* Collapsible Content */}
             {!isControlPanelCollapsed && (
             <div className="space-y-3 px-2">
-            {/* Sport Info - Display Only */}
+            {/* Sport Selector - Interactive */}
             <div className="border-2 rounded-lg p-3" style={{ borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.15)' }}>
-              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2 mb-2" style={{ color: '#f59e0b', borderColor: '#f59e0b' }}>Current Sport</h4>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-white">
-                  {currentSport === 'NFL' ? '🏈 NFL' : currentSport === 'NBA' ? '🏀 NBA' : '⚾ MLB'}
+              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2 mb-2" style={{ color: '#f59e0b', borderColor: '#f59e0b' }}>Select Sport</h4>
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  {(['NFL', 'NBA', 'MLB'] as Sport[]).map((sport) => (
+                    <button
+                      key={sport}
+                      onClick={() => handleSportChange(sport)}
+                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-bold transition-all ${
+                        currentSport === sport
+                          ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30 border-2 border-cyan-400'
+                          : 'bg-slate-700/40 text-slate-300 border-2 border-slate-600/30 hover:bg-slate-700 hover:border-cyan-500/50 hover:text-white'
+                      }`}
+                    >
+                      {sport === 'NFL' ? '🏈 NFL' : sport === 'NBA' ? '🏀 NBA' : '⚾ MLB'}
+                    </button>
+                  ))}
                 </div>
-                <div className="text-[10px] text-slate-300 mt-1">
+                <div className="text-[10px] text-slate-300 text-center mt-2">
                   {sportConfig.salaryCapDescription}
-                </div>
-                <div className="text-[9px] text-cyan-400 mt-1 italic">
-                  Change sport using header tabs
                 </div>
               </div>
             </div>
@@ -2641,6 +2959,20 @@ const DFSOptimizer = React.memo(({ sport = 'NFL' }: DFSOptimizerProps) => {
             <div className="border-2 rounded-lg p-3 space-y-2" style={{ borderColor: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.15)' }}>
               <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#38bdf8', borderColor: '#38bdf8' }}>Generated Teams</h4>
               
+              {/* Generate Teams Button */}
+              <div className="mb-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-green-400/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-2 transition-none"
+                  onClick={handleGenerateTeams}
+                  disabled={playerData.length === 0 || isOptimizing}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Generate Teams
+                </Button>
+              </div>
+
               {/* Run Combinations Button */}
               <div>
                 <Button
@@ -2753,6 +3085,7 @@ const DFSOptimizer = React.memo(({ sport = 'NFL' }: DFSOptimizerProps) => {
             )}
           </div>
         </div>
+      </div>
       </div>
   );
 });

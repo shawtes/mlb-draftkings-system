@@ -30,7 +30,7 @@ try:
     def safe_log_warning(msg): return safe_log_warning_func(msg)
     def safe_log_error(msg): return safe_log_error_func(msg)
     SAFE_LOGGING_AVAILABLE = True
-    print("✅ Windows-safe logging loaded successfully!")
+    print("[SUCCESS] Windows-safe logging loaded successfully!")
 except ImportError as e:
     print(f"⚠️ Safe logging not available: {e}")
     SAFE_LOGGING_AVAILABLE = False

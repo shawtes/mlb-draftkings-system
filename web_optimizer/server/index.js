@@ -104,8 +104,17 @@ app.post('/api/upload-players', upload.single('playersFile'), (req, res) => {
         let projectionValue = 0;
         let projectionSource = 'none';
         
-        // Simple projection field checking
-        if (data.My_Proj && !isNaN(parseFloat(data.My_Proj))) {
+        // Enhanced projection field checking with more column names
+        if (data.Predicted_DK_Points && !isNaN(parseFloat(data.Predicted_DK_Points))) {
+          projectionValue = parseFloat(data.Predicted_DK_Points);
+          projectionSource = 'Predicted_DK_Points';
+        } else if (data.Adjusted_Projection && !isNaN(parseFloat(data.Adjusted_Projection))) {
+          projectionValue = parseFloat(data.Adjusted_Projection);
+          projectionSource = 'Adjusted_Projection';
+        } else if (data.AvgPointsPerGame && !isNaN(parseFloat(data.AvgPointsPerGame))) {
+          projectionValue = parseFloat(data.AvgPointsPerGame);
+          projectionSource = 'AvgPointsPerGame';
+        } else if (data.My_Proj && !isNaN(parseFloat(data.My_Proj))) {
           projectionValue = parseFloat(data.My_Proj);
           projectionSource = 'My_Proj';
         } else if (data.PPG_Projection && !isNaN(parseFloat(data.PPG_Projection))) {
@@ -164,6 +173,13 @@ app.post('/api/upload-players', upload.single('playersFile'), (req, res) => {
           minExposure: 0,
           maxExposure: 100
         };
+        
+        // Special handling for DST positions - ensure they're recognized and selected
+        if (player.position && (player.position.includes('DST') || player.position.includes('Defense') || player.position.includes('D/ST'))) {
+          player.position = 'DST';
+          player.selected = true; // Auto-select DST players
+          console.log(`✅ DST player auto-selected: ${player.name} (${player.position})`);
+        }
         
         // Calculate value (points per $1000) as a number
         if (player.salary > 0 && player.projection > 0) {
@@ -245,7 +261,7 @@ app.post('/api/upload-players', upload.single('playersFile'), (req, res) => {
     })
     .on('error', (error) => {
       console.error('CSV parsing error:', error);
-      res.status(500).json({ error: 'Error parsing CSV file' });
+      res.status(500).json({ error: 'Error parsing CSV file. Please check that your CSV has proper headers and data format.' });
     });
 });
 
@@ -509,6 +525,50 @@ app.get('/api/results', (req, res) => {
   res.json({
     lineups: optimizationResults,
     count: optimizationResults.length
+  });
+});
+
+// Get lineups by sport
+app.get('/api/lineups/:sport', (req, res) => {
+  const { sport } = req.params;
+  const { format = 'full' } = req.query;
+  
+  if (!['MLB', 'NFL'].includes(sport.toUpperCase())) {
+    return res.status(400).json({ error: 'Invalid sport. Must be MLB or NFL' });
+  }
+  
+  // Return optimization results if available
+  let filteredLineups = optimizationResults || [];
+  
+  // Format lineups based on request
+  if (format === 'summary') {
+    filteredLineups = optimizationResults.map(lineup => ({
+      id: lineup.id,
+      totalSalary: lineup.totalSalary,
+      totalProjection: lineup.totalProjection,
+      value: lineup.totalProjection / lineup.totalSalary * 1000,
+      strategy: lineup.strategy || 'Unknown',
+      playerCount: lineup.players.length,
+      stacks: lineup.stacks || [],
+      timestamp: lineup.timestamp
+    }));
+  }
+  
+  res.json({
+    sport: sport.toUpperCase(),
+    lineups: filteredLineups,
+    count: filteredLineups.length,
+    summary: {
+      avgProjection: filteredLineups.length > 0 
+        ? filteredLineups.reduce((sum, l) => sum + l.totalProjection, 0) / filteredLineups.length 
+        : 0,
+      avgSalary: filteredLineups.length > 0 
+        ? filteredLineups.reduce((sum, l) => sum + l.totalSalary, 0) / filteredLineups.length 
+        : 0,
+      avgValue: filteredLineups.length > 0 
+        ? filteredLineups.reduce((sum, l) => sum + (l.totalProjection / l.totalSalary * 1000), 0) / filteredLineups.length 
+        : 0
+    }
   });
 });
 

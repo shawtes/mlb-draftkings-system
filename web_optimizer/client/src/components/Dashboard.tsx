@@ -57,7 +57,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       case 'dfs-optimizer':
         return (
           <Suspense fallback={<DashboardLoader />}>
-            <DFSOptimizer sport={selectedSport} />
+            <DFSOptimizer />
           </Suspense>
         );
       case 'how-to-use':
@@ -162,7 +162,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           </div>
         </div>
 
-        {/* Middle Header Section - Sport Selection Tabs */}
+        {/* Middle Header Section - Sport Selection Tabs (Only for Prop Betting) */}
+        {activeView === 'prop-betting' && (
         <div className="px-8 py-6 border-b border-slate-700/30" style={{ backgroundColor: '#334155' }}>
           <div className="flex items-center justify-between">
             {/* Left: Sport Tabs */}
@@ -215,6 +216,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </div>
           </div>
         </div>
+        )}
 
         {/* Navigation Menu Bar */}
         <nav className="px-8 py-3">

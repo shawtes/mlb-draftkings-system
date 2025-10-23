@@ -29,7 +29,7 @@ interface PropBettingCenterProps {
 }
 
 export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
-  const [props, setProps] = useState<PropBet[]>([]);
+  const [propBets, setPropBets] = useState<PropBet[]>([]);
   const [selections, setSelections] = useState<BetSelection[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,11 +46,11 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
       const data = await bettingApi.getProps(sport, {
         minEdge: minEdge[0],
       });
-      setProps(data);
+      setPropBets(data);
     } catch (error) {
       console.error('Error loading props:', error);
       // Use mock data
-      setProps(mockProps);
+      setPropBets(mockProps);
     } finally {
       setLoading(false);
     }
@@ -92,13 +92,13 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
     setSelections(selections.filter(s => s.id !== id));
   };
 
-  const filteredProps = props.filter(prop => {
+  const filteredProps = Array.isArray(propBets) ? propBets.filter(prop => {
     const matchesSearch = prop.player.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           prop.team.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesEdge = !prop.edge || prop.edge >= minEdge[0];
     const matchesType = propTypeFilter === 'all' || prop.prop.toLowerCase().includes(propTypeFilter.toLowerCase());
     return matchesSearch && matchesEdge && matchesType;
-  });
+  }) : [];
 
   return (
     <div className="h-full overflow-auto p-6">
