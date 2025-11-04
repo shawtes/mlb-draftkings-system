@@ -1,0 +1,6 @@
+fopen_example.c reads from a regular file using fopen/fgets/fclose; it operates on filesystem data.
+popen_example.c executes a shell command using popen and reads the command's output with fgets, closing with pclose; it operates on process output.
+The main differences are the source of input (file vs process), the open/close functions used (fopen/fclose vs popen/pclose), and error handling around command execution.
+These differences match expectations: APIs are similar in usage but target different I/O sources.
+
+

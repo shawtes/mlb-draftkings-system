@@ -1,0 +1,5 @@
+Initial directory is /Users/sineshawmesfintesfaye/mlb-draftkings-system/hw3
+13416 .
+6416 ./usd
+1252 ./system
+The rest use 5748

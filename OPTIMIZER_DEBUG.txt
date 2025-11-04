@@ -1,0 +1,15 @@
+================================================================================
+🚨 OPTIMIZER DEBUG OUTPUT
+================================================================================
+Total players selected: 54
+Selected players: ['Keaton Wallace', 'KJ Simpson', 'Josh Giddey', 'Tyrese Maxey', 'Jordan Poole', 'Immanuel Quickley', 'Collin Sexton', 'Quentin Grimes', 'Ryan Rollins', 'Tre Jones', 'Jeremiah Fears', 'Nickeil Alexander-Walker', 'Jalen Suggs', 'Cole Anthony', 'Luke Kennard', 'Tre Mann', 'Jose Alvarado', 'Jamal Shead', 'Tyus Jones', 'Jared McCain', "Ja'Kobe Walter", 'Pat Connaughton', 'Jordan Hawkins', 'Ochai Agbaji', 'Amir Coffey', 'RJ Barrett', 'Trey Murphy III', 'Desmond Bane', 'Dyson Daniels', 'VJ Edgecombe', 'Kon Knueppel', 'Ayo Dosunmu', 'Sion James', 'Anthony Black', 'Kevin Huerter', 'AJ Green', 'Gradey Dick', 'Franz Wagner', 'Scottie Barnes', 'Paolo Banchero', 'Jalen Johnson', 'Onyeka Okongwu', 'Kristaps Porzingis', 'Myles Turner', 'Ryan Kalkbrenner', 'Wendell Carter Jr.', 'Jakob Poeltl', 'Jalen Smith', 'Kevon Looney', 'Sandro Mamukelashvili', 'Goga Bitadze', 'Adem Bona', 'Andre Drummond', 'DeAndre Jordan']
+================================================================================
+
+================================================================================
+🔧 WORKER PREPROCESSING DATA
+================================================================================
+Total players in dataframe: 79
+Included players received by worker: ['Keaton Wallace', 'KJ Simpson', 'Josh Giddey', 'Tyrese Maxey', 'Jordan Poole', 'Immanuel Quickley', 'Collin Sexton', 'Quentin Grimes', 'Ryan Rollins', 'Tre Jones', 'Jeremiah Fears', 'Nickeil Alexander-Walker', 'Jalen Suggs', 'Cole Anthony', 'Luke Kennard', 'Tre Mann', 'Jose Alvarado', 'Jamal Shead', 'Tyus Jones', 'Jared McCain', "Ja'Kobe Walter", 'Pat Connaughton', 'Jordan Hawkins', 'Ochai Agbaji', 'Amir Coffey', 'RJ Barrett', 'Trey Murphy III', 'Desmond Bane', 'Dyson Daniels', 'VJ Edgecombe', 'Kon Knueppel', 'Ayo Dosunmu', 'Sion James', 'Anthony Black', 'Kevin Huerter', 'AJ Green', 'Gradey Dick', 'Franz Wagner', 'Scottie Barnes', 'Paolo Banchero', 'Jalen Johnson', 'Onyeka Okongwu', 'Kristaps Porzingis', 'Myles Turner', 'Ryan Kalkbrenner', 'Wendell Carter Jr.', 'Jakob Poeltl', 'Jalen Smith', 'Kevon Looney', 'Sandro Mamukelashvili', 'Goga Bitadze', 'Adem Bona', 'Andre Drummond', 'DeAndre Jordan']
+Number of included players: 54
+Type of included_players: <class 'list'>
+================================================================================
