@@ -3,19 +3,13 @@ import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Slider } from './ui/slider';
 import { 
-  TrendingUp, 
   Target, 
-  Plus, 
   Flame, 
   Filter,
   Search,
-  Activity,
-  Star,
   ArrowUp,
   ArrowDown,
   Minus
@@ -31,7 +25,6 @@ interface PropBettingCenterProps {
 export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
   const [propBets, setPropBets] = useState<PropBet[]>([]);
   const [selections, setSelections] = useState<BetSelection[]>([]);
-  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [minEdge, setMinEdge] = useState([0]);
   const [propTypeFilter, setPropTypeFilter] = useState('all');
@@ -41,7 +34,6 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
   }, [sport]);
 
   const loadProps = async () => {
-    setLoading(true);
     try {
       const data = await bettingApi.getProps(sport, {
         minEdge: minEdge[0],
@@ -51,8 +43,6 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
       console.error('Error loading props:', error);
       // Use mock data
       setPropBets(mockProps);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -101,17 +91,17 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
   }) : [];
 
   return (
-    <div className="h-full overflow-auto p-6">
-      {/* Main Card Container */}
-      <div className="bg-slate-800 backdrop-blur-sm rounded-2xl border border-cyan-500/20 shadow-2xl relative overflow-hidden min-h-full flex flex-col">
-        
+    <div className="flex min-h-full w-full flex-col bg-slate-900 text-white">
+      {/* Main Container */}
+      <div className="flex flex-1 flex-col w-full">
+
         {/* Content */}
-        <div className="relative z-10 flex flex-col h-full p-6">
+        <div className="relative z-10 flex flex-1 flex-col p-6 overflow-auto">
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent leading-tight pb-1">
                 Prop Betting Center
               </h1>
               <p className="text-white">Find edges, build parlays, and maximize value</p>
@@ -167,7 +157,7 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
         {/* Main Content - Side by Side */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 overflow-hidden">
           {/* Props List - 2/3 width */}
-          <div className="lg:col-span-2 overflow-auto space-y-3">
+          <div className="lg:col-span-2 overflow-auto space-y-3 pr-1">
             {filteredProps.map((prop) => (
               <Card key={prop.id} className="p-4 bg-black/60 border-cyan-500/20 hover:bg-black/80 transition-all">
                 <div className="flex items-start justify-between mb-3">
@@ -267,7 +257,7 @@ export default function PropBettingCenter({ sport }: PropBettingCenterProps) {
           </div>
 
           {/* Betting Slip - 1/3 width */}
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-1 flex flex-col overflow-auto">
             <BettingSlip
               selections={selections}
               onRemove={removeFromBetSlip}

@@ -164,3 +164,6 @@ const [propBets, setPropBets] = useState<PropBet[]>([]);
 **The props.filter error has been completely resolved!** 🎉
 
 The application should now load without any filter-related errors.
+
+
+

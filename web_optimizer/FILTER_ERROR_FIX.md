@@ -159,3 +159,6 @@ const filtered = data?.filter(item => ...) || [];
 **The filter error has been completely resolved!** 🎉
 
 The application should now load without any `props.filter is not a function` errors.
+
+
+

@@ -1,46 +1,109 @@
 import axios from 'axios';
-import type { Player, LineupResult, OptimizationSettings } from '../types/dfs-types';
 
 const API_BASE_URL = '/api';
 
+export interface BulkUpdatePlayersPayload {
+  action: 'select' | 'deselect' | 'update_exposure';
+  filters?: {
+    position?: string;
+    team?: string;
+    salaryMin?: number;
+    salaryMax?: number;
+  };
+  settings?: {
+    minExposure?: number;
+    maxExposure?: number;
+  };
+}
+
+export interface OptimizeRequest {
+  sport: 'MLB' | 'NFL' | 'NBA';
+  numLineups: number;
+  minSalary: number;
+  maxSalary: number;
+  stackSettings: {
+    enabled: boolean;
+    teams: string[];
+    minPlayersPerTeam?: number;
+    maxPlayersPerTeam?: number;
+  };
+  uniquePlayers: number;
+  maxExposure: number;
+  sortingMethod?: string;
+  minUniquePlayersBetweenLineups?: number;
+  enableRiskManagement?: boolean;
+  disableKellySizing?: boolean;
+  stackTypes?: Record<string, boolean>;
+  exposureSettings?: Record<string, { min: number; max: number }>;
+  riskTolerance?: string;
+  bankroll?: number;
+  contestMode?: string;
+  monteCarloIterations?: number;
+}
+
+export interface OptimizeResponse {
+  success: boolean;
+  sport: string;
+  optimizationId: string;
+  lineups: any[];
+  error?: string;
+  summary: {
+    totalLineups: number;
+    avgProjection: number;
+    avgSalary: number;
+    topProjection: number;
+    strategies: string[];
+  };
+}
+
 // Player endpoints
-export const uploadPlayers = async (file: File) => {
+const uploadPlayers = async (file: File) => {
   const formData = new FormData();
-  formData.append('playersFile', file); // Backend expects 'playersFile'
+  formData.append('playersFile', file);
   const response = await axios.post(`${API_BASE_URL}/upload-players`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return response.data;
 };
 
-export const getPlayers = async (): Promise<Player[]> => {
+const getPlayers = async () => {
   const response = await axios.get(`${API_BASE_URL}/players`);
   return response.data;
 };
 
-export const updatePlayer = async (playerId: string, updates: Partial<Player>) => {
-  const response = await axios.patch(`${API_BASE_URL}/players/${playerId}`, updates);
+const updatePlayer = async (playerId: string, updates: Record<string, unknown>) => {
+  const response = await axios.put(`${API_BASE_URL}/players/${playerId}`, updates);
+  return response.data;
+};
+
+const bulkUpdatePlayers = async (payload: BulkUpdatePlayersPayload) => {
+  const response = await axios.put(`${API_BASE_URL}/players/bulk`, payload);
+  return response.data;
+};
+
+const setSport = async (sport: 'MLB' | 'NFL' | 'NBA') => {
+  const response = await axios.post(`${API_BASE_URL}/set-sport`, { sport });
   return response.data;
 };
 
 // Optimization endpoints
-export const optimizeLineups = async (settings: OptimizationSettings): Promise<LineupResult[]> => {
+const optimizeLineups = async (settings: OptimizeRequest): Promise<OptimizeResponse> => {
   const response = await axios.post(`${API_BASE_URL}/optimize`, settings);
   return response.data;
 };
 
-export const getOptimizationStatus = async () => {
+const getOptimizationStatus = async () => {
   const response = await axios.get(`${API_BASE_URL}/optimize/status`);
   return response.data;
 };
 
-export const cancelOptimization = async () => {
+const cancelOptimization = async () => {
   const response = await axios.post(`${API_BASE_URL}/optimize/cancel`);
   return response.data;
 };
 
 // Export endpoints
-export const exportLineups = async (lineups: LineupResult[], format: 'csv' | 'draftkings' | 'fanduel') => {
+const exportLineups = async (lineups: any[], format: 'csv' | 'draftkings' | 'fanduel') => {
   const response = await axios.post(`${API_BASE_URL}/export/${format}`, { lineups }, {
     responseType: 'blob',
   });
@@ -48,12 +111,12 @@ export const exportLineups = async (lineups: LineupResult[], format: 'csv' | 'dr
 };
 
 // Projection endpoints
-export const getProjections = async (sport: string) => {
+const getProjections = async (sport: string) => {
   const response = await axios.get(`${API_BASE_URL}/projections/${sport}`);
   return response.data;
 };
 
-export const uploadProjections = async (file: File, sport: string) => {
+const uploadProjections = async (file: File, sport: string) => {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('sport', sport);
@@ -63,37 +126,30 @@ export const uploadProjections = async (file: File, sport: string) => {
   return response.data;
 };
 
-// Bulk update players
-export const bulkUpdatePlayers = async (updates: Array<{ id: string; updates: Partial<Player> }>) => {
-  const response = await axios.put(`${API_BASE_URL}/players/bulk`, { updates });
-  return response.data;
-};
-
-// Get teams
-export const getTeams = async (): Promise<string[]> => {
+const getTeams = async (): Promise<string[]> => {
   const response = await axios.get(`${API_BASE_URL}/teams`);
   return response.data;
 };
 
 // Favorites endpoints
-export const saveFavorites = async (name: string, playerIds: string[]) => {
+const saveFavorites = async (name: string, playerIds: string[]) => {
   const response = await axios.post(`${API_BASE_URL}/favorites`, { name, playerIds });
   return response.data;
 };
 
-export const getFavorites = async () => {
+const getFavorites = async () => {
   const response = await axios.get(`${API_BASE_URL}/favorites`);
   return response.data;
 };
 
 // Get contest formats
-export const getContestFormats = async () => {
+const getContestFormats = async () => {
   const response = await axios.get(`${API_BASE_URL}/contest-formats`);
   return response.data;
 };
 
 // Stack analysis
-export const getStackAnalysis = async (teamStacks: any[], players: Player[]) => {
+const getStackAnalysis = async (teamStacks: any[], players: any[]) => {
   const response = await axios.get(`${API_BASE_URL}/stack-analysis`, {
     params: { teamStacks: JSON.stringify(teamStacks), players: JSON.stringify(players) },
   });
@@ -101,13 +157,13 @@ export const getStackAnalysis = async (teamStacks: any[], players: Player[]) => 
 };
 
 // Get results
-export const getResults = async (): Promise<LineupResult[]> => {
+const getResults = async () => {
   const response = await axios.get(`${API_BASE_URL}/results`);
   return response.data;
 };
 
 // Advanced export with custom settings
-export const advancedExport = async (lineups: LineupResult[], options: {
+const advancedExport = async (lineups: any[], options: {
   format: string;
   includeProjections?: boolean;
   includeOwnership?: boolean;
@@ -123,17 +179,15 @@ export const advancedExport = async (lineups: LineupResult[], options: {
 };
 
 // Error handling wrapper
-export const handleApiError = (error: any) => {
+const handleApiError = (error: unknown) => {
   if (axios.isAxiosError(error)) {
     if (error.response) {
-      // Server responded with error status
       console.error('API Error:', error.response.status, error.response.data);
       return {
         message: error.response.data.message || 'An error occurred',
         status: error.response.status,
       };
     } else if (error.request) {
-      // Request made but no response
       console.error('Network Error:', error.request);
       return {
         message: 'Network error - please check your connection',
@@ -153,6 +207,7 @@ export const dfsApi = {
   getPlayers,
   updatePlayer,
   bulkUpdatePlayers,
+  setSport,
   optimizeLineups,
   getOptimizationStatus,
   cancelOptimization,
@@ -168,5 +223,3 @@ export const dfsApi = {
   getResults,
   handleApiError,
 };
-
-

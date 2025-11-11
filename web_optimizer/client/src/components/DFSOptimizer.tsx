@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -6,9 +6,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
-import { Users, Link2, BarChart3, Target, Cpu, Star, Upload, Play, Save, Settings, FileText, Download, Plus, CheckSquare, XSquare, ChevronDown, ChevronUp, Trophy } from 'lucide-react';
+import { Users, Link2, BarChart3, Target, Cpu, Star, Upload, Play, Save, FileText, Download, Plus, CheckSquare, XSquare, Trophy } from 'lucide-react';
 import { Sport, SPORT_CONFIGS, getPositionFilters, filterPlayersByPosition, getPositionCount } from './sport-config';
 import LineupsTab from './LineupsTab';
+import { dfsApi } from '../services/dfs-api';
 
 // Player data interface
 interface Player {
@@ -1930,76 +1931,19 @@ interface BuildState {
   stackSettings: StackType[];
   advancedQuantSettings: any;
   results: any[];
-  generatedCombinations: any[];
 }
 
-interface DFSOptimizerProps {}
+interface DFSOptimizerProps {
+  sport: 'NFL' | 'NBA' | 'MLB';
+}
 
-const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
+const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
   // Build management state
   const [builds, setBuilds] = useState<BuildState[]>([
     {
       id: 'build-1',
       name: 'Build 1',
-      sport: 'NFL',
-      activeTab: 'team-combos',
-      playerData: [
-        { id: '1', name: 'Josh Allen', team: 'BUF', position: 'QB', salary: 8500, projectedPoints: 25.5, minExp: 0, maxExp: 100, selected: false },
-        { id: '2', name: 'Stefon Diggs', team: 'BUF', position: 'WR', salary: 7500, projectedPoints: 18.2, minExp: 0, maxExp: 100, selected: false },
-        { id: '3', name: 'Travis Kelce', team: 'KC', position: 'TE', salary: 7000, projectedPoints: 15.8, minExp: 0, maxExp: 100, selected: false },
-        { id: '4', name: 'Tyreek Hill', team: 'MIA', position: 'WR', salary: 8000, projectedPoints: 20.1, minExp: 0, maxExp: 100, selected: false },
-        { id: '5', name: 'Christian McCaffrey', team: 'SF', position: 'RB', salary: 9000, projectedPoints: 22.3, minExp: 0, maxExp: 100, selected: false },
-        { id: '6', name: 'Lamar Jackson', team: 'BAL', position: 'QB', salary: 8200, projectedPoints: 24.1, minExp: 0, maxExp: 100, selected: false },
-        { id: '7', name: 'Cooper Kupp', team: 'LAR', position: 'WR', salary: 7800, projectedPoints: 19.5, minExp: 0, maxExp: 100, selected: false },
-        { id: '8', name: 'Derrick Henry', team: 'TEN', position: 'RB', salary: 7200, projectedPoints: 18.7, minExp: 0, maxExp: 100, selected: false },
-        { id: '9', name: 'Davante Adams', team: 'LV', position: 'WR', salary: 7600, projectedPoints: 17.9, minExp: 0, maxExp: 100, selected: false },
-        { id: '10', name: 'Patrick Mahomes', team: 'KC', position: 'QB', salary: 8800, projectedPoints: 26.2, minExp: 0, maxExp: 100, selected: false },
-        { id: '11', name: 'Saquon Barkley', team: 'NYG', position: 'RB', salary: 6800, projectedPoints: 16.8, minExp: 0, maxExp: 100, selected: false },
-        { id: '12', name: 'Mike Evans', team: 'TB', position: 'WR', salary: 7100, projectedPoints: 16.5, minExp: 0, maxExp: 100, selected: false },
-        { id: '13', name: 'Joe Burrow', team: 'CIN', position: 'QB', salary: 8100, projectedPoints: 23.8, minExp: 0, maxExp: 100, selected: false },
-        { id: '14', name: 'Ja\'Marr Chase', team: 'CIN', position: 'WR', salary: 7900, projectedPoints: 19.8, minExp: 0, maxExp: 100, selected: false },
-        { id: '15', name: 'Nick Chubb', team: 'CLE', position: 'RB', salary: 7400, projectedPoints: 17.9, minExp: 0, maxExp: 100, selected: false },
-        { id: '16', name: 'Amari Cooper', team: 'CLE', position: 'WR', salary: 6900, projectedPoints: 16.2, minExp: 0, maxExp: 100, selected: false },
-        { id: '17', name: 'Dak Prescott', team: 'DAL', position: 'QB', salary: 8000, projectedPoints: 23.5, minExp: 0, maxExp: 100, selected: false },
-        { id: '18', name: 'CeeDee Lamb', team: 'DAL', position: 'WR', salary: 8200, projectedPoints: 20.5, minExp: 0, maxExp: 100, selected: false },
-        { id: '19', name: 'Tony Pollard', team: 'DAL', position: 'RB', salary: 6500, projectedPoints: 15.8, minExp: 0, maxExp: 100, selected: false },
-        { id: '20', name: 'Russell Wilson', team: 'DEN', position: 'QB', salary: 7200, projectedPoints: 21.2, minExp: 0, maxExp: 100, selected: false },
-        { id: '21', name: 'Courtland Sutton', team: 'DEN', position: 'WR', salary: 6300, projectedPoints: 14.9, minExp: 0, maxExp: 100, selected: false },
-        { id: '22', name: 'Javonte Williams', team: 'DEN', position: 'RB', salary: 6100, projectedPoints: 14.2, minExp: 0, maxExp: 100, selected: false },
-        { id: '23', name: 'Jared Goff', team: 'DET', position: 'QB', salary: 6800, projectedPoints: 20.8, minExp: 0, maxExp: 100, selected: false },
-        { id: '24', name: 'Amon-Ra St. Brown', team: 'DET', position: 'WR', salary: 7700, projectedPoints: 18.6, minExp: 0, maxExp: 100, selected: false },
-        { id: '25', name: 'D\'Andre Swift', team: 'DET', position: 'RB', salary: 6400, projectedPoints: 15.1, minExp: 0, maxExp: 100, selected: false },
-      ],
-      selectedPlayers: [],
-      teamSelections: {
-        all: [],
-        2: [],
-        3: [],
-        4: [],
-        5: [],
-      },
-      stackSettings: [],
-      advancedQuantSettings: {},
-      results: [],
-      generatedCombinations: [],
-    }
-  ]);
-  const [activeBuildId, setActiveBuildId] = useState<string>('build-1');
-
-  // Get current build
-  const currentBuild = builds.find(build => build.id === activeBuildId) || builds[0];
-  const currentSport = currentBuild.sport;
-  const sportConfig = SPORT_CONFIGS[currentSport];
-  
-  // Build management functions
-  const addNewBuild = () => {
-    if (builds.length >= 5) return; // Max 5 builds
-    
-    const newBuildNumber = builds.length + 1;
-    const newBuild: BuildState = {
-      id: `build-${newBuildNumber}`,
-      name: `Build ${newBuildNumber}`,
-      sport: 'NFL',
+      sport: sportProp as Sport,
       activeTab: 'team-combos',
       playerData: [],
       selectedPlayers: [],
@@ -2013,7 +1957,39 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
       stackSettings: [],
       advancedQuantSettings: {},
       results: [],
-      generatedCombinations: [],
+    }
+  ]);
+  const [activeBuildId, setActiveBuildId] = useState<string>('build-1');
+
+  // Get current build
+  const currentBuild = builds.find(build => build.id === activeBuildId) || builds[0];
+  
+  // Use sport prop from Dashboard instead of build's sport
+  const currentSport = sportProp as Sport;
+  const sportConfig = SPORT_CONFIGS[currentSport];
+  
+  // Build management functions
+  const addNewBuild = () => {
+    if (builds.length >= 5) return; // Max 5 builds
+    
+    const newBuildNumber = builds.length + 1;
+    const newBuild: BuildState = {
+      id: `build-${newBuildNumber}`,
+      name: `Build ${newBuildNumber}`,
+      sport: currentSport,
+      activeTab: 'team-combos',
+      playerData: [],
+      selectedPlayers: [],
+      teamSelections: {
+        all: [],
+        2: [],
+        3: [],
+        4: [],
+        5: [],
+      },
+      stackSettings: initializeStackSettings(currentSport),
+      advancedQuantSettings: {},
+      results: [],
     };
     
     setBuilds(prev => [...prev, newBuild]);
@@ -2043,15 +2019,6 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
     ));
   };
 
-  // Get current build data
-  const activeTab = currentBuild.activeTab;
-  const playerData = currentBuild.playerData;
-  const selectedPlayers = currentBuild.selectedPlayers;
-  const teamSelections = currentBuild.teamSelections;
-  const stackSettings = currentBuild.stackSettings;
-  const advancedQuantSettings = currentBuild.advancedQuantSettings;
-  const results = currentBuild.results;
-  const generatedCombinations = currentBuild.generatedCombinations;
   // Initialize stack settings based on sport
   const initializeStackSettings = (sport: Sport): StackType[] => {
     const config = SPORT_CONFIGS[sport];
@@ -2063,6 +2030,26 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
       enabled: false
     }));
   };
+
+  // Get current build data
+  const activeTab = currentBuild.activeTab;
+  const playerData = currentBuild.playerData;
+  const selectedPlayers = currentBuild.selectedPlayers;
+  const teamSelections = currentBuild.teamSelections;
+  const stackSettings = currentBuild.stackSettings;
+  const advancedQuantSettings = currentBuild.advancedQuantSettings;
+  const results = currentBuild.results;
+  
+  // Sync build's sport with prop when it changes
+  useEffect(() => {
+    if (currentBuild.sport !== sportProp) {
+      updateCurrentBuild({ 
+        sport: sportProp as Sport,
+        stackSettings: initializeStackSettings(sportProp as Sport),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sportProp, activeBuildId]);
 
   // Initialize stack settings for current build if not set
   useEffect(() => {
@@ -2079,19 +2066,18 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
   const setStackSettings = (settings: StackType[]) => updateCurrentBuild({ stackSettings: settings });
   const setAdvancedQuantSettings = (settings: any) => updateCurrentBuild({ advancedQuantSettings: settings });
   const setResults = (newResults: any[]) => updateCurrentBuild({ results: newResults });
-  const setGeneratedCombinations = (combinations: any[]) => updateCurrentBuild({ generatedCombinations: combinations });
 
-  // Sport change handler
-  const handleSportChange = (newSport: Sport) => {
-    updateCurrentBuild({ 
-      sport: newSport,
-      stackSettings: initializeStackSettings(newSport),
-      playerData: [],
-      selectedPlayers: [],
-      results: [],
-      generatedCombinations: []
-    });
-  };
+  const handleSelectedPlayersChange = useCallback((playerIds: string[]) => {
+    setSelectedPlayers(playerIds);
+    const updatedPlayers = (currentBuild.playerData || []).map((player) => ({
+      ...player,
+      selected: playerIds.includes(player.id),
+    }));
+    setPlayerData(updatedPlayers);
+  }, [currentBuild.playerData]);
+
+  // Sport change handler - no longer needed as sport comes from Dashboard prop
+  // Removed to use Dashboard header instead
   
   // Optimization Settings
   const [numLineups, setNumLineups] = useState(100);
@@ -2102,11 +2088,6 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
   // Sorting
   const [sortMethod, setSortMethod] = useState('points');
   
-  // Risk Management
-  const [bankroll, setBankroll] = useState(1000);
-  const [riskProfile, setRiskProfile] = useState('medium');
-  const [enableRiskMgmt, setEnableRiskMgmt] = useState(false);
-  
   // Generated Teams - Now connected to backend
   const [generatedTeams, setGeneratedTeams] = useState<any[]>([]);
   
@@ -2114,6 +2095,38 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isRunningCombinations, setIsRunningCombinations] = useState(false);
   const [dkEntriesLoaded, setDkEntriesLoaded] = useState(false);
+  const workspaceCsvInputRef = useRef<HTMLInputElement | null>(null);
+  const [favorites, setFavorites] = useState<FavoriteLineup[]>([]);
+  const [favoriteRunCounter, setFavoriteRunCounter] = useState(1);
+
+  // Keep backend sport mode in sync with current selection
+  useEffect(() => {
+    let isMounted = true;
+    dfsApi.setSport(currentSport).catch((error) => {
+      if (!isMounted) return;
+      console.error('Failed to set sport on backend', error);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [currentSport]);
+
+  const syncSelectionsWithBackend = useCallback(async (selectedIds: string[]) => {
+    try {
+      await dfsApi.bulkUpdatePlayers({ action: 'deselect', filters: {} });
+      if (selectedIds.length === 0) {
+        return;
+      }
+      await Promise.all(
+        selectedIds.map((id) =>
+          dfsApi.updatePlayer(id, { selected: true })
+        )
+      );
+    } catch (error) {
+      console.error('Failed to sync selected players with backend', error);
+      throw error;
+    }
+  }, []);
   
   // Lineups state management
   const [lineups, setLineups] = useState<Array<{
@@ -2195,11 +2208,7 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
     }
   }, [activeTab, currentSport, results]);
   
-  // Resizable panels
-  const [controlPanelWidth, setControlPanelWidth] = useState(426); // 1/3 wider than before
-  const [isResizing, setIsResizing] = useState(false);
-  const [isControlPanelCollapsed, setIsControlPanelCollapsed] = useState(false);
-
+  // Control panel state
   const tabs = [
     { id: 'players', label: 'Players', icon: Users },
     { id: 'team-stacks', label: 'Team Stacks', icon: Link2 },
@@ -2215,46 +2224,45 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
     if (!file) return;
 
     try {
-      // Upload file to backend
-      const formData = new FormData();
-      formData.append('playersFile', file);
+      const uploadResult = await dfsApi.uploadPlayers(file);
 
-      const response = await fetch('/api/upload-players', {
-        method: 'POST',
-        body: formData,
-      });
+      if (uploadResult?.success) {
+        console.log(`✅ Uploaded ${uploadResult.playersCount} players to backend`);
 
-      const result = await response.json();
+        const playersResponse = await dfsApi.getPlayers();
+        const backendPlayers = (playersResponse?.players ?? []) as any[];
 
-      if (result.success) {
-        console.log(`✅ Uploaded ${result.playersCount} players to backend`);
-        
-        // Fetch players from backend
-        const playersResponse = await fetch('/api/players');
-        const playersData = await playersResponse.json();
-        
-        // Transform backend player format to frontend format
-        const transformedPlayers: Player[] = playersData.players.map((p: any) => ({
+        const transformedPlayers: Player[] = backendPlayers.map((p: any) => ({
           id: p.id,
           name: p.name,
           team: p.team,
           position: p.position,
           salary: p.salary,
           projectedPoints: p.projection || p.projectedPoints || 0,
-          minExp: p.minExposure || 0,
-          maxExp: p.maxExposure || 100,
-          selected: p.selected || false,
+          minExp: p.minExposure ?? 0,
+          maxExp: p.maxExposure ?? 100,
+          selected: Boolean(p.selected),
         }));
 
         setPlayerData(transformedPlayers);
-        setSelectedPlayers([]);
+        setSelectedPlayers(
+          transformedPlayers.filter((player) => player.selected).map((player) => player.id)
+        );
+        setTeamSelections({
+          all: [],
+          2: [],
+          3: [],
+          4: [],
+          5: [],
+        });
+        setStackSettings(initializeStackSettings(currentSport));
         alert(`✅ Loaded ${transformedPlayers.length} players successfully!`);
       } else {
-        alert(`❌ Upload failed: ${result.error || 'Unknown error'}`);
+        alert(`❌ Upload failed: ${uploadResult?.error || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error('Upload error:', error);
-      alert('❌ Upload failed. Please check the file format and try again.');
+      const apiError = dfsApi.handleApiError(error);
+      alert(`❌ Upload failed: ${apiError.message}`);
     }
   };
 
@@ -2266,7 +2274,7 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
     }
 
     const selectedCount = selectedPlayers.length;
-    const minRequired = currentSport === 'NFL' ? 9 : 10;
+    const minRequired = sportConfig.lineupSize;
     
     if (selectedCount < minRequired) {
       alert(`❌ Please select at least ${minRequired} players for ${currentSport}`);
@@ -2276,52 +2284,80 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
     setIsOptimizing(true);
     
     try {
-      // Mark selected players in backend
-      await Promise.all(
-        playerData.map(async (player) => {
-          if (selectedPlayers.includes(player.id)) {
-            await fetch(`/api/players/${player.id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ selected: true }),
-            });
-          }
-        })
-      );
+      await dfsApi.setSport(currentSport);
+      await syncSelectionsWithBackend(selectedPlayers);
 
       // Prepare stack settings
       const enabledStacks = stackSettings.filter(s => s.enabled);
-      const stackTypes = enabledStacks.map(s => s.label);
+
+      const stackSizeEntries = Object.entries(teamSelections)
+        .filter(([sizeKey, teams]) => sizeKey !== 'all' && Array.isArray(teams) && teams.length > 0);
+
+      const stackTeamsSet = new Set<string>();
+      stackSizeEntries.forEach(([, teams]) => {
+        teams.forEach(team => stackTeamsSet.add(team));
+      });
+
+      const fallbackTeams = playerData
+        .filter(player => selectedPlayers.includes(player.id))
+        .map(player => player.team)
+        .filter(Boolean);
+
+      if (stackTeamsSet.size === 0) {
+        fallbackTeams.forEach(team => stackTeamsSet.add(team));
+      }
+
+      const stackTeams = Array.from(stackTeamsSet);
+
+      const stackSizeValues = stackSizeEntries
+        .map(([sizeKey]) => Number(sizeKey))
+        .filter(size => !Number.isNaN(size) && size > 0);
+
+      const minPlayersPerTeam = stackSizeValues.length > 0 ? Math.min(...stackSizeValues) : 2;
+      const maxPlayersPerTeam = stackSizeValues.length > 0 ? Math.max(...stackSizeValues) : 4;
 
       // Run optimization
       console.log('🚀 Starting optimization...');
-      const response = await fetch('/api/optimize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sport: currentSport,
-          numLineups,
-          minSalary,
-          maxSalary: 50000,
-          stackSettings: {
-            enabled: enabledStacks.length > 0,
-            types: stackTypes,
-            teams: Array.from(new Set(playerData.filter(p => selectedPlayers.includes(p.id)).map(p => p.team))),
-          },
-          uniquePlayers: minUnique,
-          maxExposure: 40,
-          contestMode: 'gpp',
-          riskTolerance: 'medium',
-        }),
+      const sortingMethodMap: Record<string, string> = {
+        points: 'Points',
+        value: 'Value',
+        salary: 'Salary',
+      };
+
+      const exposureSettingsPayload = enabledStacks.reduce<Record<string, { min: number; max: number }>>(
+        (acc, stack) => {
+          acc[stack.label] = { min: stack.minExp, max: stack.maxExp };
+          return acc;
+        },
+        {}
+      );
+
+      const optimizationResponse = await dfsApi.optimizeLineups({
+        sport: currentSport,
+        numLineups,
+        minSalary,
+        maxSalary: sportConfig.maxSalary,
+        stackSettings: {
+          enabled: enabledStacks.length > 0 && stackTeams.length > 0,
+          teams: stackTeams,
+          minPlayersPerTeam,
+          maxPlayersPerTeam,
+        },
+        uniquePlayers: minUnique,
+        maxExposure: 40,
+        sortingMethod: sortingMethodMap[sortMethod] ?? 'Points',
+        minUniquePlayersBetweenLineups: minUnique,
+        disableKellySizing: disableKelly,
+        exposureSettings: exposureSettingsPayload,
+        contestMode: 'gpp',
+        monteCarloIterations: 100,
       });
 
-      const result = await response.json();
-
-      if (result.success) {
-        console.log('✅ Optimization complete:', result.summary);
+      if (optimizationResponse.success) {
+        console.log('✅ Optimization complete:', optimizationResponse.summary);
         
         // Transform lineups for display
-        const transformedResults = result.lineups.map((lineup: any) => ({
+        const transformedResults = optimizationResponse.lineups.map((lineup: any) => ({
           id: lineup.id,
           players: lineup.players.map((p: any) => ({
             name: p.name,
@@ -2335,18 +2371,18 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
 
         setResults(transformedResults);
         // Also update lineups state for the lineups tab
-        setLineups(result.lineups || []);
+        setLineups(optimizationResponse.lineups || []);
         
         // Switch to Generated Lineups tab to show results
         setActiveTab('lineups');
         
-        alert(`✅ Generated ${transformedResults.length} optimal lineups!\nAvg Projection: ${result.summary.avgProjection.toFixed(1)} pts`);
+        alert(`✅ Generated ${transformedResults.length} optimal lineups!\nAvg Projection: ${optimizationResponse.summary.avgProjection.toFixed(1)} pts`);
       } else {
-        alert(`❌ Optimization failed: ${result.error}`);
+        alert(`❌ Optimization failed: ${optimizationResponse.error || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error('Optimization error:', error);
-      alert('❌ Optimization failed. Please try again.');
+      const apiError = dfsApi.handleApiError(error);
+      alert(`❌ Optimization failed: ${apiError.message}`);
     } finally {
       setIsOptimizing(false);
     }
@@ -2362,46 +2398,64 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
     console.log('Running combinations for teams:', generatedTeams);
     
     try {
-      // Call backend API to run combinations
-      const response = await fetch('/api/optimize', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      await dfsApi.setSport(currentSport);
+      await syncSelectionsWithBackend(selectedPlayers);
+
+      const comboTeams = generatedTeams
+        .map((team) => team.team || (team.name ? team.name.split(' ')[0] : ''))
+        .filter((team: string) => Boolean(team));
+
+      const sortingMethodMap: Record<string, string> = {
+        points: 'Points',
+        value: 'Value',
+        salary: 'Salary',
+      };
+
+      const comboResponse = await dfsApi.optimizeLineups({
+        sport: currentSport,
+        numLineups: 5,
+        minSalary,
+        maxSalary: sportConfig.maxSalary,
+        stackSettings: {
+          enabled: comboTeams.length > 0,
+          teams: comboTeams,
+          minPlayersPerTeam: 2,
+          maxPlayersPerTeam: 5,
         },
-        body: JSON.stringify({
-          sport: currentSport,
-          numLineups: 5, // Generate 5 lineups from combinations
-          minSalary: minSalary,
-          maxSalary: 50000,
-          stackSettings: {
-            enabled: true,
-            teams: generatedTeams.map(team => team.team || team.name.split(' ')[0]), // Extract team names
-            types: ['QB + WR', 'QB + 2 WR', 'Game Stack']
-          },
-          players: playerData.filter(p => p.selected)
-        })
+        uniquePlayers: minUnique,
+        maxExposure: 40,
+        sortingMethod: sortingMethodMap[sortMethod] ?? 'Points',
+        minUniquePlayersBetweenLineups: minUnique,
+        disableKellySizing: disableKelly,
+        contestMode: 'gpp',
+        monteCarloIterations: 100,
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log('Combinations complete:', data);
+      console.log('Combinations complete:', comboResponse);
       
-      // Update results with backend-generated lineups
-      if (data.lineups && data.lineups.length > 0) {
-        setResults(data.lineups);
-        // Also update lineups state for the lineups tab
-        setLineups(data.lineups);
-        // Switch to Generated Lineups tab to show results
+      if (comboResponse.lineups && comboResponse.lineups.length > 0) {
+        const transformedCombo = comboResponse.lineups.map((lineup: any) => ({
+          id: lineup.id,
+          players: lineup.players.map((p: any) => ({
+            name: p.name,
+            position: p.position,
+            team: p.team,
+            salary: p.salary,
+          })),
+          points: lineup.totalProjection,
+          salary: lineup.totalSalary,
+        }));
+
+        setResults(transformedCombo);
+        setLineups(comboResponse.lineups);
         setActiveTab('lineups');
-        console.log(`✅ Generated ${data.lineups.length} lineups from backend`);
+        console.log(`✅ Generated ${comboResponse.lineups.length} lineups from backend`);
       }
       
     } catch (error) {
       console.error('Error running combinations:', error);
-      alert('Failed to run combinations. Please try again.');
+      const apiError = dfsApi.handleApiError(error);
+      alert(`Failed to run combinations: ${apiError.message}`);
     } finally {
       setIsRunningCombinations(false);
     }
@@ -2468,6 +2522,127 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
     handleRunCombinations();
   };
 
+  const handleLoadEntries = useCallback(() => {
+    setDkEntriesLoaded(true);
+    alert('✅ DraftKings entries file loaded (frontend only preview).');
+  }, []);
+
+  const handleExportDraftKings = useCallback(async () => {
+    if (results.length === 0) {
+      alert('❌ No optimized lineups available to export yet.');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/export/draftkings?sport=${currentSport}`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${currentSport.toLowerCase()}_lineups_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      alert(`✅ Exported ${results.length} lineups`);
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('❌ Export failed');
+    }
+  }, [currentSport, results]);
+
+  const handleFillEntriesWithOptimized = useCallback(() => {
+    if (!dkEntriesLoaded) {
+      alert('❌ Load your DraftKings entries file first.');
+      return;
+    }
+    if (results.length === 0) {
+      alert('❌ Run an optimization before filling entries.');
+      return;
+    }
+    alert('✅ Filled entries with optimized lineups (frontend preview only).');
+  }, [dkEntriesLoaded, results]);
+
+  const handleAddFavoritesFromResults = useCallback(() => {
+    if (results.length === 0) {
+      alert('No lineups available. Run optimization first.');
+      return;
+    }
+
+    const defaultCount = Math.min(30, results.length);
+    const countInput = prompt(
+      `Add how many lineups from current pool?\n\nAvailable: ${results.length} lineups\nCurrent favorites: ${favorites.length}`,
+      defaultCount.toString()
+    );
+
+    if (countInput === null) {
+      return;
+    }
+
+    const count = parseInt(countInput, 10);
+
+    if (Number.isNaN(count) || count <= 0 || count > results.length) {
+      return;
+    }
+
+    const runNumber = favoriteRunCounter;
+    const timestamp = Date.now();
+    const newFavorites = results.slice(0, count).map((result, idx) => ({
+      id: `fav-${timestamp}-${idx}`,
+      players: result.players || [],
+      totalPoints: result.points || 0,
+      totalSalary: result.salary || 0,
+      runNumber,
+      dateAdded: new Date().toLocaleString(),
+      selected: true,
+    }));
+
+    setFavorites((prev) => [...prev, ...newFavorites]);
+    setFavoriteRunCounter((prev) => prev + 1);
+    alert(`Added ${count} lineups to favorites as Run #${runNumber}`);
+  }, [results, favorites.length, favoriteRunCounter]);
+
+  const handleClearFavorites = useCallback(() => {
+    setFavorites((prev) => {
+      if (prev.length === 0) {
+        return prev;
+      }
+
+      if (confirm(`Delete all ${prev.length} favorite lineups?\n\nThis action cannot be undone.`)) {
+        setFavoriteRunCounter(1);
+        return [];
+      }
+
+      return prev;
+    });
+  }, []);
+
+  const handleExportFavorites = useCallback(() => {
+    if (favorites.length === 0) {
+      alert('No favorites to export.');
+      return;
+    }
+
+    const countInput = prompt(
+      `Export how many lineups?\n\nAvailable: ${favorites.length} favorites`,
+      favorites.length.toString()
+    );
+
+    if (countInput === null) {
+      return;
+    }
+
+    const count = parseInt(countInput, 10);
+
+    if (Number.isNaN(count) || count <= 0) {
+      return;
+    }
+
+    alert(
+      `Would export ${Math.min(count, favorites.length)} lineups to DraftKings CSV format.\n\nExport functionality will be connected to backend.`
+    );
+  }, [favorites]);
+
   // Expose functions globally for backend access
   React.useEffect(() => {
     (window as any).updateGeneratedTeams = updateGeneratedTeams;
@@ -2478,51 +2653,11 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
     };
   }, []);
 
-  // Resize handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsResizing(true);
-    e.preventDefault();
-  };
-
-  const handleMouseMove = (e: MouseEvent) => {
-    if (!isResizing) return;
-    
-    const newWidth = window.innerWidth - e.clientX;
-    const minWidth = 200;
-    const maxWidth = 400;
-    
-    if (newWidth >= minWidth && newWidth <= maxWidth) {
-      setControlPanelWidth(newWidth);
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsResizing(false);
-  };
-
-  // Add event listeners
-  React.useEffect(() => {
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-    }
-    
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isResizing]);
-
   return (
-    <div className="h-full w-full flex p-2">
-      {/* DFS OPTIMIZER CONTAINER - Thin Black Border */}
-      <div className="border border-black flex flex-1">
-        {/* MAIN CONTENT AREA - Desktop-Style Tabs (matches PyQt x.py) */}
-        <div 
-          className="bg-slate-900 border border-slate-700 overflow-hidden flex flex-col"
-          style={{ width: `calc(100% - ${controlPanelWidth}px - 8px)` }}
-        >
-          {/* Build Tabs Row - Browser Style */}
+    <div className="flex min-h-full w-full flex-col bg-slate-900 text-white overflow-hidden">
+
+      <div className="flex-1 min-h-0 overflow-hidden px-2 pb-3 pt-3">
+        <div className="flex h-full flex-col overflow-hidden border border-slate-700 bg-slate-900 w-full max-w-[1920px] mx-auto">
           <div className="bg-slate-800 border-b border-slate-700 flex items-center px-2 py-1">
             <div className="flex items-center gap-1">
               {builds.map((build) => (
@@ -2561,12 +2696,202 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
             </div>
           </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col h-full">
-            {/* Tab Headers - Desktop Style */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col h-full min-h-0">
+            <div className="bg-slate-800 border-b border-slate-700 px-4 py-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-cyan-300">Optimizer Build Workspace</h3>
+                <p className="text-xs text-slate-300 mt-1 max-w-xl">
+                  Configure players, stacks, exposures, and entries for the active optimizer build. Use the tabs
+                  below to switch between each configuration view.
+                </p>
+              </div>
+              <div className="flex flex-col items-start sm:items-end text-xs text-slate-300">
+                <span className="uppercase tracking-wide font-medium text-slate-400">Active Build</span>
+                <span className="text-base font-semibold text-white mt-1">
+                  {currentBuild?.name ?? 'Build'}
+                </span>
+                <span className="mt-1 text-[11px] text-slate-400">
+                  {builds.length} {builds.length === 1 ? 'build' : 'builds'} available
+                </span>
+              </div>
+            </div>
+            <div className="bg-slate-900/70 border-b border-slate-800 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300">
+                <div className="flex items-center gap-1.5 bg-slate-900/60 border border-slate-700 rounded px-2 py-1">
+                  <span className="uppercase tracking-wide text-slate-400">Files</span>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      className="h-7 px-2 text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-100 border border-cyan-500/40"
+                      onClick={() => workspaceCsvInputRef.current?.click()}
+                    >
+                      <Upload className="w-3.5 h-3.5 mr-1" />
+                      CSV
+                    </Button>
+                    <input
+                      ref={workspaceCsvInputRef}
+                      type="file"
+                      accept=".csv"
+                      className="hidden"
+                      onChange={handleFileUpload}
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-[11px] font-medium text-slate-300 hover:text-white hover:bg-slate-800"
+                    >
+                      <FileText className="w-3.5 h-3.5 mr-1" />
+                      Proj
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-[11px] font-medium text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10"
+                      onClick={handleLoadEntries}
+                    >
+                      <Download className="w-3.5 h-3.5 mr-1" />
+                      Entries
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="hidden sm:block h-6 w-px bg-slate-800" />
+
+                <div className="flex items-center gap-2 bg-slate-900/60 border border-slate-700 rounded px-2 py-1">
+                  <span className="uppercase tracking-wide text-slate-400">Lineups</span>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={500}
+                    value={numLineups}
+                    onChange={(e) => setNumLineups(parseInt(e.target.value, 10) || 1)}
+                    className="h-7 w-16 bg-slate-950 border border-slate-700 text-xs text-slate-100"
+                  />
+                  <span className="uppercase tracking-wide text-slate-400">Unique</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={minUnique}
+                    onChange={(e) => setMinUnique(parseInt(e.target.value, 10) || 0)}
+                    className="h-7 w-12 bg-slate-950 border border-slate-700 text-xs text-slate-100"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-slate-900/60 border border-slate-700 rounded px-2 py-1">
+                  <span className="uppercase tracking-wide text-slate-400">Salary</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={sportConfig.maxSalary}
+                    step={500}
+                    value={minSalary}
+                    onChange={(e) => setMinSalary(parseInt(e.target.value, 10) || sportConfig.defaultMinSalary)}
+                    className="h-7 w-20 bg-slate-950 border border-slate-700 text-xs text-slate-100"
+                  />
+                  <span className="text-slate-500">/ {sportConfig.maxSalary}</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-slate-900/60 border border-slate-700 rounded px-2 py-1">
+                  <Select value={sortMethod} onValueChange={setSortMethod}>
+                    <SelectTrigger className="h-7 min-w-[110px] bg-slate-950 border border-slate-700 text-xs text-slate-100">
+                      <SelectValue placeholder="Sorting" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-900 border border-slate-700 text-xs">
+                      <SelectItem value="points" className="text-slate-100 text-xs">
+                        Sort: Points ↓
+                      </SelectItem>
+                      <SelectItem value="value" className="text-slate-100 text-xs">
+                        Sort: Value ↓
+                      </SelectItem>
+                      <SelectItem value="salary" className="text-slate-100 text-xs">
+                        Sort: Salary ↓
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className="flex items-center gap-1">
+                    <Checkbox
+                      id="workspace-disable-kelly"
+                      checked={disableKelly}
+                      onCheckedChange={(checked: boolean) => setDisableKelly(Boolean(checked))}
+                      className="h-3.5 w-3.5 border-slate-600 data-[state=checked]:bg-slate-800 data-[state=checked]:border-orange-400"
+                    />
+                    <Label htmlFor="workspace-disable-kelly" className="text-[11px] text-slate-200 cursor-pointer">
+                      Disable Kelly
+                    </Label>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-slate-900/60 border border-slate-700 rounded px-2 py-1">
+                  <Button
+                    className="h-7 px-3 text-[11px] font-semibold bg-cyan-600 text-white hover:bg-cyan-500"
+                    onClick={handleRunOptimization}
+                    disabled={isOptimizing || playerData.length === 0}
+                  >
+                    <Play className="w-3.5 h-3.5 mr-1" />
+                    {isOptimizing ? 'Optimizing…' : 'Optimize'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="h-7 px-3 text-[11px] font-semibold text-yellow-200 hover:text-yellow-100 hover:bg-yellow-500/10 disabled:opacity-50"
+                    disabled={results.length === 0}
+                    onClick={handleExportDraftKings}
+                  >
+                    <Save className="w-3.5 h-3.5 mr-1" />
+                    Save CSV
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="h-7 px-3 text-[11px] font-semibold text-emerald-200 hover:text-emerald-100 hover:bg-emerald-500/10 disabled:opacity-50"
+                    disabled={!dkEntriesLoaded || results.length === 0}
+                    onClick={handleFillEntriesWithOptimized}
+                  >
+                    <FileText className="w-3.5 h-3.5 mr-1" />
+                    Fill Entries
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-slate-900/60 border border-slate-700 rounded px-2 py-1">
+                  <Button
+                    variant="ghost"
+                    className="h-7 px-3 text-[11px] font-semibold text-slate-200 hover:text-white hover:bg-slate-800 disabled:opacity-50"
+                    disabled={results.length === 0}
+                    onClick={handleAddFavoritesFromResults}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    Add Favorite
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="h-7 px-3 text-[11px] font-semibold text-slate-200 hover:text-white hover:bg-slate-800 disabled:opacity-50"
+                    disabled={favorites.length === 0}
+                    onClick={handleExportFavorites}
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1" />
+                    Export Fav
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-3 bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-slate-300">
+                  <span>
+                    Players <span className="text-slate-100 font-semibold">{playerData.length}</span>
+                  </span>
+                  <span className="hidden sm:inline">
+                    Selected <span className="text-slate-100 font-semibold">{selectedPlayers.length}</span>
+                  </span>
+                  <span>
+                    Lineups <span className="text-slate-100 font-semibold">{results.length}</span>
+                  </span>
+                  <span className={dkEntriesLoaded ? 'text-emerald-300 font-semibold' : 'text-slate-500'}>
+                    {dkEntriesLoaded ? 'Entries Loaded' : 'Entries Pending'}
+                  </span>
+                </div>
+              </div>
+            </div>
             <TabsList className="bg-slate-800 border-b border-slate-700 w-full rounded-none h-auto flex flex-nowrap">
               {tabs.map((tab) => {
-                  const Icon = tab.icon;
-                  return (
+                const Icon = tab.icon;
+                return (
                   <TabsTrigger
                     key={tab.id}
                     value={tab.id}
@@ -2575,24 +2900,21 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
                     <Icon className="w-3.5 h-3.5" />
                     <span className="font-normal">{tab.label}</span>
                   </TabsTrigger>
-                  );
-                })}
+                );
+              })}
             </TabsList>
 
-            {/* Tab Content - Compact Padding with Scrolling */}
             <div className="flex-1 overflow-auto p-3 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
-              {/* Players Tab */}
               <TabsContent value="players" className="mt-0 h-full overflow-auto">
                 <PlayersTab
                   playerData={playerData}
                   selectedPlayers={selectedPlayers}
                   sport={currentSport}
-                  onPlayersChange={setSelectedPlayers}
+                  onPlayersChange={handleSelectedPlayersChange}
                   onPlayerDataChange={setPlayerData}
                 />
               </TabsContent>
 
-              {/* Team Stacks Tab */}
               <TabsContent value="team-stacks" className="mt-0 h-full overflow-auto">
                 <TeamStacksTab
                   playerData={playerData}
@@ -2601,7 +2923,6 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
                 />
               </TabsContent>
 
-              {/* Stack Exposure Tab */}
               <TabsContent value="stack-exposure" className="mt-0 h-full overflow-auto">
                 <StackExposureTab
                   stackSettings={stackSettings}
@@ -2610,20 +2931,14 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
                 />
               </TabsContent>
 
-              {/* Team Combinations Tab */}
               <TabsContent value="team-combos" className="mt-0 h-full overflow-auto">
                 <TeamCombinationsTab playerData={playerData} />
               </TabsContent>
 
-              {/* Advanced Quant Tab */}
               <TabsContent value="advanced-quant" className="mt-0 h-full overflow-auto">
-                <AdvancedQuantTab
-                  settings={advancedQuantSettings}
-                  onSettingsChange={setAdvancedQuantSettings}
-                />
+                <AdvancedQuantTab settings={advancedQuantSettings} onSettingsChange={setAdvancedQuantSettings} />
               </TabsContent>
 
-              {/* Generated Lineups Tab */}
               <TabsContent value="lineups" className="mt-0 h-full overflow-auto">
                 <LineupsTab
                   sport={currentSport}
@@ -2652,9 +2967,9 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
                       const response = await fetch('/api/favorites', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                          lineup, 
-                          name: `${currentSport} Lineup ${lineup.id.slice(0, 8)}` 
+                        body: JSON.stringify({
+                          lineup,
+                          name: `${currentSport} Lineup ${lineup.id.slice(0, 8)}`
                         })
                       });
                       if (response.ok) {
@@ -2667,426 +2982,14 @@ const DFSOptimizer = React.memo(({}: DFSOptimizerProps) => {
                 />
               </TabsContent>
 
-              {/* My Entries Tab */}
               <TabsContent value="my-entries" className="mt-0 h-full overflow-auto">
                 <MyEntriesTab results={results} sport={currentSport} />
               </TabsContent>
             </div>
           </Tabs>
-      </div>
-
-      {/* RESIZABLE DIVIDER */}
-      <div
-        className={`w-1 bg-slate-600 hover:bg-slate-500 cursor-col-resize flex-shrink-0 transition-colors ${
-          isResizing ? 'bg-blue-500' : ''
-        }`}
-        onMouseDown={handleMouseDown}
-      >
-        <div className="w-full h-full flex items-center justify-center">
-          <div className="w-0.5 h-8 bg-slate-400 rounded-full"></div>
         </div>
       </div>
-
-      {/* RIGHT SIDEBAR - Control Panel (Desktop Style) */}
-      <div 
-        className="flex-shrink-0 bg-slate-900 border border-slate-700 overflow-hidden"
-        style={{ width: `${controlPanelWidth}px` }}
-      >
-          <div className="p-1.5 space-y-1 overflow-auto h-full">
-            {/* Header - Collapsible */}
-            <div 
-              className="border-b border-cyan-500/30 pb-1 mb-2 cursor-pointer hover:bg-slate-800/50 rounded px-2 py-1.5 transition-colors group"
-              onClick={() => setIsControlPanelCollapsed(!isControlPanelCollapsed)}
-            >
-              <h3 className="text-[13px] font-bold text-cyan-400 flex items-center justify-between uppercase tracking-wide">
-                <div className="flex items-center gap-2">
-                  <Settings className="w-4 h-4 text-cyan-400" />
-                  <span>Control Panel</span>
-                </div>
-                {isControlPanelCollapsed ? (
-                  <ChevronDown className="w-4 h-4 text-cyan-400 group-hover:text-cyan-300 transition-colors" />
-                ) : (
-                  <ChevronUp className="w-4 h-4 text-cyan-400 group-hover:text-cyan-300 transition-colors" />
-                )}
-              </h3>
-            </div>
-
-            {/* Collapsible Content */}
-            {!isControlPanelCollapsed && (
-            <div className="space-y-3 px-2">
-            {/* Sport Selector - Interactive */}
-            <div className="border-2 rounded-lg p-3" style={{ borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.15)' }}>
-              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2 mb-2" style={{ color: '#f59e0b', borderColor: '#f59e0b' }}>Select Sport</h4>
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  {(['NFL', 'NBA', 'MLB'] as Sport[]).map((sport) => (
-                    <button
-                      key={sport}
-                      onClick={() => handleSportChange(sport)}
-                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-bold transition-all ${
-                        currentSport === sport
-                          ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30 border-2 border-cyan-400'
-                          : 'bg-slate-700/40 text-slate-300 border-2 border-slate-600/30 hover:bg-slate-700 hover:border-cyan-500/50 hover:text-white'
-                      }`}
-                    >
-                      {sport === 'NFL' ? '🏈 NFL' : sport === 'NBA' ? '🏀 NBA' : '⚾ MLB'}
-                    </button>
-                  ))}
-                </div>
-                <div className="text-[10px] text-slate-300 text-center mt-2">
-                  {sportConfig.salaryCapDescription}
-                </div>
-              </div>
-            </div>
-
-            {/* File Operations */}
-            <div className="border-2 rounded-lg p-3" style={{ borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.15)' }}>
-              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2 mb-2" style={{ color: '#3b82f6', borderColor: '#3b82f6' }}>File Operations</h4>
-              <div className="space-y-2">
-                <label htmlFor="csv-upload" className="block">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full border-blue-500/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-3 font-semibold shadow-sm"
-                    onClick={() => document.getElementById('csv-upload')?.click()}
-                  >
-                    <Upload className="w-4 h-4 mr-2" />
-                    Load CSV
-                  </Button>
-                </label>
-                <input
-                  id="csv-upload"
-                  type="file"
-                  accept=".csv"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-blue-500/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-3 font-semibold shadow-sm"
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  Load Predictions
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-blue-500/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-3 font-semibold shadow-sm"
-                  onClick={() => setDkEntriesLoaded(true)}
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Load Entries
-                </Button>
-              </div>
-            </div>
-
-            {/* Optimization Settings */}
-            <div className="border-2 rounded-lg p-3 space-y-2" style={{ borderColor: '#22d3ee', backgroundColor: 'rgba(34, 211, 238, 0.15)' }}>
-              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#22d3ee', borderColor: '#22d3ee' }}>Optimization</h4>
-              <div className="space-y-2">
-                <div>
-                  <Label className="text-[12px] text-white block mb-1.5 font-semibold">Lineups</Label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="500"
-                    value={numLineups}
-                    onChange={(e) => setNumLineups(parseInt(e.target.value) || 100)}
-                    className="w-full bg-slate-700 border-2 border-cyan-500/30 rounded px-2 py-1.5 text-slate-200 text-[13px] font-bold"
-                  />
-                </div>
-                
-                <div>
-                  <Label className="text-[12px] text-white block mb-1.5 font-semibold">Min Unique</Label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="10"
-                    value={minUnique}
-                    onChange={(e) => setMinUnique(parseInt(e.target.value) || 3)}
-                    className="w-full bg-slate-700 border-2 border-cyan-500/30 rounded px-2 py-1.5 text-slate-200 text-[13px] font-bold"
-                  />
-                </div>
-                
-                <div className="flex items-center space-x-2 pt-1">
-                  <Checkbox
-                    id="disable-kelly"
-                    checked={disableKelly}
-                    onCheckedChange={(checked: boolean) => setDisableKelly(checked)}
-                    className="h-4 w-4 border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
-                    style={{ 
-                      accentColor: '#1f2937'
-                    }}
-                  />
-                  <Label htmlFor="disable-kelly" className="text-[12px] text-white cursor-pointer font-semibold">
-                    Disable Kelly
-                  </Label>
-                </div>
-              </div>
-            </div>
-
-            {/* Salary Constraints */}
-            <div className="border-2 rounded-lg p-3 space-y-2" style={{ borderColor: '#4ade80', backgroundColor: 'rgba(74, 222, 128, 0.15)' }}>
-              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#4ade80', borderColor: '#4ade80' }}>Salary</h4>
-              <div className="space-y-2">
-                <div>
-                  <Label className="text-[12px] text-white block mb-1.5 font-semibold">Min ($)</Label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="50000"
-                    step="1000"
-                    value={minSalary}
-                    onChange={(e) => setMinSalary(parseInt(e.target.value) || 45000)}
-                    className="w-full bg-slate-700 border-2 border-green-400/50 rounded px-2 py-1.5 text-white text-[13px] font-bold"
-                  />
-                </div>
-                
-                <div>
-                  <Label className="text-[12px] text-white block mb-1.5 font-semibold">Max ($)</Label>
-                  <input
-                    type="number"
-                    value={50000}
-                    disabled
-                    className="w-full bg-slate-600/50 border-2 border-slate-600 rounded px-2 py-1.5 text-slate-200 text-[13px] cursor-not-allowed font-bold"
-                  />
-                  <span className="text-[10px] text-slate-300 mt-1 block">Fixed by DK</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Sorting */}
-            <div className="border-2 rounded-lg p-3 space-y-2" style={{ borderColor: '#a78bfa', backgroundColor: 'rgba(167, 139, 250, 0.15)' }}>
-              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#a78bfa', borderColor: '#a78bfa' }}>Sorting</h4>
-              <div>
-                <Select value={sortMethod} onValueChange={setSortMethod}>
-                  <SelectTrigger className="w-full bg-slate-700 border-purple-500/30 text-white text-[12px] h-9 font-semibold">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-700">
-                    <SelectItem value="points" className="text-white text-[12px]">Points ↓</SelectItem>
-                    <SelectItem value="value" className="text-white text-[12px]">Value ↓</SelectItem>
-                    <SelectItem value="salary" className="text-white text-[12px]">Salary ↓</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Risk Management - Simple Clickable Container */}
-            <div 
-              className="border-2 rounded-lg p-3 cursor-pointer transition-colors"
-              style={enableRiskMgmt 
-                ? { borderColor: '#fb923c', backgroundColor: 'rgba(251, 146, 60, 0.15)' }
-                : { borderColor: '#475569', backgroundColor: 'rgba(71, 85, 105, 0.2)' }
-              }
-              onClick={() => setEnableRiskMgmt(!enableRiskMgmt)}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="enable-risk"
-                    checked={enableRiskMgmt}
-                    onCheckedChange={(checked: boolean) => setEnableRiskMgmt(checked)}
-                    className="h-4 w-4 border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-orange-400"
-                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                  />
-                  <Label className="text-[12px] text-white cursor-pointer font-semibold">
-                    Enable Risk Management
-                  </Label>
-                </div>
-                {enableRiskMgmt && (
-                  <span className="text-[10px] text-orange-400 font-semibold">Active</span>
-                )}
-              </div>
-            </div>
-
-            {/* Actions - Yellow Color Code */}
-            <div className="border-2 rounded-lg p-3 space-y-2 mt-1" style={{ borderColor: '#facc15', backgroundColor: 'rgba(250, 204, 21, 0.15)' }}>
-              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#facc15', borderColor: '#facc15' }}>Actions</h4>
-              <div className="space-y-2">
-                <Button
-                  className="w-full bg-blue-600 text-white h-9 text-[12px] font-semibold px-2 transition-none"
-                  onClick={handleRunOptimization}
-                  disabled={isOptimizing || playerData.length === 0}
-                >
-                  <Play className="w-4 h-4 mr-2" />
-                  {isOptimizing ? 'Optimizing...' : 'Optimize'}
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-yellow-400/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-2 transition-none"
-                  disabled={results.length === 0}
-                  onClick={async () => {
-                    try {
-                      const response = await fetch(`/api/export/draftkings?sport=${currentSport}`);
-                      const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `${currentSport.toLowerCase()}_lineups_${new Date().toISOString().split('T')[0]}.csv`;
-                      document.body.appendChild(a);
-                      a.click();
-                      window.URL.revokeObjectURL(url);
-                      document.body.removeChild(a);
-                      alert(`✅ Exported ${results.length} lineups`);
-                    } catch (error) {
-                      alert('❌ Export failed');
-                    }
-                  }}
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  Save CSV
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-yellow-400/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-2 transition-none"
-                  disabled={!dkEntriesLoaded || results.length === 0}
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  Fill Entries
-                </Button>
-              </div>
-            </div>
-
-            {/* Generated Teams - Light Blue Color Code */}
-            <div className="border-2 rounded-lg p-3 space-y-2" style={{ borderColor: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.15)' }}>
-              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#38bdf8', borderColor: '#38bdf8' }}>Generated Teams</h4>
-              
-              {/* Generate Teams Button */}
-              <div className="mb-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-green-400/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-2 transition-none"
-                  onClick={handleGenerateTeams}
-                  disabled={playerData.length === 0 || isOptimizing}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Generate Teams
-                </Button>
-              </div>
-
-              {/* Run Combinations Button */}
-              <div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-sky-400/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-2 transition-none"
-                  onClick={handleRunCombinations}
-                  disabled={generatedTeams.length === 0 || isOptimizing || isRunningCombinations}
-                >
-                  <Play className="w-4 h-4 mr-2" />
-                  {isRunningCombinations ? 'Running...' : 'Run Combinations'}
-                </Button>
-              </div>
-
-              {/* Teams List */}
-              <div className="bg-slate-800/40 border border-slate-600/50 rounded p-2 max-h-28 overflow-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
-                <div className="space-y-1">
-                  {generatedTeams.map((team) => (
-                    <div key={team.id} className="text-[10px] text-white bg-slate-700/50 rounded px-2 py-1.5">
-                      <div className="font-semibold text-white">{team.name}</div>
-                      <div className="text-slate-400">{team.players.join(', ')}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-1 pt-1 border-t border-slate-600/50">
-                  <div className="text-[9px] text-slate-400 text-center">
-                    {generatedTeams.length} teams generated
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Favorites - White Color Code */}
-            <div className="border-2 rounded-lg p-3 space-y-2" style={{ borderColor: '#cbd5e1', backgroundColor: 'rgba(203, 213, 225, 0.12)' }}>
-              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#e2e8f0', borderColor: '#cbd5e1' }}>Favorites</h4>
-              <div className="space-y-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-slate-400/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-2 transition-none"
-                  disabled={results.length === 0}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Favorite
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-slate-400/40 bg-slate-800 hover:bg-slate-700 text-white text-[12px] h-9 justify-center px-2 transition-none"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Export
-                </Button>
-              </div>
-            </div>
-
-            {/* Results Summary - White Color Code */}
-            <div className="border-2 rounded-lg p-3 space-y-2 mt-1" style={{ borderColor: '#cbd5e1', backgroundColor: 'rgba(203, 213, 225, 0.12)' }}>
-              <h4 className="text-[13px] font-bold uppercase tracking-wide border-b pb-2" style={{ color: '#e2e8f0', borderColor: '#cbd5e1' }}>Results</h4>
-              <div className="bg-slate-800/40 border border-slate-600/50 rounded p-2">
-                {results.length > 0 ? (
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between text-white">
-                      <span>Lineups Generated:</span>
-                      <span className="font-semibold text-cyan-400">{results.length}</span>
-                    </div>
-                    <div className="flex justify-between text-white">
-                      <span>Avg Points:</span>
-                      <span className="font-semibold">125.3</span>
-                    </div>
-                    <div className="flex justify-between text-white">
-                      <span>Avg Salary:</span>
-                      <span className="font-semibold">$48,450</span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-slate-400 text-xs text-center py-3">
-                    No results yet
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Status Bar */}
-            <div className="border-t border-cyan-500/20 pt-3">
-              <div className="text-xs text-white space-y-1">
-                <div className="flex justify-between">
-                  <span>Status:</span>
-                  <span className="text-cyan-400 font-medium">
-                    {isOptimizing ? 'Optimizing...' : 
-                     isRunningCombinations ? 'Running Combinations...' : 'Ready'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Players Loaded:</span>
-                  <span className="font-medium">{playerData.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Selected:</span>
-                  <span className="font-medium">{selectedPlayers.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Lineups:</span>
-                  <span className="font-medium">{results.length}</span>
-                </div>
-              </div>
-            </div>
-            </div>
-            )}
-          </div>
-        </div>
-      </div>
-      </div>
+    </div>
   );
 });
 
