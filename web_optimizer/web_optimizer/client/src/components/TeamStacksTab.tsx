@@ -32,6 +32,9 @@ import {
   Refresh,
   Star
 } from '@mui/icons-material';
+import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
+import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import IndeterminateCheckBoxIcon from '@mui/icons-material/IndeterminateCheckBox';
 
 interface Player {
   id: string;
@@ -158,7 +161,30 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>Select</TableCell>
+              <TableCell>
+                <Checkbox
+                  size="small"
+                  icon={<CheckBoxOutlineBlankIcon fontSize="small" sx={{ color: '#90caf9' }} />}
+                  checkedIcon={<CheckBoxIcon fontSize="small" sx={{ color: '#90caf9' }} />}
+                  indeterminateIcon={<IndeterminateCheckBoxIcon fontSize="small" sx={{ color: '#90caf9' }} />}
+                  indeterminate={
+                    teams.some(t => t.selected) && !teams.every(t => t.selected)
+                  }
+                  checked={teams.length > 0 && teams.every(t => t.selected)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setTeamStackSettings(prev => {
+                      const next = { ...prev };
+                      const current = { ...(next[stackSize] || {}) };
+                      Object.keys(current).forEach(teamName => {
+                        current[teamName] = { ...current[teamName], selected: checked };
+                      });
+                      next[stackSize] = current;
+                      return next;
+                    });
+                  }}
+                />
+              </TableCell>
               <TableCell>Team</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Players</TableCell>
@@ -173,9 +199,11 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({
               <TableRow key={team.team}>
                 <TableCell>
                   <Checkbox
+                    size="small"
+                    icon={<CheckBoxOutlineBlankIcon fontSize="small" sx={{ color: '#90caf9' }} />}
+                    checkedIcon={<CheckBoxIcon fontSize="small" sx={{ color: '#90caf9' }} />}
                     checked={team.selected}
                     onChange={(e) => handleTeamSelection(stackSize, team.team, e.target.checked)}
-                    size="small"
                   />
                 </TableCell>
                 <TableCell>

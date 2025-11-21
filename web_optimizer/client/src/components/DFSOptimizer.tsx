@@ -12,6 +12,16 @@ import LineupsTab from './LineupsTab';
 import { dfsApi } from '../services/dfs-api';
 import { toast } from 'react-hot-toast';
 
+// Verbose logging
+const DEBUG_LOG = true;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const vlog = (...args: any[]) => {
+  if (DEBUG_LOG) {
+    // eslint-disable-next-line no-console
+    console.log('[DFSOptimizer]', ...args);
+  }
+};
+
 // Player data interface
 interface Player {
   id: string;
@@ -106,6 +116,7 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
 
     // Sort
     const sorted = [...filtered].sort((a, b) => {
+      vlog('sorting players', { sortBy });
       switch (sortBy) {
         case 'points':
           return b.projectedPoints - a.projectedPoints;
@@ -120,6 +131,15 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
       }
     });
 
+    vlog('filteredPlayers computed', {
+      sport,
+      positionFilter,
+      sortBy,
+      totalPlayers: playerData?.length || 0,
+      filteredCount: sorted.length,
+      sample: sorted.slice(0, 3).map(p => ({ id: p.id, name: p.name, pos: p.position, team: p.team }))
+    });
+
     return sorted;
   }, [playerData, positionFilter, sortBy]);
 
@@ -127,6 +147,11 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
   const handleSelectAll = () => {
     const currentIds = filteredPlayers.map(p => p.id);
     const newSelected = Array.from(new Set([...selectedPlayers, ...currentIds]));
+    vlog('handleSelectAll', {
+      filteredCount: filteredPlayers.length,
+      selectedBefore: selectedPlayers.length,
+      selectedAfter: newSelected.length
+    });
     onPlayersChange(newSelected);
   };
 
@@ -134,6 +159,11 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
   const handleDeselectAll = () => {
     const currentIds = new Set(filteredPlayers.map(p => p.id));
     const newSelected = selectedPlayers.filter(id => !currentIds.has(id));
+    vlog('handleDeselectAll', {
+      filteredCount: filteredPlayers.length,
+      selectedBefore: selectedPlayers.length,
+      selectedAfter: newSelected.length
+    });
     onPlayersChange(newSelected);
   };
 
@@ -150,6 +180,12 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
       : [...selectedPlayers, playerId];
     
     // Update local state immediately for responsive UI
+    vlog('togglePlayer', {
+      playerId,
+      wasSelected: selectedPlayers.includes(playerId),
+      selectedAfter: newSelected.includes(playerId),
+      totalSelectedAfter: newSelected.length
+    });
     onPlayersChange(newSelected);
     
     // Sync with backend (debounced) - fire and forget
@@ -206,6 +242,17 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
       </div>
     );
   }
+
+  // Header checkbox state (Players table)
+  const selectedInFiltered = filteredPlayers.filter(p => selectedPlayers.includes(p.id)).length;
+  const allFilteredSelected = filteredPlayers.length > 0 && selectedInFiltered === filteredPlayers.length;
+  const someFilteredSelected = selectedInFiltered > 0 && selectedInFiltered < filteredPlayers.length;
+  vlog('playersHeaderCheckbox', {
+    filteredCount: filteredPlayers.length,
+    selectedInFiltered,
+    allFilteredSelected,
+    someFilteredSelected
+  });
 
                   return (
     <div className="flex flex-col h-full space-y-4">
@@ -274,7 +321,18 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
           <thead className="bg-slate-700 sticky top-0 z-10">
             <tr className="border-b border-slate-600">
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-12">
-                <Checkbox className="cursor-pointer" />
+                <Checkbox
+                  checked={allFilteredSelected}
+                  onCheckedChange={(checked: boolean | 'indeterminate') => {
+                    vlog('playersHeaderCheckbox.onCheckedChange', { checked });
+                    if (checked) {
+                      handleSelectAll();
+                    } else {
+                      handleDeselectAll();
+                    }
+                  }}
+                  className="border-cyan-400 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400 cursor-pointer"
+                />
               </th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider min-w-[150px]">Name</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-16">Team</th>
@@ -316,7 +374,10 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
                           togglePlayer(player.id);
                         }
                       }}
-                      className="cursor-pointer transition-all duration-200"
+                      className="border-cyan-400 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400 cursor-pointer transition-all duration-200"
+                      style={{ 
+                        accentColor: '#1f2937'
+                      }}
                     />
                   </td>
                   <td className="px-3 py-2 text-white font-medium">{player.name}</td>
@@ -571,7 +632,24 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
           <thead className="bg-slate-700 sticky top-0 z-10">
             <tr className="border-b border-slate-600">
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-12">
-                <Checkbox className="cursor-pointer" />
+                <Checkbox
+                  checked={
+                    teams.length > 0 &&
+                    (getSelectedTeams(activeStackSize).length === (
+                      activeStackSize === 'all'
+                        ? teams.length
+                        : teams.filter(t => t.batterCount >= (activeStackSize as number)).length
+                    ))
+                  }
+                  onCheckedChange={(checked: boolean | 'indeterminate') => {
+                    if (checked) {
+                      handleSelectAll();
+                    } else {
+                      handleDeselectAll();
+                    }
+                  }}
+                  className="border-cyan-400 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400 cursor-pointer"
+                />
               </th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-20">Team</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-24">Status</th>

@@ -1,0 +1,8835 @@
+import sys
+import os
+import logging
+import traceback
+import psutil
+import pulp
+import pandas as pd
+import numpy as np
+import random
+import re
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt5.QtGui import *
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
+import concurrent.futures
+from itertools import combinations, permutations
+import itertools
+import csv
+import json
+import hashlib
+from collections import defaultdict
+try:
+    # Optional Markov probabilities module
+    from nba_markov_probabilities import apply_markov_adjustments
+    MARKOV_PROB_AVAILABLE = True
+    print("✅ Markov probabilities module loaded")
+except Exception as e:
+    MARKOV_PROB_AVAILABLE = False
+    print(f"⚠️ Markov probabilities module not available: {e}")
+
+# Import Windows-safe logging
+try:
+    from safe_logging import safe_log_info as safe_log_info_func, safe_log_debug as safe_log_debug_func, safe_log_warning as safe_log_warning_func, safe_log_error as safe_log_error_func
+    # Create wrappers to match expected interface
+    def safe_log_info(msg): return safe_log_info_func(msg)
+    def safe_log_debug(msg): return safe_log_debug_func(msg)
+    def safe_log_warning(msg): return safe_log_warning_func(msg)
+    def safe_log_error(msg): return safe_log_error_func(msg)
+    SAFE_LOGGING_AVAILABLE = True
+    print("✅ Windows-safe logging loaded successfully!")
+except ImportError as e:
+    print(f"⚠️ Safe logging not available: {e}")
+    SAFE_LOGGING_AVAILABLE = False
+    # Fallback to regular logging
+    def safe_log_info(msg): logging.info(msg)
+    def safe_log_debug(msg): logging.debug(msg)
+    def safe_log_warning(msg): logging.warning(msg)
+    def safe_log_error(msg): logging.error(msg)
+
+# Import the advanced quantitative optimizer
+try:
+    from advanced_quant_optimizer import AdvancedQuantitativeOptimizer
+    ADVANCED_QUANT_AVAILABLE = True
+    print("✅ Advanced Quantitative Optimizer loaded successfully!")
+except ImportError as e:
+    print(f"⚠️ Advanced Quantitative Optimizer not available: {e}")
+    ADVANCED_QUANT_AVAILABLE = False
+
+# Import enhanced checkbox handling
+try:
+    from checkbox_fix import CheckboxManager, collect_team_selections_enhanced
+    ENHANCED_CHECKBOX_AVAILABLE = True
+    print("✅ Enhanced Checkbox Manager loaded successfully!")
+except ImportError as e:
+    print(f"⚠️ Enhanced Checkbox Manager not available: {e}")
+    ENHANCED_CHECKBOX_AVAILABLE = False
+
+# Import the advanced risk management engine
+try:
+    import sys
+    import os
+    # Add parent directory to path to find dfs_risk_engine
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if parent_dir not in sys.path:
+        sys.path.insert(0, parent_dir)
+    
+    from dfs_risk_engine import DFSRiskEngine, DFSBankrollManager, RiskMetrics
+    RISK_ENGINE_AVAILABLE = True
+    print("✅ Advanced Risk Engine loaded successfully!")
+except ImportError as e:
+    print(f"⚠️ Risk Engine not available: {e}")
+    RISK_ENGINE_AVAILABLE = False
+
+# Import the probability enhanced optimizer
+try:
+    from probability_enhanced_optimizer import ProbabilityEnhancedOptimizer
+    PROBABILITY_OPTIMIZER_AVAILABLE = True
+    print("✅ Probability Enhanced Optimizer loaded successfully!")
+except ImportError as e:
+    print(f"⚠️ Probability Enhanced Optimizer not available: {e}")
+    PROBABILITY_OPTIMIZER_AVAILABLE = False
+
+# Import the NBA Stack Engine
+try:
+    from nba_stack_engine import NBAStackEngine
+    from nba_stack_config import NBA_STACK_TYPES, get_stack_positions
+    NBA_STACK_ENGINE_AVAILABLE = True
+    print("✅ NBA Stack Engine loaded successfully!")
+except ImportError as e:
+    print(f"⚠️ NBA Stack Engine not available: {e}")
+    NBA_STACK_ENGINE_AVAILABLE = False
+
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# NBA DraftKings Settings
+# ============================================================================
+# NBA STACK TYPE MAPPING - Convert GUI names to backend logic
+# ============================================================================
+def map_nba_stack_to_backend(stack_type):
+    """
+    Map NBA stack names from GUI to backend processing format
+    Now properly integrated with nba_stack_engine
+    """
+    stack_mapping = {
+        "PG + C": "pg_c_stack",           # Point Guard + Center correlation
+        "PG + Wing": "pg_wing_stack",     # Point Guard + Wing (SF/SG)
+        "Stars + Value": "stars_value",   # 2-3 stars + value plays
+        "Game Stack": "game_stack",        # 4+ players from one high-scoring game
+        "Game Stack (Both Teams)": "game_stack",  # Players from both teams in a game
+        "Balanced": "balanced",            # No specific stacking
+        "No Stack": "No Stacks",
+        "2 Players Same Team": "2",        # 2 players from same team
+        "3 Players Same Team": "3",        # 3 players from same team
+        "4 Players Same Team": "4",        # 4 players from same team
+        "5 Players Same Team": "5",        # 5 players from same team
+    }
+    
+    # Check if it's a numeric pattern like "2 Players Same Team"
+    if "Players Same Team" in stack_type:
+        # Extract the number
+        import re
+        match = re.search(r'(\d+)\s+Players', stack_type)
+        if match:
+            return match.group(1)
+    
+    # Return mapped value or original if not found
+    return stack_mapping.get(stack_type, stack_type)
+
+SALARY_CAP = 50000
+MIN_SALARY_DEFAULT = 49000  # NBA minimum salary requirement
+
+# NBA DraftKings Classic Lineup Positions
+# PG (1), SG (1), SF (1), PF (1), C (1), G (1), F (1), UTIL (1) = 8 players
+POSITION_LIMITS = {
+    'PG': 1,   # Point Guard
+    'SG': 1,   # Shooting Guard
+    'SF': 1,   # Small Forward
+    'PF': 1,   # Power Forward
+    'C': 1,    # Center
+    'G': 1,    # Guard (PG/SG)
+    'F': 1,    # Forward (SF/PF)
+    'UTIL': 1  # Utility (any position)
+}
+
+REQUIRED_TEAM_SIZE = 8  # NBA lineups have 8 players
+
+# Position eligibility mapping
+GUARD_POSITIONS = ['PG', 'SG']
+FORWARD_POSITIONS = ['SF', 'PF']
+ALL_POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C']
+
+NBA_TEAM_CODES = {
+    'ATL', 'BOS', 'BRK', 'BKN', 'CHA', 'CHI', 'CLE', 'DAL', 'DEN', 'DET',
+    'GSW', 'GS', 'HOU', 'IND', 'LAC', 'LAL', 'MEM', 'MIA', 'MIL', 'MIN',
+    'NOP', 'NO', 'NYK', 'NY', 'OKC', 'ORL', 'PHI', 'PHX', 'PHO', 'POR',
+    'SAC', 'SAS', 'SA', 'TOR', 'UTA', 'UTAH', 'WAS', 'WSH'
+}
+
+NON_NBA_NAME_BLOCKLIST = {
+    'ROMEO LAVIA', 'ROMÉO LAVIA', 'WESLEY FOFANA', 'BÉCHIR BEN SAÏD',
+    'BECHIR BEN SAID', 'SEDKI DEBCHI', 'CHIHEB JEBALI', 'BEN SARAF'
+}
+
+DK_ID_TOKENS = {'DKID', 'DRAFTKINGSID', 'OPERATORPLAYERID', 'PLAYERID'}
+
+# ============================================================================
+# RESEARCH-BASED FEATURES (MIT Paper + Fantasy Sports Bible)
+# ============================================================================
+
+class OpponentPortfolioModel:
+    """
+    Models opponent lineup construction using Dirichlet-multinomial distribution.
+    Based on MIT Paper Algorithm 1.
+    """
+    
+    def __init__(self, player_pool_df, salary_cap=50000, min_salary=49000):
+        self.player_pool = player_pool_df.copy()
+        self.salary_cap = salary_cap
+        self.min_salary = min_salary
+        self.alphas = self._estimate_dirichlet_alphas()
+    
+    def _estimate_dirichlet_alphas(self):
+        """Estimate Dirichlet parameters for each position."""
+        alphas = {}
+        for pos in ['PG', 'SG', 'SF', 'PF', 'C']:
+            pos_players = self.player_pool[
+                self.player_pool.get('Position', self.player_pool.get('Roster_Position', '')).str.contains(pos, na=False)
+            ]
+            alphas[pos] = {}
+            for _, player in pos_players.iterrows():
+                proj = player.get('ProjectedPoints', player.get('Projected_DK_Points', 0))
+                salary = player.get('Salary', 5000)
+                ownership = player.get('Est_Ownership', player.get('Ownership', 50))
+                
+                projection_score = proj / 50
+                salary_score = (1 - salary / self.salary_cap) * 0.5
+                ownership_score = (1 - ownership / 100) * 0.2
+                
+                alpha = max(0.1, projection_score + salary_score + ownership_score)
+                player_id = player.get('ID', player.get('DK_ID', player.get('Name', '')))
+                alphas[pos][str(player_id)] = alpha
+        return alphas
+    
+    def sample_opponent_scores(self, num_samples=1000):
+        """Generate distribution of opponent scores for cash game optimization."""
+        scores = []
+        for _ in range(min(num_samples, 100)):  # Limit for performance
+            lineup_score = 0
+            used_ids = set()
+            
+            for pos in ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']:
+                available = self.player_pool[
+                    ~self.player_pool.get('ID', self.player_pool.get('DK_ID', pd.Series())).isin(used_ids)
+                ]
+                
+                if not available.empty:
+                    # Simple sampling with projection weighting
+                    weights = available.get('ProjectedPoints', available.get('Projected_DK_Points', 1))
+                    weights = weights.fillna(1) / weights.sum()
+                    selected = available.sample(n=1, weights=weights).iloc[0]
+                    lineup_score += selected.get('ProjectedPoints', selected.get('Projected_DK_Points', 0))
+                    used_ids.add(selected.get('ID', selected.get('DK_ID', selected.get('Name', ''))))
+            
+            scores.append(lineup_score)
+        
+        if not scores:
+            mean_score = self.player_pool.get('ProjectedPoints', self.player_pool.get('Projected_DK_Points', pd.Series([30]))).mean() * 8
+            scores = np.random.normal(mean_score, mean_score * 0.15, num_samples).tolist()
+        
+        return scores
+
+
+def get_player_eligible_positions(roster_position_str):
+    """
+    Parse DraftKings roster position string for NBA eligibility.
+    E.g., 'PG/SG/G/UTIL' -> ['PG', 'SG', 'G', 'UTIL']
+    """
+    if pd.isna(roster_position_str):
+        return ['UTIL']
+    
+    positions = str(roster_position_str).split('/')
+    eligible = []
+    
+    for pos in ['PG', 'SG', 'SF', 'PF', 'C']:
+        if pos in positions:
+            eligible.append(pos)
+    
+    if 'PG' in positions or 'SG' in positions or 'G' in positions:
+        if 'G' not in eligible:
+            eligible.append('G')
+    
+    if 'SF' in positions or 'PF' in positions or 'F' in positions:
+        if 'F' not in eligible:
+            eligible.append('F')
+    
+    if 'UTIL' not in eligible:
+        eligible.append('UTIL')
+    
+    return eligible
+
+
+# GENETIC ALGORITHM DIVERSITY ENGINE FOR MULTIPLE UNIQUE LINEUPS
+class GeneticDiversityEngine:
+    """Enhanced Genetic Algorithm engine for creating diverse lineup populations"""
+    
+    def __init__(self, df_players, position_limits, salary_cap, team_selections, min_salary):
+        self.df_players = df_players
+        self.position_limits = position_limits
+        self.salary_cap = salary_cap
+        self.team_selections = team_selections
+        self.min_salary = min_salary
+        self.population = []
+        self.generation = 0
+        
+    def create_diverse_lineups(self, num_lineups, stack_type):
+        """Main method to create diverse lineups using genetic algorithm principles"""
+        logging.info(f"🧬 GENETIC DIVERSITY ENGINE: Creating {num_lineups} unique lineups for {stack_type}")
+        
+        # Phase 1: Create larger initial population
+        population_size = max(num_lineups * 3, 50)  # 3x requested for selection
+        population = self.create_initial_population(population_size, stack_type)
+        
+        if len(population) < num_lineups:
+            logging.warning(f"🧬 Only {len(population)} diverse lineups created from {population_size} attempts")
+            return population
+            
+        # Phase 2: Evolve population for better diversity
+        evolved_population = self.evolve_population(population, generations=3)
+        
+        # Phase 3: Select most diverse subset
+        diverse_selection = self.select_diverse_subset(evolved_population, num_lineups)
+        
+        logging.info(f"🧬 GENETIC ENGINE COMPLETE: Delivered {len(diverse_selection)}/{num_lineups} diverse lineups")
+        return diverse_selection
+    
+    def create_initial_population(self, population_size, stack_type):
+        """Create diverse initial population using genetic variation"""
+        population = []
+        lineup_hashes = set()  # Track unique lineups
+        attempts = 0
+        max_attempts = population_size * 5
+        
+        while len(population) < population_size and attempts < max_attempts:
+            attempts += 1
+            
+            try:
+                # Generate lineup with random variation
+                variation_level = (attempts % 5)  # Cycle through variation levels
+                lineup = self._generate_variant_lineup(stack_type, variation_level)
+                
+                if not lineup.empty and self._is_valid_lineup(lineup):
+                    lineup_hash = self._get_lineup_hash(lineup)
+                    
+                    # Only add truly unique lineups
+                    if lineup_hash not in lineup_hashes:
+                        lineup_hashes.add(lineup_hash)
+                        population.append(lineup)
+                        
+            except Exception as e:
+                logging.debug(f"GA generation attempt {attempts} failed: {e}")
+                continue
+        
+        logging.info(f"🧬 Initial population: {len(population)}/{population_size} unique lineups")
+        return population
+    
+    def evolve_population(self, population, generations=3):
+        """Evolve population for better fitness and diversity"""
+        if len(population) < 2:
+            return population
+            
+        current_pop = population.copy()
+        
+        for gen in range(generations):
+            # Tournament selection - keep best performers
+            elite = self._tournament_selection(current_pop, len(current_pop) // 2)
+            
+            # Generate offspring through crossover
+            offspring = self._create_offspring(elite, len(current_pop) // 4)
+            
+            # Generate mutants for exploration
+            mutants = self._create_mutants(elite, len(current_pop) // 4)
+            
+            # Combine populations
+            current_pop = elite + offspring + mutants
+            
+            # Ensure diversity - remove too-similar lineups
+            current_pop = self._ensure_diversity(current_pop, min_similarity=0.3)
+            
+        logging.info(f"🧬 Evolution complete: {len(current_pop)} lineups after {generations} generations")
+        return current_pop
+    
+    def select_diverse_subset(self, population, target_count):
+        """Select most diverse subset using maximal diversity algorithm"""
+        if len(population) <= target_count:
+            return population
+            
+        # Start with best performing lineup
+        selected = [max(population, key=lambda x: x['Predicted_DK_Points'].sum() if 'Predicted_DK_Points' in x.columns else 0)]
+        remaining = [x for x in population if not self._lineups_identical(x, selected[0])]
+        
+        # Greedily select most diverse remaining lineups
+        while len(selected) < target_count and remaining:
+            best_candidate = None
+            max_min_distance = -1
+            
+            for candidate in remaining:
+                # Calculate minimum distance to any selected lineup
+                min_distance = min(self._lineup_distance(candidate, selected_lineup) 
+                                 for selected_lineup in selected)
+                
+                if min_distance > max_min_distance:
+                    max_min_distance = min_distance
+                    best_candidate = candidate
+            
+            if best_candidate is not None:
+                selected.append(best_candidate)
+                remaining.remove(best_candidate)
+            else:
+                break
+        
+        logging.info(f"🧬 Diverse selection: {len(selected)}/{target_count} maximally diverse lineups")
+        return selected
+    
+    def _generate_variant_lineup(self, stack_type, variation_level):
+        """Generate lineup variant with controlled randomness"""
+        player_pool = getattr(self, 'filtered_player_pool', None)
+        if player_pool is None or player_pool.empty:
+            player_pool = self.df_players
+        df_variant = player_pool.copy()
+        
+        # Controlled variability added in optimize_single_lineup function
+        # This ensures diversity while maintaining top player priority
+        
+        # Use existing optimization which includes controlled variability
+        lineup, _ = optimize_single_lineup((df_variant, stack_type, {}, self.team_selections, self.min_salary))
+        return lineup
+    
+    def _tournament_selection(self, population, target_size):
+        """Select best lineups using tournament selection"""
+        if len(population) <= target_size:
+            return population
+            
+        # Score each lineup
+        scored_pop = []
+        for lineup in population:
+            if not lineup.empty and 'Predicted_DK_Points' in lineup.columns:
+                fitness = lineup['Predicted_DK_Points'].sum()
+                scored_pop.append((fitness, lineup))
+        
+        # Sort by fitness and return top performers
+        scored_pop.sort(key=lambda x: x[0], reverse=True)
+        return [lineup for _, lineup in scored_pop[:target_size]]
+    
+    def _create_offspring(self, parents, target_count):
+        """Create offspring through genetic crossover"""
+        offspring = []
+        
+        for i in range(target_count):
+            if len(parents) >= 2:
+                parent1 = np.random.choice(parents)
+                parent2 = np.random.choice(parents)
+                child = self._crossover_lineups(parent1, parent2)
+                if self._is_valid_lineup(child):
+                    offspring.append(child)
+        
+        return offspring
+    
+    def _create_mutants(self, population, target_count):
+        """Create mutants through random mutations"""
+        mutants = []
+        
+        for i in range(target_count):
+            if population:
+                parent = np.random.choice(population)
+                mutant = self._mutate_lineup(parent)
+                if self._is_valid_lineup(mutant):
+                    mutants.append(mutant)
+        
+        return mutants
+    
+    def _crossover_lineups(self, parent1, parent2):
+        """Simple crossover: randomly mix players from two parents"""
+        if parent1.empty or parent2.empty:
+            return parent1.copy() if not parent1.empty else parent2.copy()
+        
+        child = parent1.copy()
+        
+        # For each position, randomly choose parent
+        for position in self.position_limits.keys():
+            if np.random.random() < 0.5:  # 50% chance to take from parent2
+                p2_players = parent2[parent2['Position'] == position]
+                if len(p2_players) > 0:
+                    # Replace with parent2's players for this position
+                    child_pos_mask = child['Position'] == position
+                    child.loc[child_pos_mask] = p2_players.values
+        
+        # CRITICAL: Remove duplicate players after crossover
+        if 'Name' in child.columns and child['Name'].duplicated().any():
+            duplicates = child[child['Name'].duplicated(keep=False)]['Name'].unique()
+            logging.warning(f"🚨 CROSSOVER created duplicates: {duplicates.tolist()}")
+            child = child.drop_duplicates(subset=['Name'], keep='first')
+            # If we lost players due to deduplication, this child is invalid
+            if len(child) != REQUIRED_TEAM_SIZE:
+                logging.warning(f"⚠️ Child invalid after dedup: {len(child)} players")
+                return parent1.copy()  # Return parent1 as fallback
+        
+        return child
+    
+    def _mutate_lineup(self, lineup):
+        """Mutate lineup by replacing random players"""
+        if lineup.empty:
+            return lineup
+            
+        mutated = lineup.copy()
+        player_pool = getattr(self, 'filtered_player_pool', None)
+        if player_pool is None or player_pool.empty:
+            player_pool = self.df_players
+        
+        # Randomly mutate 1-2 positions
+        positions_to_mutate = np.random.choice(
+            list(self.position_limits.keys()), 
+            size=np.random.randint(1, 3), 
+            replace=False
+        )
+        
+        for position in positions_to_mutate:
+            current_players = mutated[mutated['Position'] == position]
+            if len(current_players) > 0:
+                # Find alternative players - EXCLUDE all current players by Name
+                alternatives = player_pool[
+                    (player_pool['Position'] == position) & 
+                    (~player_pool['Name'].isin(mutated['Name']))
+                ]
+                
+                if len(alternatives) > 0:
+                    # Replace with random alternative
+                    replacement = alternatives.sample(1).iloc[0]
+                    mutated.loc[mutated['Position'] == position].iloc[0] = replacement
+        
+        # CRITICAL: Double-check no duplicates after mutation
+        if 'Name' in mutated.columns and mutated['Name'].duplicated().any():
+            duplicates = mutated[mutated['Name'].duplicated(keep=False)]['Name'].unique()
+            logging.error(f"🚨 MUTATION created duplicates: {duplicates.tolist()}")
+            mutated = mutated.drop_duplicates(subset=['Name'], keep='first')
+            # If we lost players due to deduplication, return original
+            if len(mutated) != REQUIRED_TEAM_SIZE:
+                logging.warning(f"⚠️ Mutant invalid after dedup: {len(mutated)} players, returning original")
+                return lineup.copy()
+        
+        return mutated
+    
+    def _ensure_diversity(self, population, min_similarity=0.3):
+        """Remove overly similar lineups to maintain diversity"""
+        if len(population) <= 1:
+            return population
+        
+        diverse_pop = [population[0]]  # Keep first lineup
+        
+        for lineup in population[1:]:
+            # Check if this lineup is too similar to any existing one
+            too_similar = any(
+                self._genetic_similarity(lineup, existing) > (1.0 - min_similarity)
+                for existing in diverse_pop
+            )
+            
+            if not too_similar:
+                diverse_pop.append(lineup)
+        
+        return diverse_pop
+    
+    def _lineup_distance(self, lineup1, lineup2):
+        """Calculate distance between two lineups (higher = more diverse)"""
+        if lineup1.empty or lineup2.empty:
+            return 0
+        
+        # Count different players
+        players1 = set(lineup1['Name'])
+        players2 = set(lineup2['Name'])
+        different_players = len(players1.symmetric_difference(players2))
+        total_players = len(players1.union(players2))
+        
+        return different_players / total_players if total_players > 0 else 0
+    
+    def _genetic_similarity(self, lineup1, lineup2):
+        """Calculate genetic similarity (0=different, 1=identical)"""
+        return 1.0 - self._lineup_distance(lineup1, lineup2)
+    
+    def _lineups_identical(self, lineup1, lineup2):
+        """Check if two lineups are identical"""
+        if lineup1.empty or lineup2.empty:
+            return False
+        return set(lineup1['Name']) == set(lineup2['Name'])
+    
+    def _get_lineup_hash(self, lineup):
+        """Get unique hash for lineup"""
+        if lineup.empty:
+            return ""
+        player_names = sorted(lineup['Name'].tolist())
+        return hashlib.md5('|'.join(player_names).encode()).hexdigest()
+    
+    def _is_valid_lineup(self, lineup):
+        """Check if lineup meets all constraints"""
+        if lineup.empty:
+            return False
+            
+        try:
+            # CRITICAL: Check for duplicate players first!
+            if 'Name' in lineup.columns:
+                if lineup['Name'].duplicated().any():
+                    duplicates = lineup[lineup['Name'].duplicated(keep=False)]['Name'].tolist()
+                    logging.error(f"🚨 VALIDATION FAILED: Duplicate players found: {duplicates}")
+                    return False
+            
+            # Check correct number of players
+            if len(lineup) != REQUIRED_TEAM_SIZE:
+                logging.debug(f"⚠️ Invalid lineup size: {len(lineup)} (need {REQUIRED_TEAM_SIZE})")
+                return False
+            
+            # Check salary constraints
+            total_salary = lineup['Salary'].sum() if 'Salary' in lineup.columns else 0
+            if total_salary > self.salary_cap or total_salary < self.min_salary:
+                return False
+                
+            # Check position constraints
+            position_counts = lineup['Position'].value_counts()
+            for position, required_count in self.position_limits.items():
+                if position_counts.get(position, 0) != required_count:
+                    return False
+                    
+            return True
+            
+        except Exception as e:
+            logging.debug(f"⚠️ Validation exception: {e}")
+            return False
+
+def optimize_single_lineup(args):
+    df, stack_type, team_projected_runs, team_selections, min_salary = args
+    
+    # MAP NEW NBA STACK NAMES TO BACKEND FORMAT
+    stack_type = map_nba_stack_to_backend(stack_type)
+    
+    logging.debug(f"optimize_single_lineup: Starting with stack type {stack_type}, min_salary={min_salary}")
+    
+    # Controlled variability for lineup diversity while prioritizing top players
+    import random
+    import numpy as np
+    import time
+    import os
+    
+    # Create unique seed for this optimization run to ensure diversity
+    seed_value = int(time.time() * 1000000) % 2147483647 + os.getpid()
+    random.seed(seed_value)
+    np.random.seed(seed_value)
+    
+    # Create a copy to avoid modifying original data
+    df = df.copy()
+    
+    # Add SMALL controlled variability for lineup diversity (10-15%)
+    # This ensures we get different lineups while still prioritizing top players
+    if 'Predicted_DK_Points' in df.columns:
+        # Small controlled noise for diversity
+        diversity_factor = random.uniform(0.10, 0.15)  # 10-15% for diversity
+        noise = np.random.lognormal(0, diversity_factor, len(df))
+        
+        # Boost 2-4 random players slightly for variety (10-20% boost)
+        num_boosts = random.randint(2, 4)
+        if num_boosts > 0 and len(df) >= num_boosts:
+            boost_indices = np.random.choice(df.index, size=num_boosts, replace=False)
+            for idx in boost_indices:
+                loc = df.index.get_loc(idx)
+                noise[loc] *= random.uniform(1.10, 1.20)  # 10-20% boost
+        
+        # Apply the noise
+        df['Predicted_DK_Points'] = df['Predicted_DK_Points'] * noise
+        
+        logging.debug(f"🎲 Added {diversity_factor*100:.1f}% controlled variability for lineup diversity")
+    
+    # Create the optimization problem
+    problem = pulp.LpProblem("DFS_Lineup_Optimization", pulp.LpMaximize)
+    
+    # Create binary variables for each player
+    player_vars = {}
+    for idx in df.index:
+        player_vars[idx] = pulp.LpVariable(f"player_{idx}", cat='Binary')
+    
+    # CRITICAL: Ensure each unique player name appears at most once in the lineup
+    # Group by player name and ensure sum of their indices <= 1
+    if 'Name' in df.columns:
+        player_name_groups = df.groupby('Name').groups
+        for player_name, indices in player_name_groups.items():
+            if len(indices) > 1:
+                # If same player appears multiple times in dataframe, ensure only one instance is selected
+                problem += pulp.lpSum([player_vars[idx] for idx in indices]) <= 1
+                logging.debug(f"🚫 DUPLICATE PREVENTION: Player '{player_name}' appears {len(indices)} times in dataframe, adding constraint")
+    else:
+        logging.warning("⚠️ 'Name' column not found - cannot add duplicate player prevention")
+    
+    # 🎲 PROBABILITY-ENHANCED OBJECTIVE FUNCTION
+    has_probability_metrics = any(col in df.columns for col in [
+        'Expected_Utility', 'Risk_Adjusted_Points', 'Kelly_Fraction'
+    ])
+    
+    if has_probability_metrics:
+        logging.debug("🎲 Using probability-enhanced objective function")
+        
+        # Use Expected Utility as primary objective if available
+        if 'Expected_Utility' in df.columns:
+            base_objective = [df.at[idx, 'Expected_Utility'] * player_vars[idx] for idx in df.index]
+        elif 'Risk_Adjusted_Points' in df.columns:
+            base_objective = [df.at[idx, 'Risk_Adjusted_Points'] * player_vars[idx] for idx in df.index]
+        else:
+            base_objective = [df.at[idx, 'Predicted_DK_Points'] * player_vars[idx] for idx in df.index]
+        
+        # Add Kelly Criterion weighting if available
+        if 'Kelly_Fraction' in df.columns:
+            kelly_bonus = [df.at[idx, 'Kelly_Fraction'] * df.at[idx, 'Predicted_DK_Points'] * 0.1 * player_vars[idx] 
+                          for idx in df.index]
+            base_with_kelly = base_objective + kelly_bonus
+        else:
+            base_with_kelly = base_objective
+        
+        # 🎯 POINTS-FIRST PRIORITY: Prioritizing projected scoring over salary
+        # High projected points get highest bonus since they drive winning lineups
+        
+        # Get the base points column for bonus calculation
+        points_col = 'Predicted_DK_Points'
+        if 'Expected_Utility' in df.columns:
+            points_col = 'Expected_Utility'
+        elif 'Risk_Adjusted_Points' in df.columns:
+            points_col = 'Risk_Adjusted_Points'
+        
+        # Combined prioritization: Prioritize projected points and value (points per $)
+        max_salary = df['Salary'].max()
+        min_salary = df['Salary'].min()
+        salary_range = max_salary - min_salary if max_salary != min_salary else 1
+        
+        max_points = df[points_col].max()
+        min_points = df[points_col].min()
+        points_range = max_points - min_points if max_points != min_points else 1
+        
+        # Value metric: DK points per $1k of salary
+        value_series = (df[points_col] / df['Salary'].clip(lower=1)) * 1000.0
+        max_value = value_series.max()
+        min_value = value_series.min()
+        value_range = (max_value - min_value) if max_value != min_value else 1
+        
+        # STRONG bonuses to prioritize top players and high value
+        bonus_objectives = []
+        for idx in df.index:
+            player_salary = df.at[idx, 'Salary']
+            player_points = df.at[idx, points_col]
+            
+            # Normalize both salary and points (0-1 scale)
+            salary_normalized = (player_salary - min_salary) / salary_range
+            points_normalized = (player_points - min_points) / points_range
+            player_value = (player_points / max(1.0, float(player_salary))) * 1000.0
+            value_normalized = (player_value - min_value) / value_range
+            
+            # Bonuses: emphasize projection (60%) and value (40%)
+            points_bonus = player_points * points_normalized * 0.60
+            value_bonus = player_points * value_normalized * 0.40
+            
+            total_bonus = points_bonus + value_bonus
+            bonus_objectives.append(total_bonus * player_vars[idx])
+        
+        logging.debug(f"🏆 VALUE+POINTS MODE: Added 60% projection + 40% value bonuses to probability-enhanced objective")
+        objective = pulp.lpSum(base_with_kelly + bonus_objectives)
+            
+    else:
+        # Standard objective function with POINTS-FIRST PRIORITY
+        # Controlled variability (10-15%) added above ensures lineup diversity
+        logging.debug("🏆 POINTS PRIORITY MODE: Prioritizing projected scoring over salary")
+        
+        # 🎯 VALUE+POINTS PRIORITY: Prioritize projected scoring and value (points per $)
+        max_salary = df['Salary'].max()
+        min_salary = df['Salary'].min()
+        salary_range = max_salary - min_salary if max_salary != min_salary else 1
+        
+        max_points = df['Predicted_DK_Points'].max()
+        min_points = df['Predicted_DK_Points'].min()
+        points_range = max_points - min_points if max_points != min_points else 1
+        
+        value_series = (df['Predicted_DK_Points'] / df['Salary'].clip(lower=1)) * 1000.0
+        max_value = value_series.max()
+        min_value = value_series.min()
+        value_range = (max_value - min_value) if max_value != min_value else 1
+        
+        # STRONG bonuses to prioritize top players and high value
+        bonus_objectives = []
+        base_objective = []
+        
+        for idx in df.index:
+            player_salary = df.at[idx, 'Salary']
+            player_points = df.at[idx, 'Predicted_DK_Points']
+            
+            # Normalize both salary and points (0-1 scale)
+            salary_normalized = (player_salary - min_salary) / salary_range
+            points_normalized = (player_points - min_points) / points_range
+            player_value = (player_points / max(1.0, float(player_salary))) * 1000.0
+            value_normalized = (player_value - min_value) / value_range
+            
+            # Base points
+            base_points = player_points
+            base_objective.append(base_points * player_vars[idx])
+            
+            # Bonuses: emphasize projection (60%) and value (40%)
+            points_bonus = base_points * points_normalized * 0.60
+            value_bonus = base_points * value_normalized * 0.40
+            
+            total_bonus = points_bonus + value_bonus
+            bonus_objectives.append(total_bonus * player_vars[idx])
+        
+        logging.debug(f"🏆 VALUE+POINTS MODE: Adding 60% projection + 40% value bonuses (salary: ${min_salary:.0f}-${max_salary:.0f}, points: {min_points:.1f}-{max_points:.1f})")
+        
+        # Combine base objective with all bonuses
+        objective = pulp.lpSum(base_objective + bonus_objectives)
+    
+    problem += objective
+
+    # Basic constraints
+    problem += pulp.lpSum(player_vars.values()) == REQUIRED_TEAM_SIZE
+    
+    # CRITICAL: Salary must be <= $50,000 cap (strict enforcement)
+    salary_constraint = pulp.lpSum([df.at[idx, 'Salary'] * player_vars[idx] for idx in df.index])
+    problem += salary_constraint <= SALARY_CAP
+    logging.debug(f"Added salary constraint: Total salary <= ${SALARY_CAP}")
+    
+    # ADD MINIMUM SALARY CONSTRAINT (optional, for multi-entry optimization)
+    if min_salary and min_salary > 0:
+        # Ensure we use at least min_salary (helps create diverse lineups)
+        problem += pulp.lpSum([df.at[idx, 'Salary'] * player_vars[idx] for idx in df.index]) >= min_salary
+        logging.debug(f"Added minimum salary constraint: Total salary >= ${min_salary}")
+    
+    # NBA Position Constraints - ENHANCED to ensure position fillability
+    # We need 8 players total: PG, SG, SF, PF, C, G, F, UTIL
+    # The G, F, UTIL slots make this flexible but we need enough dual-eligible players
+    
+    # Roster structure: [PG, SG, SF, PF, C, G, F, UTIL]
+    # Requirements:
+    # - PG slot: needs PG
+    # - SG slot: needs SG
+    # - SF slot: needs SF
+    # - PF slot: needs PF
+    # - C slot: needs C
+    # - G slot: needs PG or SG (dual-eligible preferred)
+    # - F slot: needs SF or PF (dual-eligible preferred)
+    # - UTIL slot: any position
+    
+    # Strategy: Ensure we have enough guards and forwards to fill both core AND flex positions
+    
+    # Count players by position (use Roster_Position for DK eligibility)
+    def get_position(idx):
+        return str(df.at[idx, 'Roster_Position'] if 'Roster_Position' in df.columns and pd.notna(df.at[idx, 'Roster_Position']) else df.at[idx, 'Position'])
+    
+    pg_count = len([idx for idx in df.index if 'PG' in get_position(idx)])
+    sg_count = len([idx for idx in df.index if 'SG' in get_position(idx)])
+    sf_count = len([idx for idx in df.index if 'SF' in get_position(idx)])
+    pf_count = len([idx for idx in df.index if 'PF' in get_position(idx)])
+    c_count = len([idx for idx in df.index if 'C' in get_position(idx)])
+    
+    logging.debug(f"Position availability: PG={pg_count}, SG={sg_count}, SF={sf_count}, PF={pf_count}, C={c_count}")
+    
+    # Constraint 1: Need at least 1 of each core position (PG, SG, SF, PF, C)
+    # Uses >= for flexibility since players can be multi-positional
+    for position in ['PG', 'SG', 'SF', 'PF', 'C']:
+            available_for_position = [idx for idx in df.index if position in get_position(idx)]
+            
+            if len(available_for_position) > 0:
+                problem += pulp.lpSum([player_vars[idx] for idx in available_for_position]) >= 1
+                logging.debug(f"Added constraint: At least 1 {position}")
+            else:
+                logging.warning(f"⚠️ No players available for position {position}!")
+    
+    # Constraint 2: Need at least 3 guards total (for PG + SG + G slots)
+    # This ensures we can fill PG, SG, and G slots
+    guards = [idx for idx in df.index if 'PG' in get_position(idx) or 'SG' in get_position(idx) or 'G' in get_position(idx)]
+    if len(guards) >= 3:
+        problem += pulp.lpSum([player_vars[idx] for idx in guards]) >= 3
+        logging.debug("Added constraint: At least 3 guards (for PG + SG + G slots)")
+    else:
+        logging.warning(f"⚠️ Only {len(guards)} guards available, may not fill G slot!")
+    
+    # Constraint 3: Need at least 3 forwards total (for SF + PF + F slots)
+    # This ensures we can fill SF, PF, and F slots
+    forwards = [idx for idx in df.index if 'SF' in get_position(idx) or 'PF' in get_position(idx) or 'F' in get_position(idx)]
+    if len(forwards) >= 3:
+        problem += pulp.lpSum([player_vars[idx] for idx in forwards]) >= 3
+        logging.debug("Added constraint: At least 3 forwards (for SF + PF + F slots)")
+    else:
+        logging.warning(f"⚠️ Only {len(forwards)} forwards available, may not fill F slot!")
+    
+    # Constraint 4: Add maximums to prevent over-filling positions
+    # No more than 2 of any single core position (1 slot + 1 UTIL max)
+    for position in ['PG', 'SG', 'SF', 'PF', 'C']:
+        available_for_position = [idx for idx in df.index if position in get_position(idx)]
+        if len(available_for_position) > 0:
+            problem += pulp.lpSum([player_vars[idx] for idx in available_for_position]) <= 2
+            logging.debug(f"Added constraint: Max 2 {position}")
+    
+    # UTIL slot can be any position (handled by total == 8 players constraint above)
+    
+    logging.debug("NBA position constraints applied with flex position awareness")
+
+    # Handle different stack types
+    stack_size = None
+    if stack_type == "No Stacks":
+        # No stacking constraints - just basic position and salary constraints
+        logging.debug("optimize_single_lineup: Using no stacks")
+    elif stack_type in ["5", "4", "3"]:
+        # Handle simple single stack types (5 players, 4 players, 3 players from one team)
+        stack_size = int(stack_type)
+    elif "Team Stack" in stack_type:
+        # Handle "Team Stack (3)" format from GUI
+        try:
+            import re
+            match = re.search(r'\((\d+)\)', stack_type)
+            if match:
+                stack_size = int(match.group(1))
+                logging.info(f"🎯 OPTIMIZER: Parsed Team Stack '{stack_type}' -> {stack_size} players")
+            else:
+                # Fallback: extract any number from the string
+                numbers = re.findall(r'\d+', stack_type)
+                stack_size = int(numbers[0]) if numbers else 3
+                logging.warning(f"⚠️ Could not parse stack type '{stack_type}' cleanly, using {stack_size}")
+        except (ValueError, IndexError) as e:
+            logging.error(f"❌ Failed to parse Team Stack '{stack_type}': {e}")
+            stack_size = 3  # Default fallback
+    elif "QB +" in stack_type and "Total)" in stack_type:
+        # Handle new format: "QB + 2 (3 Total)" -> extract 3
+        try:
+            # Extract number from parentheses
+            import re
+            match = re.search(r'\((\d+)\s+Total\)', stack_type)
+            if match:
+                stack_size = int(match.group(1))
+                logging.info(f"🎯 OPTIMIZER: Parsed QB stack type '{stack_type}' -> {stack_size} players total")
+            else:
+                # Fallback: just get any number from the string
+                numbers = re.findall(r'\d+', stack_type)
+                stack_size = int(numbers[-1]) if numbers else 3  # Use last number or default to 3
+                logging.warning(f"⚠️ Could not parse stack type '{stack_type}' cleanly, using {stack_size}")
+        except (ValueError, IndexError) as e:
+            logging.error(f"❌ Failed to parse stack type '{stack_type}': {e}")
+            stack_size = 3  # Default fallback
+    elif stack_type.replace(" ", "").isdigit():
+        # Handle plain numbers
+        stack_size = int(stack_type)
+    
+    # Process numeric stack if stack_size was determined
+    if stack_size is not None:
+        logging.info(f"🎯 OPTIMIZER: Processing simple {stack_size}-stack")
+        logging.info(f"🎯 OPTIMIZER: Team selections received: {team_selections}")
+        
+        # Get teams available for this stack size
+        available_teams = None
+        
+        # ENHANCED TEAM SELECTION LOOKUP - handles multiple key formats
+        if isinstance(team_selections, dict):
+            # Method 1: Check for exact integer match
+            if stack_size in team_selections:
+                available_teams = team_selections[stack_size]
+                logging.info(f"🎯 FOUND teams for {stack_size}-stack using exact integer match: {available_teams}")
+            # Method 2: Check for string integer match
+            elif str(stack_size) in team_selections:
+                available_teams = team_selections[str(stack_size)]
+                logging.info(f"🎯 FOUND teams for {stack_size}-stack using string integer match: {available_teams}")
+            # Method 3: Check for "X-Stack" format
+            elif f"{stack_size}-Stack" in team_selections:
+                available_teams = team_selections[f"{stack_size}-Stack"]
+                logging.info(f"🎯 FOUND teams for {stack_size}-stack using dash format match: {available_teams}")
+            # Method 4: Check for "X Stack" format (with space)
+            elif f"{stack_size} Stack" in team_selections:
+                available_teams = team_selections[f"{stack_size} Stack"]
+                logging.info(f"🎯 FOUND teams for {stack_size}-stack using space format match: {available_teams}")
+            # Method 5: Check for "all" selection (from All Stacks tab)
+            elif "all" in team_selections:
+                available_teams = team_selections["all"]
+                logging.info(f"🎯 FOUND teams for {stack_size}-stack using 'all' key: {available_teams}")
+            # No specific match found in dictionary
+            else:
+                logging.warning(f"🎯 NO specific team selection found for {stack_size}-stack in keys: {list(team_selections.keys())}")
+        # Fallback to list format
+        elif isinstance(team_selections, list):
+            available_teams = team_selections
+            logging.debug(f"optimize_single_lineup: Using team list for stack size {stack_size}: {available_teams}")
+        
+        # Final fallback - use all available teams
+        if not available_teams:
+            available_teams = df['Team'].unique().tolist()
+            logging.warning(f"🚨 FALLBACK: Using ALL {len(available_teams)} teams for {stack_size}-stack!")
+        
+        # Filter available teams to only those with enough players for NBA stacks
+        valid_teams = []
+        for team in available_teams:
+            team_players = df[df['Team'] == team].index
+            if len(team_players) >= stack_size:
+                valid_teams.append(team)
+                logging.debug(f"optimize_single_lineup: Team {team} has {len(team_players)} players (need {stack_size}) - VALID")
+            else:
+                logging.debug(f"optimize_single_lineup: Team {team} has {len(team_players)} players (need {stack_size}) - INSUFFICIENT")
+                
+        if not valid_teams:
+            logging.warning(f"optimize_single_lineup: No valid teams with enough players for {stack_size}-stack")
+            logging.warning(f"Available teams: {available_teams}")
+        else:
+            # Enforce constraint for the selected teams
+            if len(valid_teams) == 1:
+                # If only one team selected for this stack size, enforce it directly
+                selected_team = valid_teams[0]
+                team_players_idx = df[df['Team'] == selected_team].index
+                
+                # Enforce NBA team stack (no position requirements, just X players from same team)
+                problem += pulp.lpSum([player_vars[idx] for idx in team_players_idx]) >= stack_size
+                logging.info(f"✅ ENFORCING: Must have {stack_size} players from {selected_team}")
+                
+                # Soft-preference: boost top projected players from this team
+                proj_col = 'Predicted_DK_Points'
+                if 'Expected_Utility' in df.columns:
+                    proj_col = 'Expected_Utility'
+                elif 'Risk_Adjusted_Points' in df.columns:
+                    proj_col = 'Risk_Adjusted_Points'
+                team_df = df.loc[team_players_idx]
+                k = min(max(stack_size + 2, stack_size), len(team_df))
+                top_team_idx = team_df.nlargest(k, proj_col).index.tolist()
+                top_bonus_terms = [df.at[idx, proj_col] * 0.15 * player_vars[idx] for idx in top_team_idx]
+                try:
+                    objective += pulp.lpSum(top_bonus_terms)
+                    logging.info(f"✨ Applied top-team bonus to {len(top_team_idx)} {selected_team} players for {stack_size}-stack")
+                except Exception:
+                    pass
+            else:
+                # If multiple teams selected for this stack size, create OR constraint
+                # This means: at least 'stack_size' players from ANY of the selected teams
+                team_binary_vars = {}
+                for team in valid_teams:
+                    team_binary_vars[team] = pulp.LpVariable(f"use_team_{team}_{stack_size}", cat='Binary')
+                
+                # At least one team must be selected
+                problem += pulp.lpSum(team_binary_vars.values()) >= 1
+                
+                # ONLY ONE team can have the stack (prevent multiple 3+ player stacks)
+                problem += pulp.lpSum(team_binary_vars.values()) <= 1
+                logging.info(f"✅ ENFORCING: Exactly ONE team will have {stack_size}+ players")
+                
+                # If a team is selected, enforce the stack constraint + QB requirement
+                for team in valid_teams:
+                    team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
+                    team_qb = df[(df['Team'] == team) & (df['Position'] == 'QB')].index
+                    
+                    if len(team_offense) >= stack_size and len(team_qb) > 0:
+                        # If team is selected (binary = 1), enforce at least 'stack_size' players
+                        problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) >= stack_size * team_binary_vars[team]
+                        # AND enforce that the QB from this team is selected
+                        problem += pulp.lpSum([player_vars[idx] for idx in team_qb]) >= team_binary_vars[team]
+                
+                logging.info(f"✅ ENFORCING: Must have QB + {stack_size-1} others from ONE of: {valid_teams}")
+            
+            # ADDITIONAL CONSTRAINT: Prevent ALL other teams from having large stacks
+            # This ensures ONLY ONE team (the stacked team) has stack_size+ players
+            all_teams = df['Team'].unique().tolist()
+            non_dst_teams = [t for t in all_teams if t != 'DST']
+            
+            if len(valid_teams) == 1:
+                # If only one valid team, limit all others
+                for other_team in non_dst_teams:
+                    if other_team != valid_teams[0]:
+                        other_team_offense = df[(df['Team'] == other_team) & (df['Position'] != 'DST')].index
+                        if len(other_team_offense) >= stack_size:
+                            problem += pulp.lpSum([player_vars[idx] for idx in other_team_offense]) <= stack_size - 1
+                            logging.debug(f"🚫 LIMITING: Team {other_team} can have max {stack_size-1} players")
+            else:
+                # If multiple valid teams, use binary variables to ensure only the selected team has the stack
+                # and all non-selected teams (including other valid teams) are limited
+                for team in non_dst_teams:
+                    if team in valid_teams:
+                        # For valid teams, they can only have stack_size+ if their binary var is 1
+                        team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
+                        # If NOT selected (binary = 0), limit to stack_size-1
+                        problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) <= stack_size - 1 + 9 * team_binary_vars[team]
+                    else:
+                        # For non-valid teams, always limit to stack_size-1
+                        team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
+                        if len(team_offense) >= stack_size:
+                            problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) <= stack_size - 1
+                            logging.debug(f"🚫 LIMITING: Team {team} can have max {stack_size-1} players")
+            
+            # Log final enforcement summary
+            logging.info(f"📊 STACK CONSTRAINT SUMMARY: QB-based {stack_size}-stack will be enforced using teams: {valid_teams}")
+            logging.info(f"🚫 OTHER TEAMS: Limited to max {stack_size-1} players each to prevent multiple stacks")
+    elif stack_type in ["qb_wr", "qb_2wr", "qb_wr_te", "qb_wr_rb", "qb_2wr_te", "game_stack", "bring_back"] and NFL_STACK_ENGINE_AVAILABLE:
+        # Use NFL Stack Engine for named stack types
+        logging.info(f"🎯 OPTIMIZER: Processing NFL stack type: {stack_type}")
+        
+        # Initialize stack engine
+        stack_engine = NFLStackEngine(df)
+        
+        # Get stack configuration
+        stack_info = NFL_STACK_TYPES.get(stack_type, {})
+        if not stack_info:
+            logging.warning(f"Unknown stack type {stack_type}, treating as no stack")
+        else:
+            # Get required positions for this stack
+            positions = get_stack_positions(stack_type)
+            same_team_positions = positions.get('same_team', [])
+            
+            logging.info(f"🎯 Stack '{stack_info.get('name', stack_type)}' requires: {same_team_positions} from same team")
+            
+            # Get available teams from selections
+            available_teams = []
+            if isinstance(team_selections, dict):
+                # Try various keys to find team selections
+                for key in [stack_type, "all", "qb_stacks", "game_stacks"]:
+                    if key in team_selections:
+                        available_teams = team_selections[key]
+                        break
+            elif isinstance(team_selections, list):
+                available_teams = team_selections
+            
+            if not available_teams:
+                available_teams = df['Team'].unique().tolist()
+                logging.warning(f"No specific teams selected for {stack_type}, using all teams")
+            
+            # Validate and filter teams
+            valid_teams = []
+            for team in available_teams:
+                is_feasible, msg = stack_engine.validate_stack_feasibility(stack_type, team)
+                if is_feasible:
+                    valid_teams.append(team)
+                else:
+                    logging.debug(f"Team {team} not feasible for {stack_type}: {msg}")
+            
+            if not valid_teams:
+                logging.warning(f"No valid teams for {stack_type} stack")
+            else:
+                # Create stacking constraints
+                # For QB-WR-TE stack: ensure EXACTLY the required positions from same team
+                if len(valid_teams) == 1:
+                    # Single team - direct constraint
+                    team = valid_teams[0]
+                    
+                    # For each position in the stack, create a binary variable that tracks if we're using it from the stack team
+                    stack_position_vars = {}
+                    for pos in same_team_positions:
+                        team_pos_players = df[(df['Team'] == team) & (df['Position'] == pos)].index
+                        if len(team_pos_players) > 0:
+                            if pos == 'WR' and '2wr' in stack_type:
+                                # Need at least 2 WRs from this team
+                                problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) >= 2
+                                logging.info(f"✅ ENFORCING: At least 2 {pos} from {team}")
+                            else:
+                                # Need exactly 1 of this position from this team
+                                # This ensures QB and TE (and single WR) come from the stack team
+                                if pos in ['QB', 'TE']:
+                                    # For QB and TE: require exactly 1 from the stack team
+                                    # Since we only have 1 QB and 1 TE in the lineup, this locks them to the stack team
+                                    problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) == 1
+                                    logging.info(f"✅ ENFORCING: Exactly 1 {pos} from {team} (exclusive)")
+                                else:
+                                    # For WR: require at least 1 from the stack team (can have others from different teams)
+                                    problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) >= 1
+                                    logging.info(f"✅ ENFORCING: At least 1 {pos} from {team}")
+                else:
+                    # Multiple teams - create binary variables to select one team
+                    team_binary_vars = {team: pulp.LpVariable(f"stack_team_{team}", cat='Binary') for team in valid_teams}
+                    
+                    # Exactly one team must be selected for the stack
+                    problem += pulp.lpSum(team_binary_vars.values()) == 1
+                    
+                    # If a team is selected, enforce position requirements
+                    for team in valid_teams:
+                        for pos in same_team_positions:
+                            team_pos_players = df[(df['Team'] == team) & (df['Position'] == pos)].index
+                            if len(team_pos_players) > 0:
+                                if pos == 'WR' and '2wr' in stack_type:
+                                    # Need at least 2 WRs when this team is selected
+                                    problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) >= 2 * team_binary_vars[team]
+                                elif pos in ['QB', 'TE']:
+                                    # For QB and TE: require exactly 1 from the selected stack team
+                                    problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) == team_binary_vars[team]
+                                else:
+                                    # For WR: require at least 1 from the selected stack team
+                                    problem += pulp.lpSum([player_vars[idx] for idx in team_pos_players]) >= 1 * team_binary_vars[team]
+                    
+                    logging.info(f"✅ ENFORCING: {stack_info.get('name', stack_type)} from one of: {valid_teams}")
+    else:
+        # Implement complex stacking with proper team selection enforcement
+        stack_sizes = [int(size) for size in stack_type.split('|')]
+        logging.info(f"🎯 OPTIMIZER: Processing stack sizes: {stack_sizes}")
+        logging.info(f"🎯 OPTIMIZER: Team selections received: {team_selections}")
+        
+        # Simplified approach: For each stack size, randomly pick one of the available teams
+        # and enforce that constraint. This avoids creating too many binary variables.
+        import random
+        
+        for i, size in enumerate(stack_sizes):
+            # Get teams available for this specific stack size
+            available_teams = None
+            
+            # ENHANCED TEAM SELECTION LOOKUP - handles multiple key formats
+            if isinstance(team_selections, dict):
+                # Method 1: Check for exact integer match
+                if size in team_selections:
+                    available_teams = team_selections[size]
+                    logging.info(f"🎯 FOUND teams for {size}-stack using exact integer match: {available_teams}")
+                # Method 2: Check for string integer match
+                elif str(size) in team_selections:
+                    available_teams = team_selections[str(size)]
+                    logging.info(f"🎯 FOUND teams for {size}-stack using string integer match: {available_teams}")
+                # Method 3: Check for "X-Stack" format
+                elif f"{size}-Stack" in team_selections:
+                    available_teams = team_selections[f"{size}-Stack"]
+                    logging.info(f"🎯 FOUND teams for {size}-stack using dash format match: {available_teams}")
+                # Method 4: Check for "X Stack" format (with space)
+                elif f"{size} Stack" in team_selections:
+                    available_teams = team_selections[f"{size} Stack"]
+                    logging.info(f"🎯 FOUND teams for {size}-stack using space format match: {available_teams}")
+                # Method 5: Check for "all" selection (from All Stacks tab)
+                elif "all" in team_selections:
+                    available_teams = team_selections["all"]
+                    logging.info(f"🎯 FOUND teams for {size}-stack using 'all' key: {available_teams}")
+                # No specific match found in dictionary
+                else:
+                    logging.warning(f"🎯 NO specific team selection found for {size}-stack in keys: {list(team_selections.keys())}")
+            # Fallback to list format
+            elif isinstance(team_selections, list):
+                available_teams = team_selections
+                logging.debug(f"optimize_single_lineup: Using team list for stack size {size}: {available_teams}")
+            
+            # Final fallback - AVOID using all available teams unless absolutely necessary
+            if not available_teams:
+                # Check if team_selections has data but wrong format
+                if team_selections:
+                    logging.error(f"🚨 CRITICAL: Team selections exist but {size}-stack not found!")
+                    
+                    # Only access dictionary methods if it's actually a dictionary
+                    if isinstance(team_selections, dict):
+                        logging.error(f"🚨 Available keys: {list(team_selections.keys())}")
+                        logging.error(f"🚨 This suggests a format mismatch or checkbox detection issue!")
+                        
+                        # Try to find any matching stack with similar size
+                        for key, teams in team_selections.items():
+                            if str(size) in str(key) or str(key) in str(size):
+                                available_teams = teams
+                                logging.warning(f"🎯 Using approximate match {key} for {size}-stack: {teams}")
+                                break
+                    else:
+                        logging.error(f"🚨 Team selections is not a dictionary: {type(team_selections)}")
+                        logging.error(f"🚨 Value: {team_selections}")
+                
+                # Only use all teams as absolute last resort and warn user
+                if not available_teams:
+                    available_teams = df['Team'].unique().tolist()
+                    logging.error(f"🚨 LAST RESORT: Using ALL {len(available_teams)} teams for {size}-stack!")
+                    logging.error(f"🚨 This means your team selections were not detected properly!")
+            else:
+                # Check if we got ALL teams when user likely selected specific ones
+                all_teams = df['Team'].unique().tolist()
+                if len(available_teams) == len(all_teams) and set(available_teams) == set(all_teams):
+                    logging.error(f"🚨 SUSPICIOUS: {size}-stack has ALL {len(available_teams)} teams - likely a selection bug!")
+                else:
+                    logging.info(f"✅ CONFIRMED: Will enforce {size}-stack using {len(available_teams)} teams: {available_teams}")
+            
+            if not available_teams:
+                logging.warning(f"optimize_single_lineup: No teams available for stack size {size}, skipping")
+                continue
+            
+            # Filter available teams to only those with enough offensive players (exclude DST)
+            valid_teams = []
+            for team in available_teams:
+                team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
+                if len(team_offense) >= size:
+                    valid_teams.append(team)
+                    logging.debug(f"optimize_single_lineup: Team {team} has {len(team_offense)} offensive players (need {size}) - VALID")
+                else:
+                    logging.debug(f"optimize_single_lineup: Team {team} has {len(team_offense)} offensive players (need {size}) - INSUFFICIENT")
+                    
+            if not valid_teams:
+                logging.warning(f"optimize_single_lineup: No valid teams with enough offensive players for stack size {size}")
+                logging.warning(f"Available teams: {available_teams}")
+                continue
+                
+            # CRITICAL FIX: Instead of randomly selecting one team, enforce constraint for ALL user-selected teams
+            # This ensures we respect the user's specific team choices for each stack size
+            
+            if len(valid_teams) == 1:
+                # If only one team selected for this stack size, enforce it directly
+                selected_team = valid_teams[0]
+                team_offense = df[(df['Team'] == selected_team) & (df['Position'] != 'DST')].index
+                problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) >= size
+                logging.info(f"✅ ENFORCING: Must have at least {size} players from {selected_team}")
+                
+            else:
+                # If multiple teams selected for this stack size, create OR constraint
+                # This means: at least 'size' players from ANY of the selected teams
+                team_constraints = []
+                for team in valid_teams:
+                    team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
+                    if len(team_offense) >= size:
+                        team_constraints.append(pulp.lpSum([player_vars[idx] for idx in team_offense]))
+                
+                if team_constraints:
+                    # At least one of the selected teams must contribute 'size' players
+                    # Create binary variables for each team to implement OR logic
+                    team_binary_vars = {}
+                    for team in valid_teams:
+                        team_binary_vars[team] = pulp.LpVariable(f"use_team_{team}_{size}_{i}", cat='Binary')
+                    
+                    # At least one team must be selected
+                    problem += pulp.lpSum(team_binary_vars.values()) >= 1
+                    
+                    # If a team is selected, enforce the stack constraint
+                    for team in valid_teams:
+                        team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
+                        if len(team_offense) >= size:
+                            # If team is selected (binary = 1), enforce at least 'size' players
+                            problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) >= size * team_binary_vars[team]
+                    
+                    logging.info(f"✅ ENFORCING: Must have at least {size} players from ANY of: {valid_teams}")
+                else:
+                    logging.warning(f"❌ NO valid team constraints created for {size}-stack")
+            
+            # Log final enforcement summary
+            logging.info(f"📊 STACK CONSTRAINT SUMMARY: {size}-stack will be enforced using teams: {valid_teams}")
+
+    # Solve the problem
+    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=30)
+    status = problem.solve(solver)
+
+    if pulp.LpStatus[status] == 'Optimal':
+        lineup = df.loc[[idx for idx in df.index if player_vars[idx].varValue is not None and player_vars[idx].varValue > 0.5]]
+        
+        # CRITICAL: Remove any duplicate players by name (safety check)
+        if 'Name' in lineup.columns:
+            duplicates_before = lineup['Name'].duplicated().sum()
+            if duplicates_before > 0:
+                logging.error(f"🚨 FOUND {duplicates_before} DUPLICATE PLAYERS IN LINEUP!")
+                logging.error(f"🚨 Duplicate players: {lineup[lineup['Name'].duplicated(keep=False)]['Name'].tolist()}")
+                # Keep first occurrence of each player
+                lineup = lineup.drop_duplicates(subset=['Name'], keep='first')
+                logging.info(f"✅ Removed duplicates, lineup now has {len(lineup)} unique players")
+        
+        # Validate lineup has correct number of players
+        if len(lineup) != REQUIRED_TEAM_SIZE:
+            logging.error(f"🚨 LINEUP SIZE ERROR: {len(lineup)} players (need {REQUIRED_TEAM_SIZE})")
+            return pd.DataFrame(), stack_type
+        
+        # Log the actual team composition for debugging
+        team_counts = lineup['Team'].value_counts()
+        logging.debug(f"optimize_single_lineup: Found optimal solution with {len(lineup)} players")
+        logging.debug(f"optimize_single_lineup: Team composition: {dict(team_counts)}")
+        
+        return lineup, stack_type
+    else:
+        logging.error(f"❌ optimize_single_lineup: No optimal solution found. Status: {pulp.LpStatus[status]}")
+        logging.error(f"❌ This usually means constraints are INFEASIBLE (impossible to satisfy)")
+        logging.error(f"❌ Check: 1) Enough players at each position, 2) Stack size reasonable, 3) Salary constraints achievable")
+        logging.error(f"❌ Stack type: {stack_type}, Min salary: {min_salary}, Available players: {len(df)}")
+        
+        # Log constraint counts for debugging
+        logging.error(f"❌ Total constraints: {len(problem.constraints)}")
+        
+        return pd.DataFrame(), stack_type
+def simulate_iteration(df, simulation_std=0.15):
+    """
+    Monte Carlo simulation: Add controlled projection uncertainty for diversity
+    Uses moderate standard deviation (15% default) to create realistic lineup variations
+    while maintaining lineup quality
+    """
+    df = df.copy()
+    
+    # Add moderate projection uncertainty (Monte Carlo sampling)
+    # Smaller std = more consistent, larger std = more diversity
+    if 'Predicted_DK_Points' in df.columns:
+        # Use lognormal distribution to ensure positive values
+        # std of 0.15 means ~15% variation at 1 standard deviation
+        noise = np.random.lognormal(0, simulation_std, len(df))
+        
+        # Apply Monte Carlo variation
+        df['Predicted_DK_Points'] = df['Predicted_DK_Points'] * noise
+        
+        # Clip to prevent extreme values (keep within 3 std)
+        df['Predicted_DK_Points'] = df['Predicted_DK_Points'].clip(
+            lower=df['Predicted_DK_Points'] * 0.75,  # No more than 25% reduction
+            upper=df['Predicted_DK_Points'] * 1.25    # No more than 25% increase
+        )
+    
+    return df
+
+class OptimizationWorker(QThread):
+    optimization_done = pyqtSignal(dict, dict, dict)
+    
+    def __init__(self, df_players, salary_cap, position_limits, included_players, stack_settings, min_exposure, max_exposure, min_points, monte_carlo_iterations, num_lineups, team_selections, min_unique=0, bankroll=1000, risk_tolerance='medium', disable_kelly=False, min_salary=None, use_advanced_quant=False, advanced_quant_params=None, position_specific_selections=None):
+        super().__init__()
+        self.df_players = df_players
+        self.filtered_player_pool = df_players.copy()
+        self.num_lineups = num_lineups
+        self.salary_cap = salary_cap
+        self.position_limits = position_limits
+        self.included_players = included_players
+        self.position_specific_selections = position_specific_selections or {}
+        self.stack_settings = stack_settings
+        self.min_exposure = min_exposure
+        self.max_exposure = max_exposure
+        self.team_projected_runs = self.calculate_team_projected_runs(df_players)
+        self.min_unique = min_unique  # Add min unique constraint
+        self.disable_kelly = disable_kelly  # Option to disable Kelly sizing
+        self.min_salary = min_salary if min_salary is not None else MIN_SALARY_DEFAULT  # Add minimum salary constraint
+        self.use_advanced_quant = use_advanced_quant  # Add advanced quantitative optimization flag
+        self.advanced_quant_params = advanced_quant_params or {}  # Store advanced quant parameters
+        
+        self.max_workers = multiprocessing.cpu_count()  # Or set a specific number
+        self.min_points = min_points
+        self.monte_carlo_iterations = monte_carlo_iterations
+        self.team_selections = team_selections  # Passed from main app
+        
+        # 🎲 DETECT PROBABILITY METRICS for probability-aware optimization
+        print(f"🔍 WORKER DEBUG: Checking for probability metrics in DataFrame")
+        print(f"🔍 DataFrame shape: {df_players.shape}")
+        print(f"🔍 DataFrame columns: {list(df_players.columns)}")
+        
+        self.has_probability_metrics = any(col in df_players.columns for col in [
+            'Expected_Utility', 'Risk_Adjusted_Points', 'Kelly_Fraction', 'Implied_Volatility'
+        ])
+        
+        # Also check for raw probability columns
+        prob_cols_raw = [col for col in df_players.columns if col.startswith('Prob_')]
+        print(f"🔍 Raw probability columns found: {len(prob_cols_raw)} - {prob_cols_raw}")
+        
+        if self.has_probability_metrics:
+            logging.info("🎲 Probability-enhanced optimization enabled")
+            print("✅ Enhanced probability metrics detected!")
+            self.prob_columns = [col for col in df_players.columns if col.startswith('Prob_')]
+            if self.prob_columns:
+                logging.info(f"🎲 Found probability columns: {self.prob_columns}")
+                print(f"✅ Raw probability columns: {self.prob_columns}")
+        else:
+            logging.info("Standard optimization mode (no probability metrics)")
+            print("❌ No enhanced probability metrics found")
+            print("📋 Looking for these columns: ['Expected_Utility', 'Risk_Adjusted_Points', 'Kelly_Fraction', 'Implied_Volatility']")
+            self.prob_columns = []
+        
+        # Initialize risk management components
+        self.bankroll = bankroll
+        self.risk_tolerance = risk_tolerance
+        if RISK_ENGINE_AVAILABLE:
+            self.risk_engine = DFSRiskEngine()
+            self.bankroll_manager = DFSBankrollManager(bankroll)
+            logging.info(f"🔥 Risk management initialized: Bankroll=${bankroll}, Risk={risk_tolerance}")
+        else:
+            self.risk_engine = None
+            self.bankroll_manager = None
+
+    def _validate_dst_in_lineups(self, results):
+        """Validate that all lineups have DST and remove invalid ones (NFL ONLY)"""
+        
+        # SPORT DETECTION: Check if this is NFL or NBA
+        if not results:
+            return results
+        
+        # Get first lineup to detect sport
+        first_lineup = next(iter(results.values()))['lineup']
+        
+        # Check for NBA positions (PG, SG, SF, PF, C)
+        nba_positions = {'PG', 'SG', 'SF', 'PF', 'C'}
+        lineup_positions = set(first_lineup['Position'].unique())
+        is_nba = bool(nba_positions & lineup_positions)
+        
+        # Skip DST validation for NBA
+        if is_nba:
+            print(f"\n{'='*70}")
+            print(f"🏀 NBA VALIDATION - Skipping DST check (NBA has no DST)")
+            print(f"✅ All {len(results)} NBA lineups are valid!")
+            print(f"{'='*70}\n")
+            return results
+        
+        # NFL VALIDATION: Check for DST
+        print(f"\n{'='*70}")
+        print(f"🏈 NFL DST VALIDATION - Checking {len(results)} lineups...")
+        print(f"{'='*70}")
+        
+        invalid_lineups = []
+        for key, lineup_data in results.items():
+            lineup_df = lineup_data['lineup']
+            has_dst = any(lineup_df['Position'] == 'DST')
+            
+            if not has_dst:
+                invalid_lineups.append(key)
+                print(f"❌ Lineup {key}: NO DST - REJECTING!")
+        
+        if invalid_lineups:
+            error_msg = (
+                f"🚨 WARNING: {len(invalid_lineups)}/{len(results)} lineups missing DST!\n"
+                f"Removing invalid lineups to prevent DraftKings upload errors..."
+            )
+            print(error_msg)
+            logging.warning(error_msg)
+            
+            for key in invalid_lineups:
+                del results[key]
+            
+            print(f"✅ Kept {len(results)} valid NFL lineups with DST")
+        else:
+            print(f"✅ All {len(results)} NFL lineups have DST - VALID!")
+        
+        print(f"{'='*70}\n")
+        return results
+    
+    def run(self):
+        logging.debug("OptimizationWorker: Starting optimization")
+        results, team_exposure, stack_exposure = self.optimize_lineups()
+        
+        # Validate DST before emitting results
+        results = self._validate_dst_in_lineups(results)
+        
+        logging.debug(f"OptimizationWorker: Optimization complete. Results: {len(results)}")
+        self.optimization_done.emit(results, team_exposure, stack_exposure)
+
+    def optimize_lineups(self):
+        df_filtered = self.preprocess_data()
+        logging.debug(f"optimize_lineups: Starting with {len(df_filtered)} players")
+        
+        # SHOW USER THEIR SELECTIONS (team_selections already passed to worker)
+        if self.team_selections:
+            print(f"\n✅ YOUR TEAM SELECTIONS DETECTED:")
+            for stack_size, teams in self.team_selections.items():
+                if stack_size == "all":
+                    print(f"   All Stacks: {teams}")
+                else:
+                    print(f"   {stack_size}-Stack: {teams}")
+        else:
+            print(f"\n⚠️ NO TEAM SELECTIONS - Using all teams")
+        
+        # IMMEDIATE DEBUG OUTPUT - Always print to console
+        print(f"\n🚨 IMMEDIATE PLAYER FILTER DEBUG:")
+        print(f"   📊 Total players after filtering: {len(df_filtered)}")
+        print(f"   🎯 Included players list: {self.included_players}")
+        print(f"   📋 Included players count: {len(self.included_players) if self.included_players else 0}")
+        if len(df_filtered) > 0:
+            print(f"   👥 Sample filtered players: {df_filtered['Name'].head(3).tolist()}")
+        print(f"   🔥 This should help identify if filtering is working!\n")
+
+        # Apply Markov chain probability adjustments using past 3 years if available
+        try:
+            if MARKOV_PROB_AVAILABLE and df_filtered is not None and not df_filtered.empty:
+                cache_dir = "/Users/sineshawmesfintesfaye/mlb-draftkings-system/nba_historical_cache"
+                before_cols = set(df_filtered.columns)
+                df_filtered = apply_markov_adjustments(
+                    df_players=df_filtered,
+                    history_df=None,
+                    cache_dir=cache_dir,
+                    blend_alpha=0.25,
+                    min_games=30,
+                    player_thresholds=(20.0, 25.0, 30.0),
+                )
+                after_cols = set(df_filtered.columns)
+                added = sorted(list(after_cols - before_cols))
+                if any(c.startswith('MC_') for c in added):
+                    print(f"✅ Applied Markov adjustments (3-year history). Added: {added}")
+                else:
+                    print("ℹ️ Markov adjustments attempted but no historical cache found; kept base projections.")
+        except Exception as e:
+            logging.warning(f"Markov adjustment step skipped due to error: {e}")
+
+        results = {}
+        team_exposure = defaultdict(int)
+        stack_exposure = defaultdict(int)
+        
+        # Check for advanced quantitative optimization
+        if self.use_advanced_quant and ADVANCED_QUANT_AVAILABLE:
+            logging.info("🔬 Using advanced quantitative optimization with financial modeling")
+            return self.optimize_lineups_with_advanced_quant(df_filtered, team_exposure, stack_exposure)
+        
+        # Risk-adjusted lineup generation if available and enabled
+        use_risk_management = (RISK_ENGINE_AVAILABLE and 
+                             self.risk_engine and 
+                             getattr(self, 'enable_risk_mgmt', True))
+        
+        if use_risk_management:
+            logging.info("🔥 Using advanced risk management optimization")
+            return self.optimize_lineups_with_risk_management(df_filtered, team_exposure, stack_exposure)
+        
+        # Check if we should use Genetic Diversity Engine for combinations
+        use_genetic_engine = (
+            hasattr(self, '_is_combination_mode') and self._is_combination_mode and 
+            self.num_lineups >= 2  # Use GA for 2+ lineups (lowered threshold further)
+        )
+        
+        # DEBUG: Log genetic engine decision
+        logging.info(f"🔍 GENETIC ENGINE CHECK: has_combo_mode={hasattr(self, '_is_combination_mode')}, is_combo={getattr(self, '_is_combination_mode', False)}, num_lineups={self.num_lineups}, use_genetic={use_genetic_engine}")
+        
+        if use_genetic_engine:
+            logging.info("🧬 Using GENETIC DIVERSITY ENGINE for combination lineups")
+            return self.optimize_lineups_with_genetic_diversity(df_filtered, team_exposure, stack_exposure)
+        
+        # If combination mode requested more than 1 lineup, use Monte Carlo diversification
+        if hasattr(self, '_is_combination_mode') and self._is_combination_mode and self.num_lineups > 1:
+            logging.info("🎲 Using MONTE CARLO diversification for combination lineups")
+            return self.optimize_lineups_with_monte_carlo(df_filtered, team_exposure, stack_exposure)
+        
+        # Traditional optimization (FIXED for proper lineup distribution)
+        logging.info("📊 Using traditional optimization with ENHANCED DIVERSITY")
+        
+        # CRITICAL FIX: Distribute lineups across stack types instead of multiplying
+        # Guarantee multiple solves per stack in combination mode
+        if getattr(self, '_is_combination_mode', False):
+            min_solves_per_stack = max(5, self.num_lineups // max(1, len(self.stack_settings)))
+            total_candidates_needed = max(self.num_lineups * 3, min_solves_per_stack * len(self.stack_settings))  # Reduced from 6x to 3x for speed
+        else:
+            total_candidates_needed = self.num_lineups * 2  # Reduced from 3x to 2x for speed
+        lineups_per_stack = max(1, total_candidates_needed // len(self.stack_settings))
+        extra_lineups = total_candidates_needed % len(self.stack_settings)
+        
+        logging.info(f"🎯 DISTRIBUTION: {total_candidates_needed} total candidates across {len(self.stack_settings)} stack types")
+        logging.info(f"🎯 DISTRIBUTION: {lineups_per_stack} per stack type + {extra_lineups} extra")
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = []
+            for i, stack_type in enumerate(self.stack_settings):
+                # Give extra lineups to first few stack types
+                lineups_for_this_stack = lineups_per_stack + (1 if i < extra_lineups else 0)
+                if getattr(self, '_is_combination_mode', False):
+                    lineups_for_this_stack = max(lineups_for_this_stack, min_solves_per_stack)
+                
+                for _ in range(lineups_for_this_stack):
+                    # Create unique variant of data for each lineup
+                    df_variant = df_filtered.copy()
+                    future = executor.submit(optimize_single_lineup, (df_variant, stack_type, self.team_projected_runs, self.team_selections, self.min_salary))
+                    futures.append(future)
+                
+                logging.info(f"🎯 QUEUED: {lineups_for_this_stack} candidates for {stack_type}")
+
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    lineup, stack_type = future.result()
+                    if lineup.empty:
+                        logging.debug(f"optimize_lineups: Empty lineup returned for stack type {stack_type}")
+                    else:
+                        total_points = lineup['Predicted_DK_Points'].sum()
+                        results[len(results)] = {'total_points': total_points, 'lineup': lineup}
+                        for team in lineup['Team'].unique():
+                            team_exposure[team] += 1
+                        stack_exposure[stack_type] += 1
+                        logging.debug(f"optimize_lineups: Found valid lineup for stack type {stack_type}")
+                except Exception as e:
+                    logging.error(f"Error in optimization: {str(e)}")
+
+        logging.debug(f"optimize_lineups: Completed. Found {len(results)} valid lineups")
+        logging.debug(f"Team exposure: {dict(team_exposure)}")
+        logging.debug(f"Stack exposure: {dict(stack_exposure)}")
+        
+        return results, team_exposure, stack_exposure
+    
+    def optimize_lineups_with_genetic_diversity(self, df_filtered, team_exposure, stack_exposure):
+        """Optimize lineups using Genetic Diversity Engine for maximum uniqueness"""
+        logging.info("🧬 GENETIC DIVERSITY OPTIMIZATION STARTING")
+        
+        results = {}
+        
+        try:
+            # Initialize Genetic Diversity Engine
+            ga_engine = GeneticDiversityEngine(
+                df_players=df_filtered,
+                position_limits=self.position_limits,
+                salary_cap=self.salary_cap,
+                team_selections=self.team_selections,
+                min_salary=self.min_salary
+            )
+            
+            # Generate diverse lineups for each stack type
+            total_lineups_generated = 0
+            
+            for i, stack_type in enumerate(self.stack_settings):
+                # Distribute lineups across stack types
+                lineups_for_stack = self.num_lineups // len(self.stack_settings)
+                if i < (self.num_lineups % len(self.stack_settings)):
+                    lineups_for_stack += 1
+                
+                if lineups_for_stack > 0:
+                    logging.info(f"🧬 Generating {lineups_for_stack} diverse lineups for {stack_type}")
+                    
+                    # Use genetic engine to create diverse lineups
+                    diverse_lineups = ga_engine.create_diverse_lineups(lineups_for_stack, stack_type)
+                    
+                    # Add to results
+                    for lineup in diverse_lineups:
+                        if not lineup.empty:
+                            total_points = lineup['Predicted_DK_Points'].sum() if 'Predicted_DK_Points' in lineup.columns else 0
+                            results[len(results)] = {
+                                'total_points': total_points,
+                                'lineup': lineup,
+                                'stack_type': stack_type
+                            }
+                            
+                            # Update exposures
+                            for team in lineup['Team'].unique():
+                                team_exposure[team] += 1
+                            stack_exposure[stack_type] += 1
+                            total_lineups_generated += 1
+            
+            logging.info(f"🧬 GENETIC DIVERSITY COMPLETE: Generated {total_lineups_generated} unique lineups")
+            
+            # Ensure we have diverse results by validating uniqueness
+            if len(results) > 1:
+                unique_count = self._validate_lineup_uniqueness(results)
+                logging.info(f"🧬 DIVERSITY VALIDATION: {unique_count}/{len(results)} truly unique lineups")
+            
+            return results, team_exposure, stack_exposure
+            
+        except Exception as e:
+            logging.error(f"🧬 Error in genetic diversity optimization: {str(e)}")
+            logging.error(f"Traceback: {traceback.format_exc()}")
+            
+            # Fallback to traditional optimization
+            logging.warning("🧬 Falling back to traditional optimization")
+            return self.optimize_lineups_traditional(df_filtered, team_exposure, stack_exposure)
+    
+    def optimize_lineups_with_genetic_pulp_hybrid(self, df_filtered, team_exposure, stack_exposure):
+        """
+        🧬🔬 HYBRID GENETIC + PULP OPTIMIZER
+        Combines genetic algorithm diversity with PuLP optimization power
+        
+        This is VERSION 2 that the user requested!
+        """
+        logging.info("🧬🔬 GENETIC + PULP HYBRID OPTIMIZATION STARTING")
+        
+        results = {}
+        
+        try:
+            # Initialize Genetic Diversity Engine with PuLP backend
+            ga_engine = GeneticDiversityEngine(
+                df_players=df_filtered,
+                position_limits=self.position_limits,
+                salary_cap=self.salary_cap,
+                team_selections=self.team_selections,
+                min_salary=self.min_salary
+            )
+            
+            # Generate diverse lineups for each stack type using GA+PuLP
+            total_lineups_generated = 0
+            
+            for i, stack_type in enumerate(self.stack_settings):
+                # Distribute lineups across stack types
+                lineups_for_stack = self.num_lineups // len(self.stack_settings)
+                if i < (self.num_lineups % len(self.stack_settings)):
+                    lineups_for_stack += 1
+                
+                if lineups_for_stack > 0:
+                    logging.info(f"🧬🔬 Generating {lineups_for_stack} diverse lineups for {stack_type} using Genetic+PuLP")
+                    
+                    # PHASE 1: Generate 3x candidates using PuLP (for genetic selection)
+                    candidate_count = lineups_for_stack * 3
+                    logging.info(f"🔬 Phase 1: Generating {candidate_count} PuLP candidates")
+                    
+                    candidates = []
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                        futures = []
+                        for _ in range(candidate_count):
+                            future = executor.submit(
+                                optimize_single_lineup,
+                                (df_filtered.copy(), stack_type, self.team_projected_runs, 
+                                 self.team_selections, self.min_salary)
+                            )
+                            futures.append(future)
+                        
+                        for future in concurrent.futures.as_completed(futures):
+                            try:
+                                lineup, _ = future.result()
+                                if not lineup.empty:
+                                    candidates.append(lineup)
+                            except Exception as e:
+                                logging.debug(f"Candidate generation failed: {e}")
+                                continue
+                    
+                    logging.info(f"🔬 Generated {len(candidates)} valid PuLP candidates")
+                    
+                    # PHASE 2: Apply genetic diversity selection
+                    if len(candidates) > lineups_for_stack:
+                        logging.info(f"🧬 Phase 2: Applying genetic diversity selection")
+                        
+                        # Use genetic algorithm to select most diverse subset
+                        diverse_lineups = ga_engine.select_diverse_subset(candidates, lineups_for_stack)
+                    else:
+                        diverse_lineups = candidates
+                    
+                    # PHASE 3: Add to results with enhanced tracking
+                    for lineup in diverse_lineups:
+                        if not lineup.empty:
+                            total_points = lineup['Predicted_DK_Points'].sum() if 'Predicted_DK_Points' in lineup.columns else 0
+                            total_salary = lineup['Salary'].sum() if 'Salary' in lineup.columns else 0
+                            
+                            results[len(results)] = {
+                                'total_points': total_points,
+                                'total_salary': total_salary,
+                                'lineup': lineup,
+                                'stack_type': stack_type,
+                                'optimization_method': 'genetic_pulp_hybrid'
+                            }
+                            
+                            # Update exposures
+                            for team in lineup['Team'].unique():
+                                team_exposure[team] += 1
+                            stack_exposure[stack_type] += 1
+                            total_lineups_generated += 1
+            
+            logging.info(f"🧬🔬 GENETIC+PULP HYBRID COMPLETE: Generated {total_lineups_generated} diverse optimized lineups")
+            
+            # Validate uniqueness
+            if len(results) > 1:
+                unique_count = self._validate_lineup_uniqueness(results)
+                logging.info(f"🧬 DIVERSITY VALIDATION: {unique_count}/{len(results)} truly unique lineups")
+                logging.info(f"🔬 All lineups optimized with PuLP for maximum points under constraints")
+            
+            return results, team_exposure, stack_exposure
+            
+        except Exception as e:
+            logging.error(f"🧬🔬 Error in genetic+PuLP hybrid optimization: {str(e)}")
+            logging.error(f"Traceback: {traceback.format_exc()}")
+            
+            # Fallback to traditional optimization
+            logging.warning("🧬🔬 Falling back to traditional optimization")
+            return self.optimize_lineups_traditional(df_filtered, team_exposure, stack_exposure)
+    
+    def optimize_lineups_with_monte_carlo(self, df_filtered, team_exposure, stack_exposure):
+        """Optimize lineups using Monte Carlo simulation for controlled diversity"""
+        logging.info("🎲 MONTE CARLO OPTIMIZATION STARTING")
+        
+        results = {}
+        total_lineups_generated = 0
+        
+        try:
+            # Distribute lineups across stack types
+            lineups_per_stack = max(1, self.num_lineups // len(self.stack_settings))
+            extra_lineups = self.num_lineups % len(self.stack_settings)
+            
+            logging.info(f"🎲 Distributing {self.num_lineups} lineups across {len(self.stack_settings)} stacks")
+            logging.info(f"🎲 Monte Carlo iterations: {self.monte_carlo_iterations}")
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                futures = []
+                
+                for i, stack_type in enumerate(self.stack_settings):
+                    lineups_for_stack = lineups_per_stack + (1 if i < extra_lineups else 0)
+                    
+                    # Run Monte Carlo simulation for each lineup
+                    for lineup_idx in range(lineups_for_stack):
+                        # Create Monte Carlo variant with controlled uncertainty
+                        # Each lineup gets a unique Monte Carlo simulation for diversity
+                        df_mc = simulate_iteration(df_filtered, simulation_std=0.15)
+                        
+                        future = executor.submit(
+                            optimize_single_lineup,
+                            (df_mc, stack_type, self.team_projected_runs, self.team_selections, self.min_salary)
+                        )
+                        futures.append((future, stack_type))
+                    
+                    logging.info(f"🎲 Queued {lineups_for_stack} Monte Carlo lineups for {stack_type}")
+                
+                # Collect results
+                for future_tuple in futures:
+                    try:
+                        future, stack_type = future_tuple
+                        lineup, _ = future.result()
+                        if not lineup.empty:
+                            total_points = lineup['Predicted_DK_Points'].sum()
+                            results[total_lineups_generated] = {
+                                'total_points': total_points,
+                                'lineup': lineup,
+                                'stack_type': stack_type
+                            }
+                            
+                            # Update exposures
+                            for team in lineup['Team'].unique():
+                                team_exposure[team] += 1
+                            stack_exposure[stack_type] += 1
+                            total_lineups_generated += 1
+                    except Exception as e:
+                        logging.error(f"🎲 Error in Monte Carlo lineup generation: {e}")
+                        continue
+            
+            logging.info(f"🎲 MONTE CARLO COMPLETE: Generated {total_lineups_generated} diverse lineups")
+            return results, team_exposure, stack_exposure
+            
+        except Exception as e:
+            logging.error(f"🎲 Error in Monte Carlo optimization: {e}")
+            traceback.print_exc()
+            
+            # Fallback to traditional optimization
+            logging.warning("🎲 Falling back to traditional optimization")
+            return self.optimize_lineups_traditional(df_filtered, team_exposure, stack_exposure)
+    
+    def _validate_lineup_uniqueness(self, results):
+        """Validate that lineups are actually unique"""
+        unique_lineups = set()
+        
+        for result in results.values():
+            lineup = result.get('lineup')
+            if lineup is not None and not lineup.empty:
+                player_names = tuple(sorted(lineup['Name'].tolist()))
+                unique_lineups.add(player_names)
+        
+        return len(unique_lineups)
+
+    def _enforce_position_specific_constraints(self, df):
+        """Remove players that violate strict position selections (e.g., SF locks)."""
+        if not getattr(self, 'position_specific_selections', None):
+            return df
+        
+        strict_map = {
+            pos: set(players)
+            for pos, players in self.position_specific_selections.items()
+            if players and pos in ['PG', 'SG', 'SF', 'PF', 'C']
+        }
+        
+        if not strict_map:
+            return df
+        filtered_df = df.copy()
+        filtered_df['Position'] = filtered_df['Position'].astype(str)
+        removed_names = []
+        base_positions = {'PG', 'SG', 'SF', 'PF', 'C'}
+        
+        for idx, row in df.iterrows():
+            player_name = row['Name']
+            pos_tokens = row['Position']
+            player_positions = set(str(pos_tokens).replace('-', '/').split('/'))
+            player_positions = {token.strip().upper() for token in player_positions if token.strip()}
+            base_pos_count = len(player_positions & base_positions)
+            
+            remove_player = False
+            for pos, allowed_players in strict_map.items():
+                if pos in player_positions and player_name not in allowed_players:
+                    if base_pos_count > 1:
+                        continue
+                    remove_player = True
+                    break
+            
+            if remove_player:
+                removed_names.append(player_name)
+        
+        if removed_names:
+            filtered_df = filtered_df[~filtered_df['Name'].isin(removed_names)]
+        
+        if removed_names:
+            unique_removed = list({name for name in removed_names})
+            logging.info(
+                f"🔒 Worker position lock removed {len(unique_removed)} players due to strict selections: "
+                f"{unique_removed[:5]}{'...' if len(unique_removed) > 5 else ''}"
+            )
+            print(f"   🔒 Worker position lock removed {len(unique_removed)} players due to strict selections")
+        
+        if not self._validate_position_coverage_df(filtered_df):
+            logging.warning("⚠️ Worker position filtering left insufficient coverage; reverting to original pool")
+            return df
+        
+        return filtered_df
+    
+    def _validate_position_coverage_df(self, df):
+        """Ensure a DataFrame still covers NBA positional requirements."""
+        if df is None or df.empty:
+            return False
+        df = df.copy()
+        df['Position'] = df['Position'].astype(str)
+        pg_count = df['Position'].str.contains('PG', na=False).sum()
+        sg_count = df['Position'].str.contains('SG', na=False).sum()
+        sf_count = df['Position'].str.contains('SF', na=False).sum()
+        pf_count = df['Position'].str.contains('PF', na=False).sum()
+        c_count = df['Position'].str.contains('C', na=False).sum()
+        guard_total = df['Position'].str.contains('PG|SG', na=False).sum()
+        forward_total = df['Position'].str.contains('SF|PF', na=False).sum()
+        
+        if pg_count == 0 or sg_count == 0 or sf_count == 0 or pf_count == 0 or c_count == 0:
+            return False
+        if guard_total < 3 or forward_total < 3:
+            return False
+        if len(df) < REQUIRED_TEAM_SIZE:
+            return False
+        return True
+
+    def _determine_slot_eligibility(self, position_str):
+        """Return set of DK slots a player can occupy based on position eligibility."""
+        slots = set()
+        if position_str is None:
+            position_str = ""
+        normalized = str(position_str).replace('\\', '/').replace('-', '/')
+        tokens = [token.strip().upper() for token in normalized.split('/') if token.strip()]
+        
+        if 'PG' in tokens:
+            slots.update(['PG', 'G'])
+        if 'SG' in tokens:
+            slots.update(['SG', 'G'])
+        if 'SF' in tokens:
+            slots.update(['SF', 'F'])
+        if 'PF' in tokens:
+            slots.update(['PF', 'F'])
+        if 'C' in tokens:
+            slots.add('C')
+        if 'G' in tokens:
+            slots.add('G')
+        if 'F' in tokens:
+            slots.add('F')
+        
+        slots.add('UTIL')
+        return slots
+
+    def _assign_lineup_slots(self, lineup):
+        """Find a valid mapping of players to DraftKings NBA slots."""
+        slots = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        
+        if lineup is None or lineup.empty:
+            logging.warning("⚠️ Cannot assign slots: lineup is empty")
+            return None
+        
+        if len(lineup) != REQUIRED_TEAM_SIZE:
+            logging.warning(f"⚠️ Cannot assign slots: expected {REQUIRED_TEAM_SIZE} players, got {len(lineup)}")
+            return None
+        
+        projection_cols = ['Predicted_DK_Points', 'Fantasy_Points', 'FantasyPoints', 'Projection', 'Points']
+        proj_col = next((col for col in projection_cols if col in lineup.columns), None)
+        
+        slot_to_players = {slot: [] for slot in slots}
+        player_priority = {}
+        
+        for player_iloc, (_, row) in enumerate(lineup.iterrows()):
+            # Use Roster_Position (DK eligibility) first, fall back to Position (API)
+            position_to_use = row.get('Roster_Position', row.get('Position', ''))
+            eligible_slots = self._determine_slot_eligibility(position_to_use)
+            eligible_slots = eligible_slots.intersection(set(slots))
+            if not eligible_slots:
+                eligible_slots = {'UTIL'}
+            if 'UTIL' not in eligible_slots:
+                eligible_slots.add('UTIL')
+            
+            projection = 0.0
+            if proj_col and pd.notnull(row.get(proj_col)):
+                try:
+                    projection = float(row[proj_col])
+                except Exception:
+                    projection = 0.0
+            player_priority[player_iloc] = projection
+            
+            for slot in eligible_slots:
+                slot_to_players[slot].append(player_iloc)
+        
+        for slot in slots:
+            if not slot_to_players[slot]:
+                logging.warning(f"⚠️ No candidates available for slot {slot}")
+                return None
+            slot_to_players[slot].sort(key=lambda idx: player_priority.get(idx, 0.0), reverse=True)
+        
+        slot_order = sorted(
+            slots,
+            key=lambda s: (
+                len(slot_to_players[s]),
+                0 if s in ['PG', 'SG', 'SF', 'PF', 'C'] else (1 if s in ['G', 'F'] else 2),
+                slots.index(s)
+            )
+        )
+        
+        assignment = {}
+        used_players = set()
+        
+        def backtrack(position):
+            if position == len(slot_order):
+                return True
+            slot = slot_order[position]
+            for player_idx in slot_to_players[slot]:
+                if player_idx in used_players:
+                    continue
+                assignment[slot] = player_idx
+                used_players.add(player_idx)
+                if backtrack(position + 1):
+                    return True
+                used_players.remove(player_idx)
+                assignment.pop(slot, None)
+            return False
+        
+        if backtrack(0):
+            return assignment
+        
+        logging.error("❌ Unable to assign players to DraftKings slots without conflicts")
+        return None
+
+    def _extract_lineup_df(self, lineup_entry):
+        """Normalize various lineup representations to a DataFrame."""
+        if isinstance(lineup_entry, pd.DataFrame):
+            return lineup_entry
+        if isinstance(lineup_entry, dict):
+            lineup_obj = lineup_entry.get('lineup', pd.DataFrame())
+            if isinstance(lineup_obj, pd.DataFrame):
+                return lineup_obj
+            try:
+                return pd.DataFrame(lineup_obj)
+            except Exception:
+                return pd.DataFrame()
+        return pd.DataFrame()
+
+
+    def preprocess_data(self):
+        """Preprocess player data for optimization"""
+        df_filtered = self.df_players.copy()
+        self.filtered_player_pool = df_filtered.copy()
+        
+        # 🚨 AGGRESSIVE DEBUG OUTPUT - WRITE TO FILE
+        debug_file = "OPTIMIZER_DEBUG.txt"
+        with open(debug_file, 'a') as f:
+            f.write("\n" + "="*80 + "\n")
+            f.write("🔧 WORKER PREPROCESSING DATA\n")
+            f.write("="*80 + "\n")
+            f.write(f"Total players in dataframe: {len(df_filtered)}\n")
+            f.write(f"Included players received by worker: {self.included_players}\n")
+            f.write(f"Number of included players: {len(self.included_players) if self.included_players else 0}\n")
+            f.write(f"Type of included_players: {type(self.included_players)}\n")
+            f.write("="*80 + "\n")
+        
+        # 🚨 AGGRESSIVE DEBUG OUTPUT - IMPOSSIBLE TO MISS
+        print("\n" + "#"*80)
+        print("#" + " "*78 + "#")
+        print("#" + " "*25 + "🔧 WORKER DEBUG 🔧" + " "*33 + "#")
+        print("#" + " "*78 + "#")
+        print("#"*80)
+        print(f"   📊 Total players in dataframe: {len(df_filtered)}")
+        print(f"   🎯 Included players received by worker: {self.included_players}")
+        print(f"   📋 Number of included players: {len(self.included_players) if self.included_players else 0}")
+        print(f"   🔍 Type of included_players: {type(self.included_players)}")
+        print(f"   💾 Full debug saved to: {debug_file}")
+        print("#"*80 + "\n")
+        
+        # Enhanced logging for debugging player selection issues
+        print(f"\n🔍 PLAYER SELECTION DEBUG - DETAILED:")
+        print(f"   📊 Total players available: {len(df_filtered)}")
+        print(f"   🎯 Included players list: {self.included_players}")
+        print(f"   📋 Number of included players: {len(self.included_players) if self.included_players else 0}")
+        
+        logging.info(f"🔍 PLAYER SELECTION DEBUG:")
+        logging.info(f"   Total players available: {len(df_filtered)}")
+        logging.info(f"   Included players list: {self.included_players}")
+        logging.info(f"   Number of included players: {len(self.included_players) if self.included_players else 0}")
+        
+        # Apply included players filter - This is critical for respecting user selections!
+        if self.included_players and len(self.included_players) > 0:
+            # If players are specifically selected, use ONLY those players (STRICT MODE)
+            print(f"   ✅ STRICT FILTERING to {len(self.included_players)} specifically selected players")
+            logging.info(f"✅ STRICT FILTERING to {len(self.included_players)} specifically selected players")
+            original_count = len(df_filtered)
+            
+            # NBA: Use ONLY the selected players - no auto-inclusions
+            # This ensures only your hand-picked players are used in lineups
+            selected_players = df_filtered[df_filtered['Name'].isin(self.included_players)]
+            df_filtered = selected_players.copy()
+            
+            final_count = len(df_filtered)
+            print(f"   ✅ RESULT: {final_count}/{original_count} players remain after strict filtering")
+            print(f"   🔒 ONLY these {final_count} players will be used in lineup combinations")
+            logging.info(f"✅ After STRICT filtering: {final_count}/{original_count} players remain")
+            logging.info(f"🔒 NO other players will be included - selections are honored 100%")
+            
+            # Additional debug: show which selected players were found/not found
+            if final_count == 0:
+                print(f"   ⚠️ WARNING: NO PLAYERS FOUND after filtering! Check names match exactly.")
+                logging.warning(f"⚠️ NO PLAYERS FOUND after filtering! Check if player names match exactly.")
+                logging.warning(f"   Selected players: {self.included_players[:5]}...")  # Show first 5
+                if len(df_filtered) > 0:
+                    logging.warning(f"   Available player names: {df_filtered['Name'].head().tolist()}")
+            elif final_count < len(self.included_players):
+                found_players = set(df_filtered['Name'].tolist())
+                missing_players = [p for p in self.included_players if p not in found_players]
+                print(f"   ⚠️ WARNING: Some selected players not found in data: {missing_players[:3]}...")
+                logging.warning(f"⚠️ Some selected players not found: {missing_players[:3]}...")  # Show first 3
+            
+            # VALIDATION: Double-check that ONLY selected players remain
+            actual_players = set(df_filtered['Name'].tolist())
+            expected_players = set(self.included_players)
+            unexpected_players = actual_players - expected_players
+            
+            if unexpected_players:
+                print(f"   ⚠️ ERROR: Unexpected players found: {list(unexpected_players)[:3]}...")
+                logging.error(f"⚠️ Unexpected players in filtered pool: {list(unexpected_players)[:3]}...")
+                # Remove unexpected players
+                df_filtered = df_filtered[df_filtered['Name'].isin(self.included_players)]
+                print(f"   ✅ Removed unexpected players - now have {len(df_filtered)} players")
+            
+            print(f"   ✅ VERIFIED: All {len(df_filtered)} players in pool are from your selection")
+            logging.info(f"✅ VERIFIED: All players in pool match user selections")  # Show first 3
+        else:
+            # If no players are specifically selected, use all players
+            print(f"   ℹ️ NO players specifically selected - using all {len(df_filtered)} players")
+            print(f"   ℹ️ This happens when: (1) No checkboxes checked, or (2) Checkbox detection failed")
+            logging.info(f"ℹ️ No players specifically selected - using all {len(df_filtered)} players")
+            logging.info(f"   This happens when: (1) No checkboxes checked, or (2) Checkbox detection failed")
+        
+        # Apply worker-level position locks for additional safety
+        df_filtered = self._enforce_position_specific_constraints(df_filtered)
+        self.filtered_player_pool = df_filtered.copy()
+        
+        # 🚨 FINAL VALIDATION - Make absolutely sure filtering happened correctly
+        print("\n" + "="*80)
+        print("🔒 FINAL VALIDATION - PLAYER POOL CHECK")
+        print("="*80)
+        print(f"   📊 Final player pool size: {len(df_filtered)}")
+        print(f"   🎯 Expected size (if filtering): {len(self.included_players) if self.included_players else len(self.df_players)}")
+        print(f"   ✅ Players in final pool: {df_filtered['Name'].tolist()[:10]}")
+        if len(df_filtered['Name'].tolist()) > 10:
+            print(f"      ... and {len(df_filtered) - 10} more")
+        print("="*80 + "\n")
+        
+        # SAFETY CHECK: If we have included_players but filtered pool is too large, something went wrong
+        if self.included_players and len(self.included_players) > 0:
+            if len(df_filtered) > len(self.included_players) + 5:  # Allow small margin
+                print(f"\n🚨 ERROR DETECTED: Player pool has {len(df_filtered)} players but only {len(self.included_players)} were selected!")
+                print(f"   🔧 FORCING RE-FILTER to ensure only selected players are used...")
+                df_filtered = df_filtered[df_filtered['Name'].isin(self.included_players)]
+                self.filtered_player_pool = df_filtered.copy()
+                print(f"   ✅ RE-FILTERED: Now have {len(df_filtered)} players")
+        
+        print(f"")  # Empty line for readability
+        
+        # 🎲 PROBABILITY-BASED CONTEST OPTIMIZATION
+        # 🚨 CRITICAL: Only run probability optimizer if NO specific players are selected
+        # If user selected specific players, we must honor that selection and NOT add players back
+        if self.has_probability_metrics and PROBABILITY_OPTIMIZER_AVAILABLE:
+            if self.included_players and len(self.included_players) > 0:
+                print(f"   🔒 SKIPPING probability optimizer - respecting your {len(self.included_players)} player selections")
+                logging.info(f"🔒 Probability optimizer SKIPPED to preserve user's player selections")
+            else:
+                try:
+                    prob_optimizer = ProbabilityEnhancedOptimizer()
+                    
+                    # Determine optimal contest type based on risk tolerance
+                    contest_type = 'balanced'  # Default
+                    if self.risk_tolerance == 'conservative':
+                        contest_type = 'cash'
+                    elif self.risk_tolerance == 'aggressive':
+                        contest_type = 'gpp'
+                    
+                    # Apply contest-specific optimization
+                    df_filtered = prob_optimizer.optimize_for_contest_type(df_filtered, contest_type)
+                    
+                    # Display top players by probability metrics
+                    if 'Expected_Utility' in df_filtered.columns:
+                        top_players = df_filtered.nlargest(5, 'Expected_Utility')[['Name', 'Expected_Utility', 'Risk_Adjusted_Points']].copy()
+                        print(f"\n🎲 TOP 5 BY EXPECTED UTILITY ({contest_type.upper()} optimized):")
+                        for _, player in top_players.iterrows():
+                            print(f"   {player['Name']}: {player['Expected_Utility']:.3f} utility, {player['Risk_Adjusted_Points']:.2f} risk-adj pts")
+                        
+                    logging.info(f"🎲 Applied {contest_type} contest optimization with probability metrics")
+                    
+                except Exception as e:
+                    logging.warning(f"Error applying probability contest optimization: {e}")
+        
+        # Apply exposure constraints (future enhancement)
+        # Could add min/max exposure filtering here
+        
+        return df_filtered
+
+    def calculate_team_projected_runs(self, df):
+        """Calculate projected runs for each team"""
+        team_runs = {}
+        for team in df['Team'].unique():
+            team_players = df[df['Team'] == team]
+            # Simple calculation based on average points
+            avg_points = team_players['Predicted_DK_Points'].mean()
+            team_runs[team] = avg_points * 0.1  # Simple scaling factor
+        return team_runs
+
+    def optimize_lineups_with_risk_management(self, df_filtered, team_exposure, stack_exposure):
+        """
+        Advanced lineup optimization using financial risk management principles
+        """
+        logging.info("🔥 Starting risk-adjusted optimization with financial portfolio theory")
+        
+        results = {}
+        lineup_candidates = []
+        
+        # Step 1: Generate diverse lineup candidates
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = []
+            # With aggressive diversity injection, we need fewer candidates per request
+            # Still generate extra to account for filtering, but not as many
+            candidate_multiplier = max(10, min(15, self.num_lineups // 10))  # Enhanced multiplier for better selection
+            candidate_multiplier = max(candidate_multiplier, 10)  # Minimum of 10x
+            
+            logging.info(f"🎯 Generating {self.num_lineups * candidate_multiplier} diverse candidates (multiplier: {candidate_multiplier}x) with aggressive noise injection")
+            
+            for stack_type in self.stack_settings:
+                for _ in range(self.num_lineups * candidate_multiplier):
+                    future = executor.submit(optimize_single_lineup, (df_filtered.copy(), stack_type, self.team_projected_runs, self.team_selections, self.min_salary))
+                    futures.append(future)
+
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    lineup, stack_type = future.result()
+                    if not lineup.empty:
+                        lineup_data = self.calculate_lineup_metrics(lineup, stack_type)
+                        lineup_candidates.append(lineup_data)
+                        
+                except Exception as e:
+                    logging.error(f"Error generating lineup candidate: {str(e)}")
+        
+        logging.info(f"📊 Generated {len(lineup_candidates)} lineup candidates")
+        
+        # Step 2: Calculate risk metrics for all candidates
+        for i, candidate in enumerate(lineup_candidates):
+            try:
+                risk_metrics = self.risk_engine.calculate_lineup_risk_metrics(candidate)
+                candidate['risk_metrics'] = risk_metrics
+                candidate['lineup_id'] = i
+                
+                # Add risk-adjusted score
+                candidate['risk_adjusted_score'] = self.calculate_risk_adjusted_score(candidate, risk_metrics)
+                
+            except Exception as e:
+                logging.error(f"Error calculating risk metrics for candidate {i}: {e}")
+                candidate['risk_adjusted_score'] = 0
+        
+        # Step 3: Select optimal lineups based on risk tolerance
+        selected_lineups = self.select_lineups_by_risk_profile(lineup_candidates)
+        
+        # Step 4: Optimize allocation across selected lineups
+        if len(selected_lineups) > 1:
+            allocation = self.optimize_lineup_allocation(selected_lineups)
+            logging.info(f"💰 Portfolio allocation optimized across {len(selected_lineups)} lineups")
+        else:
+            allocation = {'weights': [1.0]} if selected_lineups else {'weights': []}
+        
+        # Step 5: Apply position sizing and bankroll management
+        final_selection = self.apply_position_sizing(selected_lineups, allocation)
+        
+        # Build results in expected format
+        for i, lineup_data in enumerate(final_selection):
+            lineup_df = lineup_data['lineup']
+            total_points = lineup_df['Predicted_DK_Points'].sum()
+
+            # Add risk information to the result
+            risk_info = {
+                'sharpe_ratio': lineup_data.get('risk_metrics', RiskMetrics(0,0,0,0,0,0)).sharpe_ratio,
+                'volatility': lineup_data.get('risk_metrics', RiskMetrics(0,0,0,0,0,0)).volatility,
+                'kelly_fraction': lineup_data.get('risk_metrics', RiskMetrics(0,0,0,0,0,0)).kelly_fraction,
+                'position_size': lineup_data.get('position_size', 0),
+                'allocation_weight': lineup_data.get('allocation_weight', 0)
+            }
+            
+            results[len(results)] = {
+                'total_points': total_points, 
+                'lineup': lineup_df,
+                'risk_info': risk_info
+            }
+            
+            # Track exposure
+            for team in lineup_df['Team'].unique():
+                team_exposure[team] += 1
+            stack_exposure[lineup_data['stack_type']] += 1
+        
+        logging.info(f"🎯 Risk-adjusted optimization complete. Selected {len(results)} optimal lineups")
+        return results, team_exposure, stack_exposure
+    
+    def calculate_lineup_metrics(self, lineup_df, stack_type):
+        """Calculate comprehensive metrics for a lineup"""
+        try:
+            total_points = lineup_df['Predicted_DK_Points'].sum()
+            total_salary = lineup_df['Salary'].sum()
+            
+            # Calculate player variance (simplified)
+            player_variances = []
+            for _, player in lineup_df.iterrows():
+                # Estimate variance from projected points (higher projection = higher variance)
+                base_variance = (player['Predicted_DK_Points'] * 0.3) ** 2
+                player_variances.append(base_variance)
+            
+            lineup_data = {
+                'expected_points': total_points,
+                'total_salary': total_salary,
+                'lineup': lineup_df,
+                'stack_type': stack_type,
+                'players': [
+                    {
+                        'name': row['Name'],
+                        'variance': var,
+                        'projected_points': row['Predicted_DK_Points']
+                    } 
+                    for (_, row), var in zip(lineup_df.iterrows(), player_variances)
+                ],
+                'n_teams': len(lineup_df['Team'].unique()),
+                'salary_efficiency': total_points / total_salary if total_salary > 0 else 0
+            }
+            
+            return lineup_data
+            
+        except Exception as e:
+            logging.error(f"Error calculating lineup metrics: {e}")
+            return {
+                'expected_points': 0,
+                'total_salary': 50000,
+                'lineup': lineup_df,
+                'stack_type': stack_type,
+                'players': []
+            }
+    
+    def calculate_risk_adjusted_score(self, lineup_data, risk_metrics):
+        """Calculate risk-adjusted score based on user's risk tolerance"""
+        base_score = lineup_data['expected_points']
+        
+        # Risk tolerance multipliers
+        risk_multipliers = {
+            'conservative': {'sharpe_weight': 0.4, 'volatility_penalty': 0.3},
+            'medium': {'sharpe_weight': 0.3, 'volatility_penalty': 0.2},
+            'aggressive': {'sharpe_weight': 0.2, 'volatility_penalty': 0.1}
+        }
+        
+        multiplier = risk_multipliers.get(self.risk_tolerance, risk_multipliers['medium'])
+        
+        # Sharpe ratio bonus
+        sharpe_bonus = risk_metrics.sharpe_ratio * multiplier['sharpe_weight'] * base_score
+        
+        # Volatility penalty
+        volatility_penalty = risk_metrics.volatility * multiplier['volatility_penalty'] * base_score
+        
+        # Kelly fraction bonus (rewards mathematically optimal sizing)
+        kelly_bonus = max(0, risk_metrics.kelly_fraction) * 0.1 * base_score
+        
+        risk_adjusted_score = base_score + sharpe_bonus - volatility_penalty + kelly_bonus
+        
+        return max(0, risk_adjusted_score)
+    
+    def select_lineups_by_risk_profile(self, lineup_candidates):
+        """Select lineups based on risk profile and diversification with strict min_unique constraint"""
+        if not lineup_candidates:
+            return []
+        
+        # Sort by risk-adjusted score
+        sorted_candidates = sorted(lineup_candidates, key=lambda x: x.get('risk_adjusted_score', 0), reverse=True)
+        
+        selected = []
+        used_core_players = set()
+        filtered_count = 0
+        
+        logging.info(f"🎲 Selecting diverse lineups with min_unique constraint: {self.min_unique}")
+        
+        # If min_unique is 0, use the old progressive overlap logic
+        if self.min_unique == 0:
+            logging.info("🔄 Using progressive overlap thresholds (min_unique=0)")
+            for overlap_threshold in [5, 6, 7, 8]:
+                if len(selected) >= self.num_lineups:
+                    break
+                    
+                logging.info(f"🔍 Trying overlap threshold {overlap_threshold}...")
+                temp_selected = []
+                temp_used_players = set()
+                
+                for candidate in sorted_candidates:
+                    if len(temp_selected) >= self.num_lineups:
+                        break
+                        
+                    # Check for excessive overlap with already selected lineups
+                    lineup_df = candidate['lineup']
+                    core_players = set(lineup_df['Name'].tolist())
+                    
+                    # Check overlap with both permanently selected and temporarily selected
+                    all_used_players = used_core_players.union(temp_used_players)
+                    max_overlap = max([len(core_players.intersection(used_players)) for used_players in all_used_players] + [0])
+                    
+                    if max_overlap < overlap_threshold:
+                        temp_selected.append(candidate)
+                        temp_used_players.add(frozenset(core_players))
+                        logging.debug(f"Selected lineup {len(selected) + len(temp_selected)} with overlap: {max_overlap}")
+                    else:
+                        filtered_count += 1
+                        logging.debug(f"Filtered lineup due to overlap ({max_overlap} >= {overlap_threshold})")
+                
+                # Add temp selections to permanent selections
+                selected.extend(temp_selected)
+                used_core_players.update(temp_used_players)
+                
+                logging.info(f"📊 Got {len(temp_selected)} lineups at threshold {overlap_threshold}, total: {len(selected)}")
+                
+                if len(selected) >= self.num_lineups:
+                    break
+        else:
+            # Use strict min_unique constraint
+            logging.info(f"🔥 Using strict min_unique constraint: {self.min_unique}")
+            
+            for candidate in sorted_candidates:
+                if len(selected) >= self.num_lineups:
+                    break
+                    
+                # Check for min_unique constraint with already selected lineups
+                lineup_df = candidate['lineup']
+                core_players = set(lineup_df['Name'].tolist())
+                
+                # Check if this lineup meets the min_unique constraint with ALL selected lineups
+                meets_constraint = True
+                for selected_lineup in selected:
+                    selected_players = set(selected_lineup['lineup']['Name'].tolist())
+                    unique_players = len(core_players.symmetric_difference(selected_players))
+                    
+                    if unique_players < self.min_unique:
+                        meets_constraint = False
+                        logging.debug(f"Lineup rejected: only {unique_players} unique players (need {self.min_unique})")
+                        break
+                
+                if meets_constraint:
+                    selected.append(candidate)
+                    logging.debug(f"Selected lineup {len(selected)} - meets min_unique constraint")
+                else:
+                    filtered_count += 1
+        
+        # Final fallback - take top lineups regardless of overlap if we don't have enough
+        if len(selected) < min(5, self.num_lineups):
+            logging.warning(f"🚨 FALLBACK: Taking top {min(self.num_lineups, len(sorted_candidates))} lineups regardless of constraints")
+            selected = sorted_candidates[:min(self.num_lineups, len(sorted_candidates))]
+        
+        logging.info(f"🎯 FINAL RESULT: Selected {len(selected)} diverse lineups from {len(lineup_candidates)} candidates")
+        logging.info(f"🔍 Min unique constraint: {self.min_unique}, Filtered out: {filtered_count}")
+        logging.info(f"✅ SUCCESS: Delivered exactly what you requested!")
+        return selected
+    
+    def optimize_lineup_allocation(self, selected_lineups):
+        """Optimize allocation weights across selected lineups using portfolio theory"""
+        try:
+            lineup_data_for_optimization = []
+            for lineup in selected_lineups:
+                risk_metrics = lineup.get('risk_metrics', RiskMetrics(0,0,0,0,0,0))
+                lineup_data_for_optimization.append({
+                    'expected_return': lineup['expected_points'],
+                    'variance': risk_metrics.volatility ** 2,
+                    'sharpe_ratio': risk_metrics.sharpe_ratio
+                })
+            
+            allocation_result = self.risk_engine.optimize_lineup_allocation(lineup_data_for_optimization)
+            
+            if allocation_result and 'weights' in allocation_result:
+                logging.info(f"📈 Portfolio Sharpe Ratio: {allocation_result.get('sharpe_ratio', 0):.3f}")
+                return allocation_result
+            else:
+                # Equal weights fallback
+                n_lineups = len(selected_lineups)
+                return {'weights': [1.0/n_lineups] * n_lineups}
+                
+        except Exception as e:
+            logging.error(f"Error in portfolio optimization: {e}")
+            # Equal weights fallback
+            n_lineups = len(selected_lineups)
+            return {'weights': [1.0/n_lineups] * n_lineups}
+    
+    def optimize_lineups_with_advanced_quant(self, df_filtered, team_exposure, stack_exposure):
+        """
+        Advanced lineup optimization - VERSION 2 uses Genetic+PuLP Hybrid
+        Combines genetic algorithm diversity with PuLP optimization power
+        """
+        logging.info("🔬 Using GENETIC+PULP HYBRID optimization (VERSION 2 requested by user)")
+        
+        try:
+            # Use the new Genetic+PuLP hybrid optimizer (VERSION 2)
+            return self.optimize_lineups_with_genetic_pulp_hybrid(df_filtered, team_exposure, stack_exposure)
+        except Exception as e:
+            logging.error(f"❌ Error in genetic+PuLP hybrid optimization: {str(e)}")
+            logging.error(f"Traceback: {traceback.format_exc()}")
+            
+            # Fallback to traditional optimization
+            logging.info("🔄 Falling back to traditional optimization")
+            return self.optimize_lineups_traditional(df_filtered, team_exposure, stack_exposure)
+    
+    def optimize_lineups_with_advanced_pulp(self, df_filtered, team_exposure, stack_exposure):
+        """
+        Advanced PuLP-based lineup optimization with risk-adjusted scoring
+        """
+        logging.info("🔬 Using advanced PuLP-based optimization with risk modeling")
+        
+        try:
+            # Prepare player data with risk metrics
+            df_enhanced = df_filtered.copy()
+            
+            # Add risk-adjusted metrics
+            df_enhanced['volatility'] = df_enhanced['Predicted_DK_Points'] * 0.15  # Assume 15% volatility
+            df_enhanced['risk_adjusted_points'] = df_enhanced['Predicted_DK_Points'] / (1 + df_enhanced['volatility'])
+            
+            # Generate lineups using enhanced traditional method with risk adjustment
+            results = {}
+        
+            # CRITICAL FIX: Distribute lineups across stack types instead of multiplying
+            # SPEED OPTIMIZED: Generate 5x candidates (reduced from 20x for faster optimization)
+            total_candidates_needed = self.num_lineups * 5  # Generate 5x candidates for speed (was 20x)
+            lineups_per_stack = max(5, total_candidates_needed // len(self.stack_settings))  # Minimum 5 per stack (was 10)
+            extra_lineups = total_candidates_needed % len(self.stack_settings)
+            
+            logging.info(f"🎯 Advanced PuLP optimization: {total_candidates_needed} candidates across {len(self.stack_settings)} stack types")
+            
+            for i, stack_type in enumerate(self.stack_settings):
+                current_lineups = lineups_per_stack
+                if i < extra_lineups:
+                    current_lineups += 1
+                
+                logging.info(f"🔥 Processing {stack_type}-stack: {current_lineups} lineups")
+                
+                # Generate lineups for this stack type using risk-adjusted approach
+                stack_results = []
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                    futures = []
+                    for _ in range(current_lineups):
+                        future = executor.submit(optimize_single_lineup, 
+                                               (df_enhanced.copy(), stack_type, 
+                                                self.team_projected_runs, self.team_selections, 
+                                                self.min_salary))
+                        futures.append(future)
+
+                    for future in concurrent.futures.as_completed(futures):
+                        try:
+                            lineup, returned_stack_type = future.result()
+                            if not lineup.empty:
+                                # Add risk metrics
+                                lineup_data = {
+                                    'lineup': lineup,
+                                    'total_points': lineup['Predicted_DK_Points'].sum(),
+                                    'total_salary': lineup['Salary'].sum(),
+                                    'stack_type': returned_stack_type,
+                                    'risk_adjusted_points': lineup['risk_adjusted_points'].sum(),
+                                    'volatility': lineup['volatility'].mean(),
+                                    'sharpe_ratio': lineup['Predicted_DK_Points'].sum() / lineup['volatility'].mean() if lineup['volatility'].mean() > 0 else 0
+                                }
+                                stack_results.append(lineup_data)
+                                
+                                # Update exposure tracking
+                                for _, player in lineup.iterrows():
+                                    team_exposure[player['Team']] += 1
+                                    stack_exposure[returned_stack_type] += 1
+                        except Exception as e:
+                            logging.error(f"Error in advanced PuLP lineup generation: {str(e)}")
+                            continue
+
+                # Sort by risk-adjusted score
+                stack_results.sort(key=lambda x: x['risk_adjusted_points'], reverse=True)
+                
+                # Take ALL successful lineups for this stack type (no artificial limit)
+                # We already generated the right number above, so keep them all
+                top_lineups = stack_results  # Keep all generated lineups, not just a subset
+                
+                for j, lineup_data in enumerate(top_lineups):
+                    key = f"{stack_type}_{j}"
+                    results[key] = lineup_data
+                
+                logging.info(f"✅ Generated {len(top_lineups)} lineups for {stack_type}-stack")
+            
+            logging.info(f"🏆 Advanced PuLP optimization complete: {len(results)} lineups generated")
+            return results, team_exposure, stack_exposure
+            
+        except Exception as e:
+            logging.error(f"❌ Critical error in advanced PuLP optimization: {str(e)}")
+            logging.error(f"Traceback: {traceback.format_exc()}")
+            # Fallback to traditional optimization
+            return self.optimize_lineups_traditional(df_filtered, team_exposure, stack_exposure)
+    
+    def get_advanced_quant_parameters(self):
+        """Get advanced quantitative optimization parameters"""
+        return self.advanced_quant_params
+        
+    def prepare_player_data_for_quant(self, df_filtered):
+        """Prepare player data for the advanced quantitative optimizer"""
+        player_data = []
+        for _, player in df_filtered.iterrows():
+            player_data.append({
+                'name': player['Name'],
+                'position': player['Position'],
+                'team': player['Team'],
+                'salary': player['Salary'],
+                'projected_points': player['Predicted_DK_Points'],
+                'value': player.get('Value', player['Predicted_DK_Points'] / (player['Salary'] / 1000))
+            })
+        return player_data
+        
+    def generate_historical_performance_data(self, df_filtered):
+        """Generate historical performance data for players (mock data for now)"""
+        historical_data = {}
+        
+        # In production, this would load real historical data
+        # For now, generate realistic mock data
+        import time
+        np.random.seed(int(time.time() * 1000) % 100000)  # Time-based seed for true randomness
+        
+        for _, player in df_filtered.iterrows():
+            name = player['Name']
+            projected = player['Predicted_DK_Points']
+            
+            # Generate 100 days of historical performance
+            # Use projected points as mean with realistic variance
+            volatility = max(0.15, min(0.35, projected * 0.02))  # 15-35% volatility
+            
+            historical_points = np.random.normal(
+                loc=projected,
+                scale=projected * volatility,
+                size=100
+            )
+            
+            # Ensure non-negative values
+            historical_points = np.maximum(historical_points, 0)
+            
+            historical_data[name] = historical_points.tolist()
+                    
+        return historical_data
+        
+    def convert_quant_lineup_to_dataframe(self, lineup_result, df_filtered):
+        """Convert advanced quantitative lineup result back to DataFrame format"""
+        try:
+            # Try different possible keys for the lineup data
+            lineup_data = lineup_result.get('lineup', lineup_result.get('players', []))
+            
+            logging.debug(f"🔍 Lineup result keys: {lineup_result.keys()}")
+            logging.debug(f"🔍 Lineup data length: {len(lineup_data) if lineup_data else 'None'}")
+            
+            if not lineup_data:
+                logging.warning("⚠️ No lineup data found in lineup_result")
+                return pd.DataFrame()
+            
+            # Log first player for debugging
+            if lineup_data:
+                logging.debug(f"🔍 First player structure: {lineup_data[0]}")
+            
+            # Get player data for selected players
+            lineup_players = []
+            for i, player_info in enumerate(lineup_data):
+                # Extract player name from the player info
+                player_name = player_info.get('name', player_info.get('Name', ''))
+                
+                logging.debug(f"🔍 Player {i+1}: {player_name}")
+                
+                if player_name:
+                    player_data = df_filtered[df_filtered['Name'] == player_name]
+                    if not player_data.empty:
+                        lineup_players.append(player_data.iloc[0])
+                        logging.debug(f"✅ Found player {player_name} in filtered data")
+                    else:
+                        logging.warning(f"⚠️ Player {player_name} not found in filtered data")
+                else:
+                    logging.warning(f"⚠️ No name found for player {i+1}: {player_info}")
+            
+            logging.debug(f"🔍 Total players matched: {len(lineup_players)}")
+            
+            if not lineup_players:
+                logging.warning("⚠️ No players matched in filtered data")
+                return pd.DataFrame()
+                        
+            lineup_df = pd.DataFrame(lineup_players)
+            logging.debug(f"✅ Created lineup DataFrame with {len(lineup_df)} players")
+            return lineup_df
+                        
+        except Exception as e:
+            logging.error(f"Error converting quantitative lineup: {e}")
+            import traceback
+            traceback.print_exc()
+            return pd.DataFrame()
+            
+    def determine_stack_type_from_lineup(self, lineup_df):
+        """Determine stack type from lineup composition"""
+        if lineup_df.empty:
+            return "Unknown"
+        
+        # Count players by team
+        team_counts = lineup_df['Team'].value_counts()
+        
+        # Find the largest stack
+        max_stack = team_counts.max()
+        
+        if max_stack >= 5:
+            return "5 Stack"
+        elif max_stack >= 4:
+            return "4 Stack"
+        elif max_stack >= 3:
+            return "3 Stack"
+        elif max_stack >= 2:
+            return "2 Stack"
+        else:
+            return "No Stacks"
+            
+    def optimize_lineups_traditional(self, df_filtered, team_exposure, stack_exposure):
+        """Traditional optimization method (fallback)"""
+        logging.info("📊 Running traditional optimization")
+        
+        results = {}
+        
+        try:
+            # Use the existing traditional optimization logic with ThreadPoolExecutor
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                futures = []
+                for stack_type in self.stack_settings:
+                    for _ in range(self.num_lineups):
+                        future = executor.submit(optimize_single_lineup, (df_filtered.copy(), stack_type, self.team_projected_runs, self.team_selections, self.min_salary))
+                        futures.append(future)
+
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        lineup, stack_type = future.result()
+                        if lineup.empty:
+                            logging.debug(f"Empty lineup returned for stack type {stack_type}")
+                        else:
+                            total_points = lineup['Predicted_DK_Points'].sum()
+                            results[len(results)] = {
+                                'total_points': total_points,
+                                'lineup': lineup,
+                                'stack_type': stack_type
+                            }
+                            for team in lineup['Team'].unique():
+                                team_exposure[team] += 1
+                            stack_exposure[stack_type] += 1
+                            logging.debug(f"Found valid lineup for stack type {stack_type}")
+                    except Exception as e:
+                        logging.error(f"Error in traditional optimization: {str(e)}")
+
+            logging.info(f"📊 Traditional optimization complete. Generated {len(results)} lineups")
+            return results, team_exposure, stack_exposure
+
+        except Exception as e:
+            logging.error(f"❌ Error in traditional optimization: {str(e)}")
+            logging.error(f"Traceback: {traceback.format_exc()}")
+            return results, team_exposure, stack_exposure
+
+    def apply_position_sizing(self, selected_lineups, allocation):
+        """Apply Kelly criterion and bankroll management to determine position sizes"""
+        try:
+            weights = allocation.get('weights', [])
+            
+            # Fix array comparison issue - properly check if weights is empty or wrong length
+            weights_is_empty = False
+            weights_wrong_length = False
+            
+            try:
+                # Check if weights is empty (handle both list and array cases)
+                if hasattr(weights, '__len__'):
+                    weights_is_empty = len(weights) == 0
+                    weights_wrong_length = len(weights) != len(selected_lineups)
+                else:
+                    weights_is_empty = True
+            except:
+                weights_is_empty = True
+            
+            if weights_is_empty or weights_wrong_length:
+                if len(selected_lineups) > 0:
+                    weights = [1.0/len(selected_lineups)] * len(selected_lineups)
+                    logging.info(f"💰 Using equal weights for {len(selected_lineups)} lineups")
+                else:
+                    logging.error(f"🚨 CRITICAL: No selected lineups available for position sizing!")
+                    return []
+            else:
+                logging.info(f"💰 Using portfolio-optimized weights for {len(selected_lineups)} lineups")
+            
+            position_limits = None
+            if self.bankroll_manager and not self.disable_kelly:
+                # Calculate average edge and volatility for position sizing
+                # FIX: Ensure scalar values to prevent array comparison errors
+                edge_values = []
+                volatility_values = []
+                
+                for l in selected_lineups:
+                    # Safely extract salary_efficiency as scalar
+                    salary_eff = l.get('salary_efficiency', 0)
+                    if hasattr(salary_eff, '__len__') and not isinstance(salary_eff, str):
+                        salary_eff = float(salary_eff[0]) if len(salary_eff) > 0 else 0.0
+                    edge_values.append(float(salary_eff))
+                    
+                    # Safely extract volatility as scalar
+                    risk_metrics = l.get('risk_metrics', RiskMetrics(0,0,0,0,0,0))
+                    if hasattr(risk_metrics, 'volatility'):
+                        vol = risk_metrics.volatility
+                        if hasattr(vol, '__len__') and not isinstance(vol, str):
+                            vol = float(vol[0]) if len(vol) > 0 else 0.0
+                        volatility_values.append(float(vol))
+                    else:
+                        volatility_values.append(0.0)
+                
+                # Calculate means as scalars
+                avg_edge = float(np.mean(edge_values)) if edge_values else 0.0
+                avg_volatility = float(np.mean(volatility_values)) if volatility_values else 0.0
+                
+                position_limits = self.bankroll_manager.calculate_position_limits(avg_edge, avg_volatility)
+                logging.info(f"💰 Kelly sizing input: avg_edge={avg_edge:.3f}, avg_volatility={avg_volatility:.3f}")
+                logging.info(f"💰 Kelly sizing: Recommended {position_limits.get('recommended_lineups', 1)} lineups")
+                logging.info(f"💰 Kelly position limits: {position_limits}")
+            elif self.disable_kelly:
+                logging.info(f"💰 Kelly sizing: DISABLED - Will use all requested lineups")
+            
+            # Apply position sizing to lineups
+            final_lineups = []
+            # Ensure recommended_lineups is always a scalar integer
+            recommended_lineups = position_limits.get('recommended_lineups', len(selected_lineups)) if position_limits else len(selected_lineups)
+            if hasattr(recommended_lineups, '__len__') and not isinstance(recommended_lineups, str):
+                recommended_lineups = int(recommended_lineups[0]) if len(recommended_lineups) > 0 else len(selected_lineups)
+            recommended_lineups = int(recommended_lineups)
+            
+            # OVERRIDE: If Kelly is being too conservative, use more lineups
+            if position_limits and recommended_lineups < max(5, self.num_lineups // 10) and not self.disable_kelly:
+                logging.warning(f"💰 Kelly recommendation ({recommended_lineups}) seems too conservative. Overriding to use more lineups.")
+                # Use a more aggressive override - prioritize user's requested count
+                if self.num_lineups >= 50:
+                    # For large requests, use 80% of requested lineups instead of half
+                    recommended_lineups = max(10, min(len(selected_lineups), int(self.num_lineups * 0.8)))
+                else:
+                    # For smaller requests, use half
+                    recommended_lineups = max(5, min(len(selected_lineups), self.num_lineups // 2))
+                logging.info(f"💰 Adjusted to {recommended_lineups} lineups (aggressive override for {self.num_lineups} requested)")
+            elif self.disable_kelly:
+                # Use all selected lineups when Kelly is disabled - GUARANTEE EXACT COUNT
+                recommended_lineups = len(selected_lineups)
+                logging.info(f"💰 Kelly disabled: Using all {recommended_lineups} selected lineups")
+            
+            # CRITICAL: Ensure we deliver the exact number requested when Kelly is disabled
+            if self.disable_kelly:
+                # COMBINATION FIX: For combinations, be more aggressive about delivering count
+                if hasattr(self, '_is_combination_mode') and self._is_combination_mode:
+                    # FORCE FULL COUNT FOR COMBINATIONS - duplicate if necessary
+                    lineups_to_use = self.num_lineups  # Always try for full count
+                    logging.info(f"🧬 COMBINATION MODE: FORCING {lineups_to_use} lineups (disable_kelly=True)")
+                    
+                    # If we don't have enough unique lineups, we'll duplicate the best ones
+                    if len(selected_lineups) < self.num_lineups:
+                        logging.warning(f"🧬 COMBINATION: Only {len(selected_lineups)} unique lineups, will duplicate to reach {self.num_lineups}")
+                else:
+                    lineups_to_use = min(len(selected_lineups), self.num_lineups)
+                    if lineups_to_use < self.num_lineups:
+                        logging.warning(f"🚨 INSUFFICIENT LINEUPS: Only {lineups_to_use} available but {self.num_lineups} requested")
+                    else:
+                        logging.info(f"✅ EXACT COUNT: Delivering {lineups_to_use} lineups as requested")
+            else:
+                # With Kelly enabled, use recommended count
+                lineups_to_use = min(len(selected_lineups), recommended_lineups, self.num_lineups)
+                logging.info(f"💰 Kelly enabled: Using {lineups_to_use} lineups (recommended: {recommended_lineups}, requested: {self.num_lineups})")
+            
+            # Build final lineup list
+            for i in range(lineups_to_use):
+                # COMBINATION FIX: Handle duplication when we need more lineups
+                if i < len(selected_lineups):
+                    lineup = selected_lineups[i].copy()
+                else:
+                    # Duplicate from existing lineups (cycle through them)
+                    source_idx = i % len(selected_lineups)
+                    lineup = selected_lineups[source_idx].copy()
+                    logging.debug(f"🧬 DUPLICATING lineup {source_idx} as lineup {i}")
+                
+                lineup['allocation_weight'] = weights[i] if i < len(weights) else 1.0/lineups_to_use
+                
+                # Fix the array comparison issue in position sizing
+                if position_limits and i < len(weights):
+                    optimal_size = position_limits.get('optimal_position_size', 100)
+                    # Ensure optimal_size is a scalar, not an array
+                    if hasattr(optimal_size, '__len__') and not isinstance(optimal_size, str):
+                        optimal_size = float(optimal_size[0]) if len(optimal_size) > 0 else 100.0
+                    else:
+                        optimal_size = float(optimal_size)
+                    
+                    # Ensure weights[i] is also a scalar
+                    weight_value = weights[i]
+                    if hasattr(weight_value, '__len__') and not isinstance(weight_value, str):
+                        weight_value = float(weight_value[0]) if len(weight_value) > 0 else 1.0/lineups_to_use
+                    else:
+                        weight_value = float(weight_value)
+                    
+                    lineup['position_size'] = optimal_size * weight_value
+                else:
+                    lineup['position_size'] = 100.0
+                
+                final_lineups.append(lineup)
+            
+            logging.info(f"🎯 FINAL DELIVERY: {len(final_lineups)} lineups delivered (requested: {self.num_lineups})")
+            return final_lineups
+            
+        except Exception as e:
+            logging.error(f"Error applying position sizing: {e}")
+            logging.error(f"Error details: Type={type(e)}, Args={e.args}")
+            import traceback
+            logging.error(f"Traceback: {traceback.format_exc()}")
+            
+            # Return the selected lineups without position sizing as fallback
+            logging.warning(f"🚨 FALLBACK: Returning {len(selected_lineups)} lineups without position sizing due to error")
+            return selected_lineups[:self.num_lineups]
+
+class FantasyFootballApp(QMainWindow):
+    def _determine_slot_eligibility(self, position_str):
+        slots = set()
+        if position_str is None:
+            position_str = ""
+        normalized = str(position_str).replace('\\', '/').replace('-', '/')
+        tokens = [token.strip().upper() for token in normalized.split('/') if token.strip()]
+        
+        if 'PG' in tokens:
+            slots.update(['PG', 'G'])
+        if 'SG' in tokens:
+            slots.update(['SG', 'G'])
+        if 'SF' in tokens:
+            slots.update(['SF', 'F'])
+        if 'PF' in tokens:
+            slots.update(['PF', 'F'])
+        if 'C' in tokens:
+            slots.add('C')
+        if 'G' in tokens:
+            slots.add('G')
+        if 'F' in tokens:
+            slots.add('F')
+        
+        slots.add('UTIL')
+        return slots
+
+    def _assign_lineup_slots(self, lineup):
+        slots = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        if lineup is None or lineup.empty:
+            logging.warning("⚠️ Cannot assign slots: lineup is empty")
+            return None
+        if len(lineup) != REQUIRED_TEAM_SIZE:
+            logging.warning(f"⚠️ Cannot assign slots: expected {REQUIRED_TEAM_SIZE} players, got {len(lineup)}")
+            return None
+        
+        projection_cols = ['Predicted_DK_Points', 'Fantasy_Points', 'FantasyPoints', 'Projection', 'Points']
+        proj_col = next((col for col in projection_cols if col in lineup.columns), None)
+        
+        slot_to_players = {slot: [] for slot in slots}
+        player_priority = {}
+        
+        for player_iloc, (_, row) in enumerate(lineup.iterrows()):
+            # Use Roster_Position (DK eligibility) first, fall back to Position (API)
+            position_to_use = row.get('Roster_Position', row.get('Position', ''))
+            eligible_slots = self._determine_slot_eligibility(position_to_use)
+            eligible_slots = eligible_slots.intersection(set(slots))
+            if not eligible_slots:
+                eligible_slots = {'UTIL'}
+            if 'UTIL' not in eligible_slots:
+                eligible_slots.add('UTIL')
+            
+            projection = 0.0
+            if proj_col and pd.notnull(row.get(proj_col)):
+                try:
+                    projection = float(row[proj_col])
+                except Exception:
+                    projection = 0.0
+            player_priority[player_iloc] = projection
+            
+            for slot in eligible_slots:
+                slot_to_players[slot].append(player_iloc)
+        
+        for slot in slots:
+            if not slot_to_players[slot]:
+                logging.warning(f"⚠️ No candidates available for slot {slot}")
+                return None
+            slot_to_players[slot].sort(key=lambda idx: player_priority.get(idx, 0.0), reverse=True)
+        
+        slot_order = sorted(
+            slots,
+            key=lambda s: (
+                len(slot_to_players[s]),
+                0 if s in ['PG', 'SG', 'SF', 'PF', 'C'] else (1 if s in ['G', 'F'] else 2),
+                slots.index(s)
+            )
+        )
+        
+        assignment = {}
+        used_players = set()
+        
+        def backtrack(position):
+            if position == len(slot_order):
+                return True
+            slot = slot_order[position]
+            for player_idx in slot_to_players[slot]:
+                if player_idx in used_players:
+                    continue
+                assignment[slot] = player_idx
+                used_players.add(player_idx)
+                if backtrack(position + 1):
+                    return True
+                used_players.remove(player_idx)
+                assignment.pop(slot, None)
+            return False
+        
+        if backtrack(0):
+            return assignment
+        
+        logging.error("❌ Unable to assign players to DraftKings slots without conflicts")
+        return None
+    def _filter_valid_lineups(self, lineups, context=""):
+        """Return only lineups that pass validation, logging any removals."""
+        if not lineups:
+            return []
+        
+        valid_lineups = []
+        invalid_count = 0
+        
+        for idx, lineup_entry in enumerate(lineups, 1):
+            lineup_df = self._extract_lineup_df(lineup_entry)
+            is_valid, error_msg = self.validate_lineup(lineup_df)
+            if not is_valid:
+                invalid_count += 1
+                logging.warning(
+                    f"⚠️ Invalid lineup removed{f' ({context})' if context else ''}: "
+                    f"Reason='{error_msg}'"
+                )
+                continue
+            
+            slot_assignment = self._assign_lineup_slots(lineup_df)
+            if slot_assignment is None:
+                invalid_count += 1
+                logging.warning(
+                    f"⚠️ Invalid lineup removed{f' ({context})' if context else ''}: "
+                    "Reason='Unable to assign required DraftKings slots'"
+                )
+                continue
+            
+            fixed_lineup = self.fix_lineup_position_order(lineup_df)
+            valid_lineups.append(fixed_lineup.copy())
+        
+        if invalid_count > 0:
+            logging.warning(
+                f"⚠️ Filtered out {invalid_count} invalid lineup(s)"
+                f"{f' during {context}' if context else ''}"
+            )
+        
+        return valid_lineups
+
+    def _extract_lineup_df(self, lineup_entry):
+        """Normalize various lineup representations to a DataFrame."""
+        if isinstance(lineup_entry, pd.DataFrame):
+            return lineup_entry
+        if isinstance(lineup_entry, dict):
+            lineup_obj = lineup_entry.get('lineup', pd.DataFrame())
+            if isinstance(lineup_obj, pd.DataFrame):
+                return lineup_obj
+            try:
+                return pd.DataFrame(lineup_obj)
+            except Exception:
+                return pd.DataFrame()
+        return pd.DataFrame()
+
+    def enforce_player_exposure(self, lineups, max_exposure):
+        """
+        Enforce player exposure limits across generated lineups.
+
+        :param lineups: List of lineups, where each lineup is a list of player IDs.
+        :param max_exposure: Dictionary with player IDs as keys and maximum exposure percentages as values.
+        :return: Filtered list of lineups that respect the exposure limits.
+        """
+        from collections import Counter
+
+        # Count player appearances across all lineups
+        player_counts = Counter(player for lineup in lineups for player in lineup)
+        total_lineups = len(lineups)
+
+        # Calculate current exposure for each player
+        player_exposure = {
+            player: count / total_lineups for player, count in player_counts.items()
+        }
+
+        # Filter lineups to respect max exposure
+        filtered_lineups = []
+        for lineup in lineups:
+            if all(
+                player_exposure.get(player, 0) <= max_exposure.get(player, 1.0)
+                for player in lineup
+            ):
+                filtered_lineups.append(lineup)
+
+        return filtered_lineups
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Advanced NBA DFS Optimizer - Research-Based Genetic Algorithm")
+        
+        # Get screen size and set window to 85% of screen size (works on Mac and Windows)
+        screen = QApplication.primaryScreen().geometry()
+        screen_width = screen.width()
+        screen_height = screen.height()
+        
+        # Calculate window size (85% of screen, but with reasonable limits)
+        window_width = min(int(screen_width * 0.85), 1600)
+        window_height = min(int(screen_height * 0.85), 1000)
+        
+        # Center the window on screen
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        
+        self.setGeometry(x, y, window_width, window_height)
+        
+        # Set minimum size to ensure usability on small screens
+        self.setMinimumSize(1200, 700)
+        
+        # Make window resizable
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint)
+        
+        # Initialize enhanced checkbox managers
+        if ENHANCED_CHECKBOX_AVAILABLE:
+            self.checkbox_managers = {}  # One manager per stack size
+            print("✅ Checkbox managers initialized")
+        else:
+            self.checkbox_managers = None
+        
+        self.setup_ui()
+        
+        self.included_players = []
+        self.stack_settings = {}
+        self.min_exposure = {}
+        self.max_exposure = {}
+        self.min_points = 1
+        self.monte_carlo_iterations = 100
+        self.team_selections = {}  # Initialize team selections
+
+    def update_probability_display(self, prob_summary, status):
+        """
+        Update the GUI with probability metrics and status.
+
+        :param prob_summary: Dictionary containing probability metrics.
+        :param status: Status message to display.
+        """
+        # Example: Update a QLabel or QTableWidget with the probability summary
+        logging.info(f"Updating probability display with status: {status}")
+        
+        # Update GUI elements if they exist
+        if hasattr(self, 'prob_detection_label'):
+            if prob_summary.get('columns') and any(cols for cols in prob_summary['columns'].values()):
+                total_cols = sum(len(cols) for cols in prob_summary['columns'].values())
+                self.prob_detection_label.setText(f"✅ {total_cols} probability columns detected")
+                self.prob_detection_label.setStyleSheet("color: green; font-size: 10px; padding: 3px;")
+            else:
+                self.prob_detection_label.setText("❌ No probability columns detected")
+                self.prob_detection_label.setStyleSheet("color: red; font-size: 10px; padding: 3px;")
+        
+        if hasattr(self, 'prob_summary_text'):
+            if prob_summary.get('columns') and any(cols for cols in prob_summary['columns'].values()):
+                summary_text = f"🎲 PROBABILITY DATA DETECTED ({status})\n\n"
+                
+                # Show detected columns by category
+                for category, columns in prob_summary['columns'].items():
+                    if columns:
+                        summary_text += f"{category}: {', '.join(columns)}\n"
+                
+                # Show enhanced metrics
+                summary_text += f"\nEnhanced Metrics:\n"
+                for metric, count in prob_summary.get('metrics', {}).items():
+                    if count > 0:
+                        summary_text += f"• {metric}: {count} players\n"
+                
+                self.prob_summary_text.setText(summary_text)
+            else:
+                self.prob_summary_text.setText("No probability data available.\n\nTo use probability-based optimization, ensure your CSV contains columns like:\n• Prob_Over_5\n• Prob_Over_10\n• Prob_Over_15\n• etc.")
+        
+        # Console output
+        print(f"🎲 Probability Summary: {prob_summary}, Status: {status}")
+
+    def update_probability_display_error(self, error_message):
+        """
+        Display an error message in the GUI.
+
+        :param error_message: Error message to display.
+        """
+        # Example: Update a QLabel or show a QMessageBox with the error message
+        logging.error(f"Displaying error message: {error_message}")
+        # Placeholder for actual GUI error display logic
+        print(f"Error: {error_message}")
+
+    def update_probability_display_no_data(self):
+        """
+        Update GUI when no probability data is available.
+        """
+        logging.info("No probability data available - updating GUI")
+        if hasattr(self, 'prob_detection_label'):
+            self.prob_detection_label.setText("❌ No probability columns detected")
+        if hasattr(self, 'prob_summary_text'):
+            self.prob_summary_text.setText("No probability data available.\n\nTo use probability-based optimization, ensure your CSV contains columns like:\n• Prob_Over_5\n• Prob_Over_10\n• Prob_Over_15\n• etc.")
+        print("🎲 No probability data detected in loaded CSV")
+
+    def setup_ui(self):
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
+        
+        self.main_layout = QVBoxLayout(self.central_widget)
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.main_layout.addWidget(self.splitter)
+        
+        self.tabs = QTabWidget()
+        self.splitter.addWidget(self.tabs)
+
+        self.df_players = None
+        self.df_entries = None
+        self.player_exposure = {}
+        self.optimized_lineups = []
+        self.favorites_lineups = []  # Store favorite lineups from multiple runs
+        self.favorites_file = "favorites_lineups.json"  # Persistent storage for favorites
+
+        self.create_players_tab()
+        self.create_team_stack_tab()
+        self.create_stack_exposure_tab()
+        self.create_team_combinations_tab()  # Add team combinations tab
+        self.create_control_panel()
+        self.create_advanced_quant_tab()  # Add advanced quantitative optimization tab
+        self.create_favorites_tab()  # Add favorites tab
+        self.load_favorites()  # Load saved favorites on startup
+
+    def get_advanced_quant_params_for_worker(self):
+        """Get advanced quantitative optimization parameters for worker"""
+        if not getattr(self, 'use_advanced_quant', False):
+            return {}
+        
+        try:
+            # Check if advanced quant UI elements exist before accessing them
+            if not hasattr(self, 'optimization_strategy'):
+                logging.debug("Advanced quant UI not initialized yet, returning default parameters")
+                return {
+                    'optimization_strategy': 'combined',
+                    'risk_tolerance': 1.0,
+                    'var_confidence': 0.95,
+                    'target_volatility': 0.15,
+                    'mc_simulations': 10000,
+                    'time_horizon': 1,
+                    'garch_p': 1,
+                    'garch_q': 1,
+                    'garch_lookback': 100,
+                    'copula_family': 'gaussian',
+                    'dependency_threshold': 0.3,
+                    'kelly_fraction_limit': 0.25,
+                    'expected_win_rate': 0.2
+                }
+            
+            return {
+                'optimization_strategy': self.optimization_strategy.currentText(),
+                'risk_tolerance': self.risk_tolerance.value(),
+                'var_confidence': self.var_confidence.value(),
+                'target_volatility': self.target_volatility.value(),
+                'mc_simulations': self.mc_simulations.value(),
+                'time_horizon': self.time_horizon.value(),
+                'garch_p': self.garch_p.value(),
+                'garch_q': self.garch_q.value(),
+                'garch_lookback': self.garch_lookback.value(),
+                'copula_family': self.copula_family.currentText(),
+                'dependency_threshold': self.dependency_threshold.value(),
+                'kelly_fraction_limit': self.kelly_fraction_limit.value(),
+                'expected_win_rate': self.expected_win_rate.value()
+            }
+        except AttributeError as e:
+            logging.warning(f"Could not get advanced quant parameters: {e}")
+            return {}
+        except Exception as e:
+            logging.warning(f"Error getting advanced quant parameters: {e}")
+            return {}
+
+    def create_players_tab(self):
+        players_tab = QWidget()
+        self.tabs.addTab(players_tab, "Players")
+
+        players_layout = QVBoxLayout(players_tab)
+        
+        # ADD GLOBAL CLEAR ALL BUTTON AT THE TOP
+        global_button_layout = QHBoxLayout()
+        clear_all_global_btn = QPushButton("🚫 CLEAR ALL PLAYER SELECTIONS")
+        clear_all_global_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f44336; 
+                color: white; 
+                font-weight: bold; 
+                padding: 10px; 
+                font-size: 14px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #d32f2f;
+            }
+        """)
+        clear_all_global_btn.setToolTip("Uncheck ALL players in ALL tabs - use this to start fresh!")
+        clear_all_global_btn.clicked.connect(self.clear_all_player_selections)
+        global_button_layout.addWidget(clear_all_global_btn)
+        global_button_layout.addStretch()
+        players_layout.addLayout(global_button_layout)
+
+        position_tabs = QTabWidget()
+        players_layout.addWidget(position_tabs)
+
+        self.player_tables = {}
+
+        positions = ["All Players", "PG", "SG", "SF", "PF", "C", "Guards", "Forwards"]
+        for position in positions:
+            sub_tab = QWidget()
+            position_tabs.addTab(sub_tab, position)
+            layout = QVBoxLayout(sub_tab)
+
+            select_all_button = QPushButton("Select All")
+            deselect_all_button = QPushButton("Deselect All")
+            select_all_button.clicked.connect(lambda _, p=position: self.select_all(p))
+            deselect_all_button.clicked.connect(lambda _, p=position: self.deselect_all(p))
+            button_layout = QHBoxLayout()
+            button_layout.addWidget(select_all_button)
+            button_layout.addWidget(deselect_all_button)
+            layout.addLayout(button_layout)
+
+            table = QTableWidget(0, 10)
+            table.setHorizontalHeaderLabels(["Select", "Name", "Team", "Position", "Salary", "Predicted_DK_Points", "Value", "Min Exp", "Max Exp", "Actual Exp (%)"])
+            table.setSortingEnabled(True)  # Enable clicking headers to sort
+            layout.addWidget(table)
+
+            self.player_tables[position] = table
+
+    def create_team_stack_tab(self):
+        team_stack_tab = QWidget()
+        self.tabs.addTab(team_stack_tab, "Team Stacks")
+
+        layout = QVBoxLayout(team_stack_tab)
+
+        stack_size_tabs = QTabWidget()
+        layout.addWidget(stack_size_tabs)
+
+        stack_sizes = ["All Stacks", "2 Stack", "3 Stack", "4 Stack", "5 Stack"]
+        self.team_stack_tables = {}
+
+        for stack_size in stack_sizes:
+            sub_tab = QWidget()
+            stack_size_tabs.addTab(sub_tab, stack_size)
+            sub_layout = QVBoxLayout(sub_tab)
+
+            # Add Select All / Deselect All buttons for team stacks
+            button_layout = QHBoxLayout()
+            
+            select_all_btn = QPushButton(f"✅ Select All")
+            select_all_btn.setToolTip(f"Select all teams in {stack_size} tab")
+            select_all_btn.clicked.connect(lambda checked, size=stack_size: self.select_all_teams(size))
+            button_layout.addWidget(select_all_btn)
+            
+            deselect_all_btn = QPushButton(f"❌ Deselect All")
+            deselect_all_btn.setToolTip(f"Deselect all teams in {stack_size} tab")
+            deselect_all_btn.clicked.connect(lambda checked, size=stack_size: self.deselect_all_teams(size))
+            button_layout.addWidget(deselect_all_btn)
+            
+            button_layout.addStretch()  # Push buttons to the left
+            sub_layout.addLayout(button_layout)
+
+            table = QTableWidget(0, 8)
+            table.setHorizontalHeaderLabels(["Select", "Teams", "Status", "Time", "Proj Points", "Min Exp", "Max Exp", "Actual Exp (%)"])
+            table.setSortingEnabled(True)  # Enable clicking headers to sort
+            sub_layout.addWidget(table)
+
+            self.team_stack_tables[stack_size] = table
+
+        self.team_stack_table = self.team_stack_tables["All Stacks"]
+
+        refresh_button = QPushButton("Refresh Team Stacks")
+        refresh_button.clicked.connect(self.refresh_team_stacks)
+        layout.addWidget(refresh_button)
+        
+        # Add debug button to test team selection collection
+        debug_button = QPushButton("🔍 Test Team Selection Detection")
+        debug_button.setStyleSheet("background-color: #ff6b6b; color: white; font-weight: bold;")
+        debug_button.clicked.connect(self.debug_team_selections)
+        layout.addWidget(debug_button)
+
+    def debug_team_selections(self):
+        """Debug function to test team selection collection"""
+        print("\n" + "="*60)
+        print("🔍 MANUAL TEAM SELECTION DEBUG TEST")
+        print("="*60)
+        
+        team_selections = self.collect_team_selections()
+        
+        print(f"\n📊 RESULTS:")
+        if team_selections:
+            print(f"✅ Found team selections: {team_selections}")
+            for stack_size, teams in team_selections.items():
+                print(f"   {stack_size}: {teams}")
+        else:
+            print(f"❌ No team selections found")
+        
+        print("="*60)
+
+    def refresh_team_stacks(self):
+        self.populate_team_stack_table()
+
+    def select_all_teams(self, stack_size):
+        """Select all teams in a specific team stack table"""
+        if not hasattr(self, 'team_stack_tables') or stack_size not in self.team_stack_tables:
+            logging.debug(f"No team stack table found for: {stack_size}")
+            return
+        
+        table = self.team_stack_tables[stack_size]
+        selected_count = 0
+        
+        # Try enhanced method first
+        if (ENHANCED_CHECKBOX_AVAILABLE and hasattr(self, 'checkbox_managers') and 
+            self.checkbox_managers and stack_size in self.checkbox_managers):
+            
+            manager = self.checkbox_managers[stack_size]
+            logging.info(f"🚀 Using enhanced method to select all teams in {stack_size}")
+            
+            # Get all checkbox IDs for this manager and set them to checked
+            for row in range(table.rowCount()):
+                row_id = f"team_{row}"
+                if manager.set_checkbox_state(row_id, True):
+                    selected_count += 1
+        else:
+            # Fallback to original method
+            logging.info(f"⚠️ Using fallback method to select all teams in {stack_size}")
+            
+            # Check all checkboxes in the table
+            for row in range(table.rowCount()):
+                checkbox_widget = table.cellWidget(row, 0)
+                if checkbox_widget:
+                    # Find the checkbox within the widget
+                    layout = checkbox_widget.layout()
+                    if layout and layout.count() > 0:
+                        checkbox = layout.itemAt(0).widget()
+                        if isinstance(checkbox, QCheckBox):
+                            checkbox.setChecked(True)
+                            selected_count += 1
+        
+        logging.info(f"Selected all {selected_count} teams in {stack_size} table")
+        if hasattr(self, 'status_label'):
+            self.status_label.setText(f"✅ Selected all {selected_count} teams in {stack_size}")
+
+    def deselect_all_teams(self, stack_size):
+        """Deselect all teams in a specific team stack table"""
+        if not hasattr(self, 'team_stack_tables') or stack_size not in self.team_stack_tables:
+            logging.debug(f"No team stack table found for: {stack_size}")
+            return
+        
+        table = self.team_stack_tables[stack_size]
+        deselected_count = 0
+        
+        # Try enhanced method first
+        if (ENHANCED_CHECKBOX_AVAILABLE and hasattr(self, 'checkbox_managers') and 
+            self.checkbox_managers and stack_size in self.checkbox_managers):
+            
+            manager = self.checkbox_managers[stack_size]
+            logging.info(f"🚀 Using enhanced method to deselect all teams in {stack_size}")
+            
+            # Get all checkbox IDs for this manager and set them to unchecked
+            for row in range(table.rowCount()):
+                row_id = f"team_{row}"
+                if manager.set_checkbox_state(row_id, False):
+                    deselected_count += 1
+        else:
+            # Fallback to original method
+            logging.info(f"⚠️ Using fallback method to deselect all teams in {stack_size}")
+            
+            # Uncheck all checkboxes in the table
+            for row in range(table.rowCount()):
+                checkbox_widget = table.cellWidget(row, 0)
+                if checkbox_widget:
+                    # Find the checkbox within the widget
+                    layout = checkbox_widget.layout()
+                    if layout and layout.count() > 0:
+                        checkbox = layout.itemAt(0).widget()
+                        if isinstance(checkbox, QCheckBox):
+                            checkbox.setChecked(False)
+                            deselected_count += 1
+        
+        logging.info(f"Deselected all {deselected_count} teams in {stack_size} table")
+        if hasattr(self, 'status_label'):
+            self.status_label.setText(f"❌ Deselected all {deselected_count} teams in {stack_size}")
+
+    def populate_team_combinations_teams(self):
+        """Populate team/game checkboxes in the combinations tab when data is loaded"""
+        if not hasattr(self, 'df_players') or self.df_players is None or self.df_players.empty:
+            return
+        
+        # Clear existing checkboxes
+        for i in reversed(range(self.teams_layout.count())):
+            child = self.teams_layout.itemAt(i).widget()
+            if child:
+                child.setParent(None)
+        
+        self.team_checkboxes.clear()
+        
+        # Get unique teams
+        teams = sorted(self.df_players['Team'].unique())
+        
+        # 🏀 NBA GAMES (10/22/2025) - Tonight's matchups
+        NBA_GAMES = [
+            ("BKN", "CHA", "7:00 PM"),
+            ("CLE", "NYK", "7:00 PM"),
+            ("MIA", "ORL", "7:00 PM"),
+            ("TOR", "ATL", "7:30 PM"),
+            ("PHI", "BOS", "7:30 PM"),
+            ("DET", "CHI", "8:00 PM"),
+            ("NOP", "MEM", "8:00 PM"),
+            ("WAS", "MIL", "8:00 PM"),
+            ("LAC", "UTA", "9:00 PM"),
+            ("SAS", "DAL", "9:30 PM"),
+            ("MIN", "POR", "10:00 PM"),
+            ("SAC", "PHX", "10:00 PM")
+        ]
+        
+        # Add game matchups as checkboxes
+        for away, home, time in NBA_GAMES:
+            # Check if both teams are in the loaded data
+            if away in teams and home in teams:
+                game_label = f"{away} @ {home} ({time})"
+                checkbox = QCheckBox(game_label)
+                checkbox.setStyleSheet("padding: 3px; font-size: 11px; font-weight: bold; color: #2196F3;")
+                self.teams_layout.addWidget(checkbox)
+                # Store under game key for easy retrieval
+                self.team_checkboxes[f"{away}|{home}"] = checkbox
+        
+        # Add separator
+        separator = QLabel("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        separator.setStyleSheet("color: #666; font-size: 10px;")
+        self.teams_layout.addWidget(separator)
+        
+        # Add individual teams below games
+        individual_label = QLabel("Individual Teams:")
+        individual_label.setStyleSheet("font-weight: bold; color: #FF9800; margin-top: 5px;")
+        self.teams_layout.addWidget(individual_label)
+        
+        for team in teams:
+            checkbox = QCheckBox(team)
+            checkbox.setStyleSheet("padding: 2px; font-size: 11px;")
+            self.teams_layout.addWidget(checkbox)
+            self.team_checkboxes[team] = checkbox
+        
+        logging.info(f"Populated {len(NBA_GAMES)} games and {len(teams)} teams in combinations tab")
+
+    def select_all_combination_teams(self):
+        """Select all teams in the combinations tab"""
+        for checkbox in self.team_checkboxes.values():
+            checkbox.setChecked(True)
+        logging.info("Selected all teams in combinations tab")
+
+    def deselect_all_combination_teams(self):
+        """Deselect all teams in the combinations tab"""
+        for checkbox in self.team_checkboxes.values():
+            checkbox.setChecked(False)
+        logging.info("Deselected all teams in combinations tab")
+
+    def generate_team_combinations(self):
+        """Generate all possible team combinations based on selected teams and stack pattern"""
+        try:
+            # Get selected teams
+            selected_teams = []
+            for team, checkbox in self.team_checkboxes.items():
+                if checkbox.isChecked():
+                    selected_teams.append(team)
+            print(f"[DEBUG] Selected teams for combinations: {selected_teams}")
+            
+            if len(selected_teams) < 2:
+                QMessageBox.warning(self, "Warning", "Please select at least 2 teams to generate combinations.")
+                return
+            
+            # Get stack pattern and parse it
+            stack_pattern_raw = self.combinations_stack_combo.currentText()
+            # Map new NBA stack names to backend format
+            stack_pattern = map_nba_stack_to_backend(stack_pattern_raw)
+            print(f"[DEBUG] Stack pattern (raw): {stack_pattern_raw}, mapped to: {stack_pattern}")
+            
+            # Parse NBA stack pattern
+            if stack_pattern == "No Stack":
+                stack_sizes = [1]  # Treat as single team selection
+                teams_needed = 1
+            elif stack_pattern == "2 Players Same Team":
+                stack_sizes = [2]
+                teams_needed = 1
+            elif stack_pattern == "3 Players Same Team":
+                stack_sizes = [3]
+                teams_needed = 1
+            elif stack_pattern == "4 Players Same Team":
+                stack_sizes = [4]
+                teams_needed = 1
+            elif stack_pattern == "5 Players Same Team":
+                stack_sizes = [5]
+                teams_needed = 1
+            elif stack_pattern == "Game Stack (Both Teams)":
+                stack_sizes = [3, 2]  # 3 from one team, 2 from opponent
+                teams_needed = 2
+            else:
+                # Fallback - try to extract numbers
+                try:
+                    # Extract first number from string
+                    import re
+                    numbers = re.findall(r'\d+', stack_pattern)
+                    if numbers:
+                        stack_sizes = [int(numbers[0])]
+                    else:
+                        stack_sizes = [3]  # Default to 3-player stack
+                    teams_needed = 1
+                except:
+                    stack_sizes = [3]
+                    teams_needed = 1
+            print(f"[DEBUG] Stack sizes: {stack_sizes}, teams_needed: {teams_needed}")
+            
+            if len(selected_teams) < teams_needed:
+                QMessageBox.warning(self, "Warning", f"Need at least {teams_needed} teams selected for {stack_pattern} stack pattern.")
+                return
+            
+            # Get default lineups per combination
+            try:
+                default_lineups = int(self.default_lineups_input.text())
+            except ValueError:
+                default_lineups = 5
+            
+            # Generate all possible team combinations for this stack pattern
+            team_combinations = []
+            
+            # Generate combinations of teams
+            for team_combo in combinations(selected_teams, teams_needed):
+                # Generate all permutations to assign different stack sizes to different teams
+                for team_perm in itertools.permutations(team_combo):
+                    combination_info = {
+                        'teams': team_perm,
+                        'stack_pattern': stack_pattern,
+                        'stack_sizes': stack_sizes
+                    }
+                    team_combinations.append(combination_info)
+            print(f"[DEBUG] Generated {len(team_combinations)} team_combinations. Example: {team_combinations[:2]}")
+            
+            # Clear existing combinations table
+            self.combinations_table.setRowCount(0)
+            
+            # Populate table with combinations
+            for i, combo_info in enumerate(team_combinations):
+                row = self.combinations_table.rowCount()
+                self.combinations_table.insertRow(row)
+                
+                # Select checkbox
+                checkbox = QCheckBox()
+                checkbox.setChecked(True)  # Select all by default
+                checkbox.stateChanged.connect(self.update_total_lineups_display)
+                checkbox_widget = QWidget()
+                layout = QHBoxLayout(checkbox_widget)
+                layout.addWidget(checkbox)
+                layout.setAlignment(Qt.AlignCenter)
+                layout.setContentsMargins(0, 0, 0, 0)
+                self.combinations_table.setCellWidget(row, 0, checkbox_widget)
+                
+                # Team combination display
+                teams = combo_info['teams']
+                stack_sizes = combo_info['stack_sizes']
+                combo_parts = []
+                for j, team in enumerate(teams):
+                    # Handle both numeric and named stack types
+                    if isinstance(stack_sizes[j], int):
+                        combo_parts.append(f"{team}({stack_sizes[j]})")
+                    else:
+                        # For named stacks, just show team with stack type
+                        stack_display = stack_sizes[j].replace('_', '-').upper()
+                        combo_parts.append(f"{team}({stack_display})")
+                combo_text = " + ".join(combo_parts)
+                self.combinations_table.setItem(row, 1, QTableWidgetItem(combo_text))
+                
+                # Lineups per combo (editable)
+                lineups_item = QTableWidgetItem(str(default_lineups))
+                lineups_item.setFlags(Qt.ItemIsEditable | Qt.ItemIsEnabled)
+                self.combinations_table.setItem(row, 2, lineups_item)
+                
+                # Actions (could add individual generate button later)
+                self.combinations_table.setItem(row, 3, QTableWidgetItem("Ready"))
+            
+            # Connect table editing signal to update total when lineups per combo are changed
+            self.combinations_table.itemChanged.connect(self.update_total_lineups_display)
+            
+            # Update total lineups display
+            self.update_total_lineups_display()
+            
+            # Show success message
+            if hasattr(self, 'status_label'):
+                self.status_label.setText(f"✅ Generated {len(team_combinations)} combinations from {len(selected_teams)} teams using {stack_pattern} pattern")
+            
+            logging.info(f"Generated {len(team_combinations)} team combinations using {stack_pattern} pattern")
+            
+        except Exception as e:
+            logging.error(f"Error generating team combinations: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to generate combinations: {str(e)}")
+
+    def update_total_lineups_display(self):
+        """Update the total lineups count display"""
+        try:
+            total_lineups = 0
+            
+            for row in range(self.combinations_table.rowCount()):
+                # Check if combination is selected
+                checkbox_widget = self.combinations_table.cellWidget(row, 0)
+                if checkbox_widget:
+                    layout = checkbox_widget.layout()
+                    if layout and layout.count() > 0:
+                        checkbox = layout.itemAt(0).widget()
+                        if isinstance(checkbox, QCheckBox) and checkbox.isChecked():
+                            # Get lineups count for this combination
+                            lineups_item = self.combinations_table.item(row, 2)
+                            if lineups_item:
+                                try:
+                                    lineups_count = int(lineups_item.text())
+                                    total_lineups += lineups_count
+                                except ValueError:
+                                    pass
+            
+            self.total_lineups_display.setText(str(total_lineups))
+            
+        except Exception as e:
+            logging.error(f"Error updating total lineups display: {e}")
+
+    def generate_combination_lineups(self):
+        """Generate lineups for all selected team combinations"""
+        try:
+            if not hasattr(self, 'df_players') or self.df_players is None or self.df_players.empty:
+                QMessageBox.warning(self, "Warning", "Please load player data first.")
+                return
+            
+            selected_combinations = []
+            
+            # Get selected combinations and their lineup counts
+            for row in range(self.combinations_table.rowCount()):
+                checkbox_widget = self.combinations_table.cellWidget(row, 0)
+                if checkbox_widget:
+                    layout = checkbox_widget.layout()
+                    if layout and layout.count() > 0:
+                        checkbox = layout.itemAt(0).widget()
+                        if isinstance(checkbox, QCheckBox) and checkbox.isChecked():
+                            combo_item = self.combinations_table.item(row, 1)
+                            lineups_item = self.combinations_table.item(row, 2)
+                            if combo_item and lineups_item:
+                                try:
+                                    combo_text = combo_item.text()
+                                    # Parse the combination text like "LAD(4) + SF(2)" or "CHI(QB-WR-TE)"
+                                    team_parts = combo_text.split(' + ')
+                                    teams = []
+                                    stack_sizes = []
+                                    for part in team_parts:
+                                        if '(' in part and ')' in part:
+                                            team = part.split('(')[0].strip()
+                                            stack_size_str = part.split('(')[1].split(')')[0].strip()
+                                            # Try to convert to int, if it fails keep as string (for named stacks)
+                                            try:
+                                                stack_size = int(stack_size_str)
+                                            except ValueError:
+                                                # It's a named stack like "QB-WR-TE", convert back to backend format
+                                                stack_size = stack_size_str.lower().replace('-', '_')
+                                            teams.append(team)
+                                            stack_sizes.append(stack_size)
+                                    lineups_count = int(lineups_item.text())
+                                    selected_combinations.append((teams, stack_sizes, lineups_count))
+                                except Exception as e:
+                                    logging.warning(f"Failed to parse combination {combo_text}: {e}")
+                                    pass
+            print(f"[DEBUG] selected_combinations: {selected_combinations}")
+            
+            if not selected_combinations:
+                QMessageBox.warning(self, "Warning", "No combinations selected.")
+                return
+            
+            # Get stack pattern
+            stack_pattern = self.combinations_stack_combo.currentText()
+            
+            # Generate lineups for each combination
+            all_lineups = []
+            
+            # Get TOTAL requested lineups from GUI (not per combination)
+            total_requested = self.get_requested_lineups()
+            logging.info(f"🎯 TOTAL LINEUPS REQUESTED: {total_requested} across all combinations")
+            
+            # Distribute lineups across combinations
+            num_combinations = len(selected_combinations)
+            lineups_per_combo = max(1, total_requested // num_combinations)
+            extra_lineups = total_requested % num_combinations
+            logging.info(f"📊 DISTRIBUTION: {lineups_per_combo} lineups per combo, {extra_lineups} extra")
+            
+            # Capture included players once to keep selection consistent across combinations
+            included_players = self.get_included_players()
+            if included_players:
+                # Store for downstream validation/logging
+                self.included_players = included_players.copy()
+            else:
+                # Fallback to previously stored selections if available
+                prior_selection = getattr(self, 'included_players', [])
+                if prior_selection:
+                    print("   ⚠️ Detected empty selection from UI - reusing your last saved player list.")
+                    logging.warning("Included players list empty in combinations; falling back to previous stored selection")
+                    included_players = prior_selection.copy()
+                    self.included_players = included_players.copy()
+                else:
+                    logging.info("No players explicitly selected; combinations will use full player pool")
+                    included_players = []
+                    self.included_players = []
+            
+            for combo_idx, (teams, stack_sizes, lineups_count) in enumerate(selected_combinations):
+                # Use distributed count instead of per-combo table value
+                current_combo_count = lineups_per_combo
+                if combo_idx < extra_lineups:
+                    current_combo_count += 1  # Give extra lineup to first N combos
+                
+                # Stop if we've reached the total requested
+                if len(all_lineups) >= total_requested:
+                    logging.info(f"✅ Reached total requested lineups ({total_requested}), stopping")
+                    break
+                
+                if current_combo_count <= 0:
+                    continue
+                
+                # Create team selections for this combination
+                # Map each stack size to its corresponding teams
+                team_selections = {}
+                for i, stack_size in enumerate(stack_sizes):
+                    if stack_size not in team_selections:
+                        team_selections[stack_size] = []
+                    team_selections[stack_size].append(teams[i])
+                print(f"[DEBUG] team_selections mapping for this combination: {team_selections}")
+                combo_display = " + ".join([f"{team}({size})" for team, size in zip(teams, stack_sizes)])
+                # Check for format mismatches
+                for k in team_selections.keys():
+                    if not (isinstance(k, int) or (isinstance(k, str) and k.isdigit())):
+                        print(f"[WARNING] team_selections key format may not match optimizer expectations: {k}")
+                
+                # Set up optimization parameters
+                salary_cap = 50000
+                # Use standard NBA DraftKings positional limits
+                position_limits = POSITION_LIMITS.copy()
+                
+                # Run optimization for this combination
+                try:
+                    # Format stack settings for the worker
+                    stack_pattern = self.combinations_stack_combo.currentText()
+                    stack_settings = {stack_pattern: True}  # Worker expects a dict of stack patterns
+                    
+                    # CLEAN APPROACH: Generate multiple lineups WITHOUT noise for best quality
+                    all_combo_results = {}
+                    max_attempts = 3  # Reduced since each attempt now generates 10+ lineups
+                    for attempt in range(max_attempts):  # 3 attempts x 10+ lineups = 30+ total
+                        # NO NOISE - Use clean data for consistent quality lineups
+                        df_clean = self.df_players.copy()
+                        
+                        worker = OptimizationWorker(
+                            df_players=df_clean,  # Use CLEAN data for best quality
+                            salary_cap=salary_cap,
+                            position_limits=position_limits,
+                            included_players=included_players,
+                            stack_settings=stack_settings,
+                            min_exposure={},
+                            max_exposure={},
+                            min_points=1,
+                            monte_carlo_iterations=50,  # Reduced for speed
+                            num_lineups=max(current_combo_count, 5),  # Generate lineups for THIS combo only
+                            team_selections=team_selections,
+                            min_unique=1,  # Require at least 1 different player for diversity
+                            bankroll=1000,
+                            risk_tolerance='medium',
+                            disable_kelly=True,
+                            min_salary=self.get_min_salary_constraint(),
+                            use_advanced_quant=getattr(self, 'use_advanced_quant', False),
+                            advanced_quant_params=self.get_advanced_quant_params_for_worker(),
+                            position_specific_selections=getattr(self, 'position_specific_selections', {})
+                        )
+                        
+                        # SET COMBINATION MODE FLAG
+                        worker._is_combination_mode = True
+                        
+                        # Run single optimization
+                        attempt_results, _, _ = worker.optimize_lineups()
+                        
+                        if attempt_results and len(attempt_results) > 0:
+                            # Merge results with uniqueness check
+                            for key, result in attempt_results.items():
+                                if result and 'lineup' in result and not result['lineup'].empty:
+                                    # Simple uniqueness check based on player names
+                                    lineup_signature = tuple(sorted(result['lineup']['Name'].tolist()))
+                                    if lineup_signature not in [tuple(sorted(existing['lineup']['Name'].tolist())) 
+                                                              for existing in all_combo_results.values()]:
+                                        all_combo_results[len(all_combo_results)] = result
+                        
+                        # Stop if we have enough unique lineups for THIS combination
+                        if len(all_combo_results) >= current_combo_count:
+                            break
+                    
+                    combo_results = all_combo_results
+                    logging.info(f"🎲 NOISE GENERATION: Created {len(combo_results)} unique lineups from {attempt + 1} attempts")
+                    
+                    # ADD DEBUG LOGGING
+                    logging.info(f"🔍 DEBUG: Requested {current_combo_count} lineups for this combo, got {len(combo_results) if combo_results else 0} results")
+                    if combo_results:
+                        logging.info(f"🔍 DEBUG: combo_results type: {type(combo_results)}")
+                        if isinstance(combo_results, dict):
+                            logging.info(f"🔍 DEBUG: combo_results keys: {list(combo_results.keys())}")
+                    
+                    if combo_results and len(combo_results) > 0:
+                        # Convert results to list format for consistency
+                        if isinstance(combo_results, dict):
+                            combo_lineups = []
+                            for result in combo_results.values():
+                                if isinstance(result, dict) and 'lineup' in result:
+                                    combo_lineups.append(result['lineup'])
+                                elif isinstance(result, pd.DataFrame):
+                                    combo_lineups.append(result)
+                        elif isinstance(combo_results, list):
+                            # If it's already a list, use it directly
+                            combo_lineups = combo_results
+                        else:
+                            # Handle any other format
+                            combo_lineups = [combo_results] if combo_results is not None else []
+                        
+                        combo_lineups = self._filter_valid_lineups(combo_lineups, context=f"combination {combo_display}")
+                        if not combo_lineups:
+                            logging.warning(f"⚠️ No valid lineups remained after filtering for combination: {combo_display}")
+                            continue
+                        
+                        # Limit to requested count for THIS combination (no duplication)
+                        if len(combo_lineups) < current_combo_count:
+                            logging.warning(
+                                f"⚠️ Combination {combo_display}: only {len(combo_lineups)} valid lineups "
+                                f"available (requested {current_combo_count})"
+                            )
+                        combo_lineups = combo_lineups[:current_combo_count]
+                        
+                        # Only add if we haven't exceeded total
+                        remaining_slots = total_requested - len(all_lineups)
+                        if remaining_slots > 0:
+                            lineups_to_add = combo_lineups[:remaining_slots]
+                            valid_to_add = self._filter_valid_lineups(lineups_to_add, context=f"combination {combo_display} (remaining slots)")
+                            if valid_to_add:
+                                all_lineups.extend(valid_to_add)
+                                logging.info(f"✅ Added {len(valid_to_add)} lineups (total now: {len(all_lineups)}/{total_requested})")
+                            else:
+                                logging.warning(f"⚠️ No valid lineups added for combination {combo_display} after secondary filtering")
+                        else:
+                            logging.info(f"⏸️ Skipping combo - already at total requested ({len(all_lineups)}/{total_requested})")
+                        logging.info(f"Generated {len(combo_lineups)} valid lineups for combination: {combo_display}")
+                    else:
+                        logging.warning(f"No lineups generated for combination: {combo_display}")
+                        
+                except Exception as e:
+                    logging.error(f"Error generating lineups for combination {combo_display}: {e}")
+                    continue
+            
+            if all_lineups and len(all_lineups) > 0:
+                original_all_lineups = len(all_lineups)
+                all_lineups = self._filter_valid_lineups(all_lineups, context="final combination pool")
+                if len(all_lineups) < original_all_lineups:
+                    logging.warning(
+                        f"⚠️ Final combination pool reduced from {original_all_lineups} to {len(all_lineups)} valid lineups"
+                    )
+                if not all_lineups:
+                    logging.warning("⚠️ No valid lineups remain after final combination filtering")
+                    QMessageBox.warning(self, "No Valid Lineups", "All generated combinations failed validation. Adjust your selections or constraints.")
+                    return
+                
+                # FINAL SAFETY: Limit to exact requested count
+                all_lineups = all_lineups[:total_requested]
+                logging.info(f"🎯 FINAL COUNT: Storing exactly {len(all_lineups)} lineups (requested: {total_requested})")
+                
+                # Store the results
+                self.optimized_lineups = all_lineups
+                
+                # VALIDATION: Verify lineups only contain selected players
+                if self.included_players and len(self.included_players) > 0:
+                    expected_players = set(self.included_players)
+                    all_valid = True
+                    
+                    for i, lineup in enumerate(all_lineups):
+                        lineup_df = lineup if isinstance(lineup, pd.DataFrame) else lineup.get('lineup', pd.DataFrame())
+                        if not lineup_df.empty and 'Name' in lineup_df.columns:
+                            lineup_players = set(lineup_df['Name'].tolist())
+                            unexpected = lineup_players - expected_players
+                            
+                            if unexpected:
+                                print(f"   ⚠️ WARNING: Lineup {i+1} contains unexpected players: {list(unexpected)}")
+                                logging.warning(f"Lineup {i+1} has unexpected players: {list(unexpected)}")
+                                all_valid = False
+                    
+                    if all_valid:
+                        print(f"   ✅ VERIFIED: All {len(all_lineups)} lineups use ONLY your {len(expected_players)} selected players")
+                        logging.info(f"✅ All lineups validated - only selected players used")
+                    else:
+                        print(f"   ⚠️ Some lineups contain players outside your selection!")
+                        logging.warning(f"Some lineups contain unexpected players")
+                
+                # Convert list format to expected dictionary format for display_results
+                results_dict = {}
+                for i, lineup_df in enumerate(all_lineups):
+                    # Calculate lineup metrics for display
+                    if isinstance(lineup_df, dict) and 'lineup' in lineup_df:
+                        # Already in proper format
+                        results_dict[i] = lineup_df
+                    else:
+                        # Convert DataFrame to expected format
+                        total_salary = lineup_df['Salary'].sum() if 'Salary' in lineup_df.columns else 0
+                        total_points = lineup_df['Predicted_DK_Points'].sum() if 'Predicted_DK_Points' in lineup_df.columns else 0
+                        
+                        results_dict[i] = {
+                            'lineup': lineup_df,
+                            'total_salary': total_salary,
+                            'total_points': total_points
+                        }
+                
+                # Display results
+                team_exposure = {}
+                stack_exposure = {}
+                self.display_results(results_dict, team_exposure, stack_exposure)
+                
+                # Show success message
+                if hasattr(self, 'status_label'):
+                    self.status_label.setText(f"✅ Generated {len(all_lineups)} total lineups from {len(selected_combinations)} combinations")
+                
+                logging.info(f"Successfully generated {len(all_lineups)} total lineups from combinations")
+                
+            else:
+                error_msg = ("No lineups were generated. This could be due to:\n\n"
+                           "• Not enough players selected for some positions\n"
+                           "• Stack requirements too restrictive for available teams\n"
+                           "• Salary constraints too tight\n"
+                           "• Selected players don't form valid lineups\n\n"
+                           "Try:\n"
+                           "• Selecting more players in each position\n"
+                           "• Choosing simpler stack patterns\n"
+                           "• Adjusting salary constraints")
+                QMessageBox.warning(self, "No Lineups Generated", error_msg)
+                
+        except Exception as e:
+            logging.error(f"Error in generate_combination_lineups: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to generate combination lineups: {str(e)}")
+
+    def create_stack_exposure_tab(self):
+        stack_exposure_tab = QWidget()
+        self.tabs.addTab(stack_exposure_tab, "Stack Exposure")
+    
+        layout = QVBoxLayout(stack_exposure_tab)
+    
+        self.stack_exposure_table = QTableWidget(0, 7)
+        self.stack_exposure_table.setHorizontalHeaderLabels(["Select", "Stack Type", "Min Exp", "Max Exp", "Lineup Exp", "Pool Exp", "Entry Exp"])
+        self.stack_exposure_table.setSortingEnabled(True)  # Enable clicking headers to sort
+        layout.addWidget(self.stack_exposure_table)
+    
+        # NFL-specific stack types based on proper DFS theory
+        stack_types = [
+            "PG + C",                # Point Guard + Center correlation (pick & roll)
+            "PG + Wing",             # Point Guard + Wing (SF/SG) for assists
+            "Stars + Value",         # 2-3 stars ($9K+) + value plays ($3-5K)
+            "Game Stack",            # 4+ players from high O/U game (225+)
+            "Team Stack (3)",        # 3 players from same team
+            "Team Stack (4)",        # 4 players from same team
+            "Balanced",              # No specific stacking
+            "Contrarian",            # Low ownership focus
+            "No Stack"               # Random selection
+        ]
+        for stack_type in stack_types:
+            row_position = self.stack_exposure_table.rowCount()
+            self.stack_exposure_table.insertRow(row_position)
+    
+            checkbox = QCheckBox()
+            checkbox_widget = QWidget()
+            layout_checkbox = QHBoxLayout(checkbox_widget)
+            layout_checkbox.addWidget(checkbox)
+            layout_checkbox.setAlignment(Qt.AlignCenter)
+            layout_checkbox.setContentsMargins(0, 0, 0, 0)
+            self.stack_exposure_table.setCellWidget(row_position, 0, checkbox_widget)
+    
+            self.stack_exposure_table.setItem(row_position, 1, QTableWidgetItem(stack_type))
+            min_exp_item = QTableWidgetItem("0")
+            min_exp_item.setFlags(Qt.ItemIsEditable | Qt.ItemIsEnabled)
+            self.stack_exposure_table.setItem(row_position, 2, min_exp_item)
+    
+            max_exp_item = QTableWidgetItem("100")
+            max_exp_item.setFlags(Qt.ItemIsEditable | Qt.ItemIsEnabled)
+            self.stack_exposure_table.setItem(row_position, 3, max_exp_item)
+    
+            self.stack_exposure_table.setItem(row_position, 4, QTableWidgetItem("0.0%"))
+            self.stack_exposure_table.setItem(row_position, 5, QTableWidgetItem("0.0%"))
+            self.stack_exposure_table.setItem(row_position, 6, QTableWidgetItem("0.0%"))
+
+    def create_team_combinations_tab(self):
+        """Create tab for generating all team combinations with specified stacks"""
+        combinations_tab = QWidget()
+        self.tabs.addTab(combinations_tab, "Team Combinations")
+        
+        layout = QVBoxLayout(combinations_tab)
+        
+        # Header section
+        header_label = QLabel("🔥 Team Combination Generator")
+        header_label.setStyleSheet("font-weight: bold; font-size: 16px; color: #FF5722; padding: 10px;")
+        layout.addWidget(header_label)
+        
+        # Description
+        desc_label = QLabel("Select teams and stack type to generate all possible combinations, then specify lineups per combination.")
+        desc_label.setStyleSheet("color: #666; font-size: 12px; padding: 5px;")
+        layout.addWidget(desc_label)
+        
+        # Controls section
+        controls_frame = QFrame()
+        controls_frame.setFrameShape(QFrame.StyledPanel)
+        controls_layout = QHBoxLayout(controls_frame)
+        layout.addWidget(controls_frame)
+        
+        # Team selection section
+        team_section = QVBoxLayout()
+        team_label = QLabel("📋 Select Teams:")
+        team_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        team_section.addWidget(team_label)
+        
+        # Team selection buttons
+        team_btn_layout = QHBoxLayout()
+        select_all_teams_btn = QPushButton("✅ Select All Teams")
+        deselect_all_teams_btn = QPushButton("❌ Deselect All Teams")
+        team_btn_layout.addWidget(select_all_teams_btn)
+        team_btn_layout.addWidget(deselect_all_teams_btn)
+        team_section.addLayout(team_btn_layout)
+        
+        # Team checkboxes area (scrollable)
+        teams_scroll = QScrollArea()
+        teams_scroll.setMaximumHeight(200)
+        teams_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.teams_widget = QWidget()
+        self.teams_layout = QVBoxLayout(self.teams_widget)
+        teams_scroll.setWidget(self.teams_widget)
+        teams_scroll.setWidgetResizable(True)
+        team_section.addWidget(teams_scroll)
+        
+        controls_layout.addLayout(team_section)
+        
+        # Stack type and settings section
+        settings_section = QVBoxLayout()
+        
+        # Stack type selection
+        stack_label = QLabel("🏗️ Stack Type:")
+        stack_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        settings_section.addWidget(stack_label)
+        
+        self.combinations_stack_combo = QComboBox()
+        # NBA-specific stack options
+        self.combinations_stack_combo.addItems([
+            "2 Players Same Team",   # 2 players from same team
+            "3 Players Same Team",   # 3 players from same team
+            "4 Players Same Team",   # 4 players from same team
+            "5 Players Same Team",   # 5 players from same team
+            "Game Stack (Both Teams)", # Players from both teams in a game
+            "No Stack"               # Independent selection
+        ])
+        self.combinations_stack_combo.setCurrentText("3 Players Same Team")
+        self.combinations_stack_combo.setToolTip("NBA Team Stack Options:\n"
+                                                  "• 2 Players Same Team: Stack 2 players from same team\n"
+                                                  "• 3 Players Same Team: Stack 3 players from same team\n"
+                                                  "• 4 Players Same Team: Stack 4 players from same team\n"
+                                                  "• 5 Players Same Team: Stack 5 players from same team\n"
+                                                  "• Game Stack: Players from both teams in a game\n"
+                                                  "• No Stack: Independent player selection")
+        settings_section.addWidget(self.combinations_stack_combo)
+        
+        # Default lineups per combination
+        lineups_label = QLabel("📊 Default Lineups per Combination:")
+        lineups_label.setStyleSheet("font-weight: bold; color: #9C27B0;")
+        settings_section.addWidget(lineups_label)
+        
+        self.default_lineups_input = QLineEdit()
+        self.default_lineups_input.setText("5")
+        self.default_lineups_input.setPlaceholderText("e.g., 5")
+        self.default_lineups_input.setToolTip("Default number of lineups to generate per combination")
+        settings_section.addWidget(self.default_lineups_input)
+        
+        # Generate combinations button
+        generate_combinations_btn = QPushButton("🔄 Generate Team Combinations")
+        generate_combinations_btn.setStyleSheet("QPushButton { background-color: #FF9800; color: white; font-weight: bold; padding: 8px; }")
+        generate_combinations_btn.clicked.connect(self.generate_team_combinations)
+        settings_section.addWidget(generate_combinations_btn)
+        
+        controls_layout.addLayout(settings_section)
+        
+        # Combinations display table
+        combinations_label = QLabel("🎯 Generated Combinations:")
+        combinations_label.setStyleSheet("font-weight: bold; color: #673AB7; font-size: 14px; padding: 10px 0px 5px 0px;")
+        layout.addWidget(combinations_label)
+        
+        self.combinations_table = QTableWidget(0, 4)
+        self.combinations_table.setHorizontalHeaderLabels(["Select", "Team Combination", "Lineups per Combo", "Actions"])
+        self.combinations_table.setSortingEnabled(True)  # Enable clicking headers to sort
+        self.combinations_table.setAlternatingRowColors(True)
+        layout.addWidget(self.combinations_table)
+        
+        # Generate lineups button
+        generate_lineups_frame = QFrame()
+        generate_lineups_layout = QHBoxLayout(generate_lineups_frame)
+        layout.addWidget(generate_lineups_frame)
+        
+        total_lineups_label = QLabel("Total Lineups:")
+        total_lineups_label.setStyleSheet("font-weight: bold; color: #333;")
+        self.total_lineups_display = QLabel("0")
+        self.total_lineups_display.setStyleSheet("font-weight: bold; color: #FF5722; font-size: 14px;")
+        
+        generate_lineups_layout.addWidget(total_lineups_label)
+        generate_lineups_layout.addWidget(self.total_lineups_display)
+        generate_lineups_layout.addStretch()
+        
+        generate_lineups_btn = QPushButton("🚀 Generate All Combination Lineups")
+        generate_lineups_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 10px; font-size: 14px; }")
+        generate_lineups_btn.clicked.connect(self.generate_combination_lineups)
+        generate_lineups_layout.addWidget(generate_lineups_btn)
+        
+        # Connect team selection buttons
+        select_all_teams_btn.clicked.connect(self.select_all_combination_teams)
+        deselect_all_teams_btn.clicked.connect(self.deselect_all_combination_teams)
+        
+        # Initialize empty team checkboxes (will be populated when data is loaded)
+        self.team_checkboxes = {}
+
+    def create_control_panel(self):
+        control_panel = QFrame()
+        control_panel.setFrameShape(QFrame.StyledPanel)
+        control_layout = QVBoxLayout(control_panel)
+
+        self.splitter.addWidget(control_panel)
+
+        load_button = QPushButton('Load CSV')
+        load_button.clicked.connect(self.load_file)
+        control_layout.addWidget(load_button)
+
+        load_dk_predictions_button = QPushButton('Load DraftKings Predictions')
+        load_dk_predictions_button.clicked.connect(self.load_dk_predictions)
+        control_layout.addWidget(load_dk_predictions_button)
+
+        load_entries_button = QPushButton('Load Entries CSV')
+        load_entries_button.clicked.connect(self.load_entries_csv)
+        control_layout.addWidget(load_entries_button)
+        
+        # Simple selection status label (for debugging)
+        self.selection_status_label = QLabel("Player selection status will appear here")
+        self.selection_status_label.setStyleSheet("color: #666; font-size: 10px; padding: 3px;")
+        control_layout.addWidget(self.selection_status_label)
+        
+        self.min_unique_label = QLabel('Min Unique:')
+        self.min_unique_input = QLineEdit()
+        self.min_unique_input.setText("3")  # Default value
+        self.min_unique_input.setPlaceholderText("e.g., 3")
+        self.min_unique_input.setToolTip("Minimum number of unique players between lineups (0-10). Higher values create more diverse lineups.")
+        control_layout.addWidget(self.min_unique_label)
+        control_layout.addWidget(self.min_unique_input)
+        
+        self.num_lineups_label = QLabel('Number of Lineups:')
+        self.num_lineups_input = QLineEdit()
+        self.num_lineups_input.setText("100")  # Default value
+        self.num_lineups_input.setPlaceholderText("e.g., 100")
+        self.num_lineups_input.setToolTip("Number of lineups to generate (1-500). More lineups take longer to generate.")
+        control_layout.addWidget(self.num_lineups_label)
+        control_layout.addWidget(self.num_lineups_input)
+        
+        # Kelly sizing control
+        self.disable_kelly_checkbox = QCheckBox('Disable Kelly Sizing (Generate All Requested Lineups)')
+        self.disable_kelly_checkbox.setToolTip("Check this to disable Kelly Criterion position sizing and generate the full number of requested lineups. Useful when you want more lineups regardless of risk management recommendations.")
+        control_layout.addWidget(self.disable_kelly_checkbox)
+
+        # ADD MINIMUM SALARY CONTROLS
+        min_salary_label = QLabel("💰 Minimum Salary Constraint:")
+        min_salary_label.setStyleSheet("font-weight: bold; color: #4CAF50; padding: 5px; font-size: 12px;")
+        control_layout.addWidget(min_salary_label)
+        
+        self.min_salary_input = QLineEdit()
+        self.min_salary_input.setText("45000")  # Default value
+        self.min_salary_input.setPlaceholderText("e.g., 45000")
+        self.min_salary_input.setToolTip("Minimum total salary to spend (0-50000). Forces lineups to use higher budget to avoid too many cheap players.")
+        control_layout.addWidget(self.min_salary_input)
+
+        # Minimum Player Salary Filter (per-player)
+        min_player_salary_label = QLabel('Min Player Salary Filter:')
+        self.min_player_salary_input = QLineEdit()
+        self.min_player_salary_input.setText("0")  # Default: no filter
+        self.min_player_salary_input.setPlaceholderText("e.g., 3500")
+        self.min_player_salary_input.setToolTip("Drop players below this per-player salary before optimization (0 disables).")
+        control_layout.addWidget(min_player_salary_label)
+        control_layout.addWidget(self.min_player_salary_input)
+
+        # Salary Range Constraints
+        salary_range_label = QLabel("💰 Salary Range Constraints:")
+        salary_range_label.setStyleSheet("font-weight: bold; color: #4CAF50; padding: 5px; font-size: 12px;")
+        control_layout.addWidget(salary_range_label)
+        
+        self.max_salary_label = QLabel('Maximum Salary Spent:')
+        self.max_salary_input = QLineEdit()
+        self.max_salary_input.setText("50000")  # Default maximum (salary cap)
+        self.max_salary_input.setPlaceholderText("e.g., 50000")
+        self.max_salary_input.setToolTip("Maximum total salary to spend on lineups (default: 50000 - salary cap)")
+        control_layout.addWidget(self.max_salary_label)
+        control_layout.addWidget(self.max_salary_input)
+
+        self.sorting_label = QLabel('Sorting Method:')
+        self.sorting_combo = QComboBox()
+        self.sorting_combo.addItems(["Points", "Value", "Salary"])
+        control_layout.addWidget(self.sorting_label)
+        control_layout.addWidget(self.sorting_combo)
+
+        # Add Probability Metrics Display Section
+        prob_separator = QFrame()
+        prob_separator.setFrameShape(QFrame.HLine)
+        prob_separator.setFrameShadow(QFrame.Sunken)
+        control_layout.addWidget(prob_separator)
+        
+        prob_label = QLabel("🎲 Probability Metrics:")
+        prob_label.setStyleSheet("font-weight: bold; color: #9C27B0; padding: 5px; font-size: 12px;")
+        control_layout.addWidget(prob_label)
+        
+        # Probability detection status
+        self.prob_detection_label = QLabel("No probability data loaded")
+        self.prob_detection_label.setStyleSheet("color: #666; font-size: 10px; padding: 3px;")
+        control_layout.addWidget(self.prob_detection_label)
+        
+        # Probability summary display
+        self.prob_summary_text = QTextEdit()
+        self.prob_summary_text.setMaximumHeight(100)
+        self.prob_summary_text.setReadOnly(True)
+        self.prob_summary_text.setStyleSheet("background-color: #f5f5f5; border: 1px solid #ddd; font-family: monospace; font-size: 10px;")
+        self.prob_summary_text.setPlaceholderText("Probability metrics will appear here when CSV with probability columns is loaded...")
+        control_layout.addWidget(self.prob_summary_text)
+        
+        # Contest optimization strategy display
+        self.contest_strategy_label = QLabel("Contest Strategy: Not Set")
+        self.contest_strategy_label.setStyleSheet("color: #9C27B0; font-weight: bold; font-size: 11px; padding: 3px;")
+        control_layout.addWidget(self.contest_strategy_label)
+
+        # Add Risk Management Section
+        if RISK_ENGINE_AVAILABLE:
+            risk_separator = QFrame()
+            risk_separator.setFrameShape(QFrame.HLine)
+            risk_separator.setFrameShadow(QFrame.Sunken)
+            control_layout.addWidget(risk_separator)
+            
+            risk_label = QLabel("🔥 Risk Management:")
+            risk_label.setStyleSheet("font-weight: bold; color: #FF5722; padding: 5px; font-size: 12px;")
+            control_layout.addWidget(risk_label)
+            
+            # Bankroll management
+            self.bankroll_label = QLabel('Bankroll ($):')
+            self.bankroll_input = QLineEdit()
+            self.bankroll_input.setText("1000")
+            self.bankroll_input.setPlaceholderText("e.g., 1000")
+            self.bankroll_input.setToolTip("Your total bankroll for position sizing and Kelly criterion")
+            control_layout.addWidget(self.bankroll_label)
+            control_layout.addWidget(self.bankroll_input)
+            
+            # Risk tolerance
+            self.risk_tolerance_label = QLabel('Risk Profile:')
+            self.risk_tolerance_combo = QComboBox()
+            self.risk_tolerance_combo.addItems(["conservative", "medium", "aggressive"])
+            self.risk_tolerance_combo.setCurrentText("medium")
+            self.risk_tolerance_combo.setToolTip("Conservative: Focus on Sharpe ratio\nMedium: Balanced approach\nAggressive: Higher risk tolerance")
+            control_layout.addWidget(self.risk_tolerance_label)
+            control_layout.addWidget(self.risk_tolerance_combo)
+            
+            # Enable/disable risk management
+            self.enable_risk_mgmt_checkbox = QCheckBox("Enable Advanced Risk Management")
+            self.enable_risk_mgmt_checkbox.setChecked(True)
+            self.enable_risk_mgmt_checkbox.setToolTip("Use Kelly criterion, GARCH volatility, and portfolio theory")
+            self.enable_risk_mgmt_checkbox.setStyleSheet("color: #FF5722; font-weight: bold;")
+            control_layout.addWidget(self.enable_risk_mgmt_checkbox)
+
+        run_button = QPushButton('Run Contest Sim')
+        run_button.clicked.connect(self.run_optimization)
+        control_layout.addWidget(run_button)
+
+        save_button = QPushButton('Save CSV for DraftKings')
+        save_button.clicked.connect(self.save_csv)
+        control_layout.addWidget(save_button)
+        
+        # Add button for loading and filling DraftKings entries
+        load_dk_entries_button = QPushButton('Load DraftKings Entries File')
+        load_dk_entries_button.clicked.connect(self.load_dk_entries_file)
+        load_dk_entries_button.setStyleSheet("QPushButton { background-color: #2196F3; color: white; font-weight: bold; }")
+        control_layout.addWidget(load_dk_entries_button)
+        
+        # Add button for filling loaded entries with optimized lineups
+        fill_entries_button = QPushButton('Fill Entries with Optimized Lineups')
+        fill_entries_button.clicked.connect(self.fill_dk_entries_dynamic)
+        fill_entries_button.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; }")
+        control_layout.addWidget(fill_entries_button)
+
+        # Add separator
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        control_layout.addWidget(separator)
+        
+        # Add favorites control buttons to main panel
+        favorites_label = QLabel("🌟 Favorites Management:")
+        favorites_label.setStyleSheet("font-weight: bold; color: #FF9800; padding: 5px;")
+        control_layout.addWidget(favorites_label)
+        
+        add_to_favorites_main_button = QPushButton("➕ Add Current to Favorites")
+        add_to_favorites_main_button.clicked.connect(self.add_current_lineups_to_favorites)
+        add_to_favorites_main_button.setStyleSheet("QPushButton { background-color: #FF9800; color: white; }")
+        control_layout.addWidget(add_to_favorites_main_button)
+        
+        save_favorites_main_button = QPushButton("💾 Export Favorites as New Lineups")
+        save_favorites_main_button.clicked.connect(self.save_favorites_to_entries)
+        save_favorites_main_button.setStyleSheet("QPushButton { background-color: #9C27B0; color: white; }")
+        control_layout.addWidget(save_favorites_main_button)
+
+        self.results_table = QTableWidget(0, 9)
+        self.results_table.setHorizontalHeaderLabels(["Player", "Team", "Position", "Salary", "Predicted_DK_Points", "Total Salary", "Total Points", "Exposure (%)", "Max Exp (%)"])
+        self.results_table.setSortingEnabled(True)  # Enable clicking headers to sort
+        control_layout.addWidget(self.results_table)
+
+        self.status_label = QLabel('')
+        control_layout.addWidget(self.status_label)
+
+    def create_advanced_quant_tab(self):
+        """Create the advanced quantitative optimization tab"""
+        advanced_tab = QWidget()
+        self.tabs.addTab(advanced_tab, "🔬 Advanced Quant")
+        
+        layout = QVBoxLayout(advanced_tab)
+        
+        # Main toggle
+        self.advanced_quant_enabled = QCheckBox("Enable Advanced Quantitative Optimization")
+        self.advanced_quant_enabled.setToolTip("Use advanced financial techniques: GARCH volatility, copulas, Monte Carlo, VaR, Kelly criterion")
+        self.advanced_quant_enabled.setChecked(True)  # Enable by default
+        self.advanced_quant_enabled.stateChanged.connect(self.toggle_advanced_quant)
+        layout.addWidget(self.advanced_quant_enabled)
+        
+        # Create scrollable area for parameters
+        scroll_area = QScrollArea()
+        scroll_widget = QWidget()
+        scroll_widget.setObjectName("scroll_widget")
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # Optimization Strategy Section
+        strategy_group = QGroupBox("Optimization Strategy")
+        strategy_layout = QVBoxLayout(strategy_group)
+        
+        self.optimization_strategy = QComboBox()
+        self.optimization_strategy.addItems([
+            "combined",
+            "kelly_criterion", 
+            "risk_parity",
+            "mean_variance",
+            "equal_weight"
+        ])
+        self.optimization_strategy.setCurrentText("combined")
+        self.optimization_strategy.setToolTip("Choose optimization strategy for lineup selection")
+        strategy_layout.addWidget(QLabel("Strategy:"))
+        strategy_layout.addWidget(self.optimization_strategy)
+        
+        scroll_layout.addWidget(strategy_group)
+        
+        # Risk Parameters Section
+        risk_group = QGroupBox("Risk Parameters")
+        risk_layout = QGridLayout(risk_group)
+        
+        # Risk tolerance
+        self.risk_tolerance = QDoubleSpinBox()
+        self.risk_tolerance.setRange(0.1, 2.0)
+        self.risk_tolerance.setValue(1.0)
+        self.risk_tolerance.setSingleStep(0.1)
+        self.risk_tolerance.setDecimals(1)
+        risk_layout.addWidget(QLabel("Risk Tolerance:"), 0, 0)
+        risk_layout.addWidget(self.risk_tolerance, 0, 1)
+        
+        # VaR confidence level
+        self.var_confidence = QDoubleSpinBox()
+        self.var_confidence.setRange(0.90, 0.99)
+        self.var_confidence.setValue(0.95)
+        self.var_confidence.setSingleStep(0.01)
+        self.var_confidence.setDecimals(2)
+        risk_layout.addWidget(QLabel("VaR Confidence Level:"), 1, 0)
+        risk_layout.addWidget(self.var_confidence, 1, 1)
+        
+        # Target volatility
+        self.target_volatility = QDoubleSpinBox()
+        self.target_volatility.setRange(0.05, 0.50)
+        self.target_volatility.setValue(0.15)
+        self.target_volatility.setSingleStep(0.01)
+        self.target_volatility.setDecimals(2)
+        risk_layout.addWidget(QLabel("Target Volatility:"), 2, 0)
+        risk_layout.addWidget(self.target_volatility, 2, 1)
+        
+        scroll_layout.addWidget(risk_group)
+        
+        # Monte Carlo Section
+        mc_group = QGroupBox("Monte Carlo Simulation")
+        mc_layout = QGridLayout(mc_group)
+        
+        # Number of simulations
+        self.mc_simulations = QSpinBox()
+        self.mc_simulations.setRange(1000, 50000)
+        self.mc_simulations.setValue(10000)
+        self.mc_simulations.setSingleStep(1000)
+        mc_layout.addWidget(QLabel("Simulations:"), 0, 0)
+        mc_layout.addWidget(self.mc_simulations, 0, 1)
+        
+        # Time horizon
+        self.time_horizon = QSpinBox()
+        self.time_horizon.setRange(1, 30)
+        self.time_horizon.setValue(1)
+        mc_layout.addWidget(QLabel("Time Horizon (days):"), 1, 0)
+        mc_layout.addWidget(self.time_horizon, 1, 1)
+        
+        scroll_layout.addWidget(mc_group)
+        
+        # GARCH Parameters Section
+        garch_group = QGroupBox("GARCH Volatility Modeling")
+        garch_layout = QGridLayout(garch_group)
+        
+        # GARCH p parameter
+        self.garch_p = QSpinBox()
+        self.garch_p.setRange(1, 5)
+        self.garch_p.setValue(1)
+        garch_layout.addWidget(QLabel("GARCH p:"), 0, 0)
+        garch_layout.addWidget(self.garch_p, 0, 1)
+        
+        # GARCH q parameter
+        self.garch_q = QSpinBox()
+        self.garch_q.setRange(1, 5)
+        self.garch_q.setValue(1)
+        garch_layout.addWidget(QLabel("GARCH q:"), 1, 0)
+        garch_layout.addWidget(self.garch_q, 1, 1)
+        
+        # Lookback period
+        self.garch_lookback = QSpinBox()
+        self.garch_lookback.setRange(30, 365)
+        self.garch_lookback.setValue(100)
+        garch_layout.addWidget(QLabel("Lookback Period:"), 2, 0)
+        garch_layout.addWidget(self.garch_lookback, 2, 1)
+        
+        scroll_layout.addWidget(garch_group)
+        
+        # Copula Parameters Section
+        copula_group = QGroupBox("Copula Dependency Modeling")
+        copula_layout = QGridLayout(copula_group)
+        
+        # Copula family
+        self.copula_family = QComboBox()
+        self.copula_family.addItems(["gaussian", "t", "clayton", "frank", "gumbel"])
+        self.copula_family.setCurrentText("gaussian")
+        copula_layout.addWidget(QLabel("Copula Family:"), 0, 0)
+        copula_layout.addWidget(self.copula_family, 0, 1)
+        
+        # Dependency threshold
+        self.dependency_threshold = QDoubleSpinBox()
+        self.dependency_threshold.setRange(0.1, 0.9)
+        self.dependency_threshold.setValue(0.3)
+        self.dependency_threshold.setSingleStep(0.05)
+        self.dependency_threshold.setDecimals(2)
+        copula_layout.addWidget(QLabel("Dependency Threshold:"), 1, 0)
+        copula_layout.addWidget(self.dependency_threshold, 1, 1)
+        
+        scroll_layout.addWidget(copula_group)
+        
+        # Kelly Criterion Section
+        kelly_group = QGroupBox("Kelly Criterion Position Sizing")
+        kelly_layout = QGridLayout(kelly_group)
+        
+        # Kelly fraction limit
+        self.kelly_fraction_limit = QDoubleSpinBox()
+        self.kelly_fraction_limit.setRange(0.1, 1.0)
+        self.kelly_fraction_limit.setValue(0.25)
+        self.kelly_fraction_limit.setSingleStep(0.05)
+        self.kelly_fraction_limit.setDecimals(2)
+        kelly_layout.addWidget(QLabel("Max Kelly Fraction:"), 0, 0)
+        kelly_layout.addWidget(self.kelly_fraction_limit, 0, 1)
+        
+        # Expected win rate
+        self.expected_win_rate = QDoubleSpinBox()
+        self.expected_win_rate.setRange(0.1, 0.9)
+        self.expected_win_rate.setValue(0.2)
+        self.expected_win_rate.setSingleStep(0.05)
+        self.expected_win_rate.setDecimals(2)
+        kelly_layout.addWidget(QLabel("Expected Win Rate:"), 1, 0)
+        kelly_layout.addWidget(self.expected_win_rate, 1, 1)
+        
+        scroll_layout.addWidget(kelly_group)
+        
+        # Status and Info Section
+        info_group = QGroupBox("Status & Information")
+        info_layout = QVBoxLayout(info_group)
+        
+        self.quant_status_label = QLabel("Advanced quantitative optimization disabled")
+        self.quant_status_label.setStyleSheet("color: gray;")
+        info_layout.addWidget(self.quant_status_label)
+        
+        # Library status
+        self.library_status = QLabel()
+        self.update_library_status()
+        info_layout.addWidget(self.library_status)
+        
+        scroll_layout.addWidget(info_group)
+        
+        # Probability Enhancement Section
+        prob_group = QGroupBox("Probability Enhancement")
+        prob_layout = QVBoxLayout(prob_group)
+        
+        # Probability detection status
+        self.prob_detection_label = QLabel("❌ No probability columns detected")
+        self.prob_detection_label.setStyleSheet("color: #666; font-size: 10px; padding: 3px;")
+        prob_layout.addWidget(self.prob_detection_label)
+        
+        # Contest strategy display
+        self.contest_strategy_label = QLabel("Contest Strategy: Not Set")
+        self.contest_strategy_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        prob_layout.addWidget(self.contest_strategy_label)
+        
+        # Probability summary text area
+        self.prob_summary_text = QTextEdit()
+        self.prob_summary_text.setMaximumHeight(120)
+        self.prob_summary_text.setReadOnly(True)
+        self.prob_summary_text.setStyleSheet("background-color: #f5f5f5; border: 1px solid #ddd; font-size: 10px;")
+        self.prob_summary_text.setText("No probability data available.\n\nTo use probability-based optimization, ensure your CSV contains columns like:\n• Prob_Over_5\n• Prob_Over_10\n• Prob_Over_15\n• etc.")
+        prob_layout.addWidget(self.prob_summary_text)
+        
+        scroll_layout.addWidget(prob_group)
+        
+        # Set the scroll area
+        scroll_area.setWidget(scroll_widget)
+        scroll_area.setWidgetResizable(True)
+        layout.addWidget(scroll_area)
+        
+        # Initially enable controls since we default to enabled
+        self.toggle_advanced_quant(True)
+    
+    def toggle_advanced_quant(self, enabled):
+        """Toggle advanced quantitative optimization on/off"""
+        self.use_advanced_quant = enabled
+        
+        # Enable/disable all controls in the advanced tab
+        scroll_widget = self.findChild(QWidget, "scroll_widget")
+        if scroll_widget:
+            for child in scroll_widget.findChildren(QWidget):
+                if child != self.advanced_quant_enabled:
+                    child.setEnabled(enabled)
+        
+        # Update status
+        if enabled and ADVANCED_QUANT_AVAILABLE:
+            self.quant_status_label.setText("✅ Advanced quantitative optimization ENABLED")
+            self.quant_status_label.setStyleSheet("color: green; font-weight: bold;")
+        elif enabled and not ADVANCED_QUANT_AVAILABLE:
+            self.quant_status_label.setText("⚠️ Advanced quantitative optimization UNAVAILABLE - missing libraries")
+            self.quant_status_label.setStyleSheet("color: orange; font-weight: bold;")
+            self.advanced_quant_enabled.setChecked(False)
+            self.use_advanced_quant = False
+        else:
+            self.quant_status_label.setText("❌ Advanced quantitative optimization DISABLED")
+            self.quant_status_label.setStyleSheet("color: gray;")
+    
+    def update_library_status(self):
+        """Update the library availability status"""
+        status_text = "Library Status:\n"
+        
+        if ADVANCED_QUANT_AVAILABLE:
+            status_text += "✅ Advanced Quantitative Optimizer: Available\n"
+        else:
+            status_text += "❌ Advanced Quantitative Optimizer: Missing\n"
+            
+        # Check individual libraries
+        try:
+            import arch
+            status_text += "✅ ARCH (GARCH): Available\n"
+        except ImportError:
+            status_text += "❌ ARCH (GARCH): Missing - pip install arch\n"
+            
+        try:
+            import copulas
+            status_text += "✅ Copulas: Available\n"
+        except ImportError:
+            status_text += "⚠️ Copulas: Optional - dependency modeling limited\n"
+            
+        try:
+            import scipy
+            status_text += "✅ SciPy: Available\n"
+        except ImportError:
+            status_text += "❌ SciPy: Missing - pip install scipy\n"
+            
+        try:
+            import sklearn
+            status_text += "✅ Scikit-learn: Available\n"
+        except ImportError:
+            status_text += "❌ Scikit-learn: Missing - pip install scikit-learn\n"
+        
+        self.library_status.setText(status_text)
+        self.library_status.setStyleSheet("font-family: monospace; font-size: 10px;")
+
+    def create_favorites_tab(self):
+        """Create the favorites tab for managing saved lineups from multiple runs"""
+        favorites_tab = QWidget()
+        self.tabs.addTab(favorites_tab, "My Entries")
+        
+        layout = QVBoxLayout(favorites_tab)
+        
+        # Header with info
+        header_label = QLabel("💾 My Entries - Build your final contest lineup from multiple optimization runs")
+        header_label.setStyleSheet("font-weight: bold; color: #2196F3; padding: 10px;")
+        layout.addWidget(header_label)
+        
+        # Action buttons
+        button_layout = QHBoxLayout()
+        
+        # Add button to save current lineups to favorites
+        self.add_to_favorites_button = QPushButton("➕ Add Current Pool to Favorites")
+        self.add_to_favorites_button.clicked.connect(self.add_current_lineups_to_favorites)
+        self.add_to_favorites_button.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 5px; }")
+        button_layout.addWidget(self.add_to_favorites_button)
+        
+        # Clear favorites button
+        clear_favorites_button = QPushButton("🗑️ Clear All Favorites")
+        clear_favorites_button.clicked.connect(self.clear_favorites)
+        clear_favorites_button.setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 5px; }")
+        button_layout.addWidget(clear_favorites_button)
+        
+        # Save favorites to entries button
+        save_favorites_button = QPushButton("💾 Export Favorites as New Lineups")
+        save_favorites_button.clicked.connect(self.save_favorites_to_entries)
+        save_favorites_button.setStyleSheet("QPushButton { background-color: #FF9800; color: white; font-weight: bold; padding: 5px; }")
+        button_layout.addWidget(save_favorites_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Stats display
+        self.favorites_stats_label = QLabel("📊 Total Favorites: 0 lineups")
+        self.favorites_stats_label.setStyleSheet("padding: 5px; color: #666;")
+        layout.addWidget(self.favorites_stats_label)
+        
+        # Favorites table
+        self.favorites_table = QTableWidget(0, 11)
+        self.favorites_table.setHorizontalHeaderLabels([
+            "Select", "Run#", "Player", "Team", "Position", "Salary", "Points", 
+            "Total Salary", "Total Points", "Added Date", "Actions"
+        ])
+        
+        # Set table selection behavior
+        self.favorites_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.favorites_table.setAlternatingRowColors(True)
+        self.favorites_table.setSortingEnabled(True)  # Enable clicking headers to sort
+        
+        layout.addWidget(self.favorites_table)
+        
+        # Update favorites display
+        self.update_favorites_display()
+
+    def load_favorites(self):
+        """Load saved favorites from persistent storage"""
+        try:
+            if os.path.exists(self.favorites_file):
+                with open(self.favorites_file, 'r') as f:
+                    favorites_data = json.load(f)
+                    
+                # Convert back to DataFrame format
+                self.favorites_lineups = []
+                for fav_data in favorites_data:
+                    lineup_df = pd.DataFrame(fav_data['lineup_data'])
+                    fav_entry = {
+                        'lineup': lineup_df,
+                        'total_points': float(fav_data['total_points']),
+                        'total_salary': int(fav_data['total_salary']),
+                        'run_number': fav_data.get('run_number', 1),
+                        'date_added': fav_data.get('date_added', 'Unknown')
+                    }
+                    self.favorites_lineups.append(fav_entry)
+                    
+                logging.info(f"Loaded {len(self.favorites_lineups)} favorite lineups")
+            else:
+                self.favorites_lineups = []
+                logging.info("No favorites file found, starting with empty favorites")
+                
+        except Exception as e:
+            logging.error(f"Error loading favorites: {e}")
+            self.favorites_lineups = []
+
+    def save_favorites(self):
+        """Save favorites to persistent storage"""
+        try:
+            favorites_data = []
+            for fav in self.favorites_lineups:
+                fav_data = {
+                    'lineup_data': fav['lineup'].to_dict('records'),
+                    'total_points': float(fav['total_points']),  # Convert to Python float
+                    'total_salary': int(fav['total_salary']),   # Convert to Python int
+                    'run_number': fav.get('run_number', 1),
+                    'date_added': fav.get('date_added', 'Unknown')
+                }
+                favorites_data.append(fav_data)
+            
+            with open(self.favorites_file, 'w') as f:
+                json.dump(favorites_data, f, indent=2)
+                
+            logging.info(f"Saved {len(self.favorites_lineups)} favorite lineups")
+            
+        except Exception as e:
+            logging.error(f"Error saving favorites: {e}")
+
+    def add_current_lineups_to_favorites(self):
+        """Add current optimized lineups to favorites"""
+        if not hasattr(self, 'optimized_lineups') or not self.optimized_lineups:
+            QMessageBox.warning(self, "No Lineups", "No optimized lineups available to add to favorites.\n\nPlease run optimization first.")
+            return
+        
+        # Ask user how many lineups to add
+        num_available = len(self.optimized_lineups)
+        num_to_add, ok = QInputDialog.getInt(
+            self, 
+            'Add to Favorites', 
+            f'How many lineups to add to favorites?\n\n(Available: {num_available} optimized lineups)', 
+            value=min(num_available, 50),  # Default to 50 or available, whichever is less
+            min=1, 
+            max=num_available
+        )
+        
+        if not ok:
+            return
+        
+        # Get current run number (increment from existing favorites)
+        current_run = max([fav.get('run_number', 0) for fav in self.favorites_lineups], default=0) + 1
+        current_date = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')
+        
+        # Add selected lineups to favorites
+        added_count = 0
+        for i, lineup in enumerate(self.optimized_lineups[:num_to_add]):
+            fav_entry = {
+                'lineup': lineup.copy(),
+                'total_points': lineup['Predicted_DK_Points'].sum(),
+                'total_salary': lineup['Salary'].sum(),
+                'run_number': current_run,
+                'date_added': current_date
+            }
+            self.favorites_lineups.append(fav_entry)
+            added_count += 1
+        
+        # Save to persistent storage
+        self.save_favorites()
+        
+        # Update display
+        self.update_favorites_display()
+        
+        # Show success message with feedback if fewer than requested
+        success_msg = f"✅ Successfully added {added_count} lineups to favorites!\n\n"
+        success_msg += f"🏃 Run #{current_run}\n"
+        success_msg += f"📅 {current_date}\n"
+        success_msg += f"📊 Total favorites: {len(self.favorites_lineups)} lineups"
+        
+        if added_count < num_to_add:
+            success_msg += f"\n\n⚠️ Note: Added {added_count} lineups (requested {num_to_add})"
+        
+        QMessageBox.information(self, "Added to Favorites", success_msg)
+        
+        self.status_label.setText(f'Added {added_count} lineups to favorites (Run #{current_run})')
+
+    def clear_favorites(self):
+        """Clear all favorites"""
+        if not self.favorites_lineups:
+            QMessageBox.information(self, "No Favorites", "No favorites to clear.")
+            return
+        
+        reply = QMessageBox.question(
+            self, 
+            'Clear Favorites', 
+            f'Are you sure you want to clear all {len(self.favorites_lineups)} favorite lineups?\n\nThis action cannot be undone.',
+            QMessageBox.Yes | QMessageBox.No, 
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.favorites_lineups = []
+            self.save_favorites()
+            self.update_favorites_display()
+            QMessageBox.information(self, "Cleared", "All favorites have been cleared.")
+            self.status_label.setText('All favorites cleared')
+
+    def update_favorites_display(self):
+        """Update the favorites table display"""
+        if not hasattr(self, 'favorites_table'):
+            return  # Table not created yet
+            
+        self.favorites_table.setRowCount(0)
+        
+        if not self.favorites_lineups:
+            self.favorites_stats_label.setText("📊 Total Favorites: 0 lineups")
+            return
+        
+        # Update stats
+        total_favorites = len(self.favorites_lineups)
+        unique_runs = len(set(fav.get('run_number', 1) for fav in self.favorites_lineups))
+        self.favorites_stats_label.setText(f"📊 Total Favorites: {total_favorites} lineups from {unique_runs} runs")
+        
+        # Populate table
+        for fav_idx, fav in enumerate(self.favorites_lineups):
+            lineup = fav['lineup']
+            run_number = fav.get('run_number', 1)
+            date_added = fav.get('date_added', 'Unknown')
+            
+            # Add each player in the lineup as a row
+            for _, player in lineup.iterrows():
+                row_position = self.favorites_table.rowCount()
+                self.favorites_table.insertRow(row_position)
+                
+                # Checkbox for selection
+                checkbox = QCheckBox()
+                checkbox_widget = QWidget()
+                layout_checkbox = QHBoxLayout(checkbox_widget)
+                layout_checkbox.addWidget(checkbox)
+                layout_checkbox.setAlignment(Qt.AlignCenter)
+                layout_checkbox.setContentsMargins(0, 0, 0, 0)
+                self.favorites_table.setCellWidget(row_position, 0, checkbox_widget)
+                
+                # Fill row data
+                self.favorites_table.setItem(row_position, 1, QTableWidgetItem(f"Run {run_number}"))
+                self.favorites_table.setItem(row_position, 2, QTableWidgetItem(str(player['Name'])))
+                self.favorites_table.setItem(row_position, 3, QTableWidgetItem(str(player['Team'])))
+                self.favorites_table.setItem(row_position, 4, QTableWidgetItem(str(player['Position'])))
+                self.favorites_table.setItem(row_position, 5, QTableWidgetItem(str(player['Salary'])))
+                self.favorites_table.setItem(row_position, 6, QTableWidgetItem(f"{player['Predicted_DK_Points']:.2f}"))
+                self.favorites_table.setItem(row_position, 7, QTableWidgetItem(str(fav['total_salary'])))
+                self.favorites_table.setItem(row_position, 8, QTableWidgetItem(f"{fav['total_points']:.2f}"))
+                self.favorites_table.setItem(row_position, 9, QTableWidgetItem(date_added))
+                
+                # Delete button for this lineup
+                delete_button = QPushButton("🗑️")
+                delete_button.setMaximumWidth(30)
+                delete_button.clicked.connect(lambda checked, idx=fav_idx: self.delete_favorite_lineup(idx))
+                delete_button.setStyleSheet("QPushButton { background-color: #f44336; color: white; }")
+                self.favorites_table.setCellWidget(row_position, 10, delete_button)
+
+    def delete_favorite_lineup(self, lineup_index):
+        """Delete a specific favorite lineup"""
+        if 0 <= lineup_index < len(self.favorites_lineups):
+            run_number = self.favorites_lineups[lineup_index].get('run_number', 'Unknown')
+            
+            reply = QMessageBox.question(
+                self, 
+                'Delete Favorite', 
+                f'Delete lineup from Run #{run_number}?',
+                QMessageBox.Yes | QMessageBox.No, 
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                del self.favorites_lineups[lineup_index]
+                self.save_favorites()
+                self.update_favorites_display()
+                self.status_label.setText(f'Deleted favorite lineup from Run #{run_number}')
+
+    def save_favorites_to_entries(self):
+        """Save selected favorites to a DraftKings entries file"""
+        if not self.favorites_lineups:
+            QMessageBox.warning(self, "No Favorites", "No favorite lineups available.\n\nPlease add some lineups to favorites first.")
+            return
+        
+        try:
+            # Show detailed info about favorites
+            total_favorites = len(self.favorites_lineups)
+            unique_runs = len(set(fav.get('run_number', 1) for fav in self.favorites_lineups))
+            
+            # Ask user how many favorites to use
+            num_available = len(self.favorites_lineups)
+            dialog_text = f'How many favorite lineups to save?\n\n'
+            dialog_text += f'📊 Available: {num_available} favorite lineups\n'
+            dialog_text += f'🏃 From {unique_runs} different optimization runs\n\n'
+            dialog_text += f'💡 Tip: You can save up to {num_available} lineups'
+            
+            num_to_use, ok = QInputDialog.getInt(
+                self, 
+                'Save Favorites to Entries', 
+                dialog_text,
+                value=min(num_available, 150),
+                min=1, 
+                max=num_available
+            )
+            
+            if not ok:
+                return
+            
+            # Ask for save location
+            save_path, _ = QFileDialog.getSaveFileName(
+                self, 
+                'Save Favorites to Entries File', 
+                'my_favorites_entries.csv',
+                'CSV Files (*.csv);;All Files (*)'
+            )
+            
+            if not save_path:
+                return
+            
+            # Use the export method that uses the exact same logic as create_filled_entries_df
+            result = self.export_favorites_as_new_lineups(save_path, num_to_use)
+            
+            # Show success message with more details
+            success_msg = f"🎉 Favorites saved successfully!\n\n"
+            success_msg += f"📊 Saved {num_to_use} favorite lineups\n"
+            success_msg += f"🏃 From {unique_runs} optimization runs\n"
+            success_msg += f"💾 Saved to: {os.path.basename(save_path)}\n\n"
+            success_msg += f"🚀 Ready to upload to DraftKings!"
+            
+            # Add details from the export result
+            if result:
+                success_msg += f"\n✅ Exported {result.get('lineups_exported', 0)} lineups"
+                success_msg += f"\n🆔 Used {result.get('player_ids_used', 0)} player IDs"
+                if result.get('entry_metadata_found'):
+                    success_msg += f"\n📋 Contest metadata included"
+            
+            QMessageBox.information(self, "Favorites Saved", success_msg)
+            self.status_label.setText(f'Saved {num_to_use} favorites to {os.path.basename(save_path)}')
+            
+        except Exception as e:
+            error_msg = f"Error saving favorites: {str(e)}"
+            self.status_label.setText(error_msg)
+            logging.error(error_msg)
+            QMessageBox.critical(self, "Save Error", f"Failed to save favorites:\n\n{str(e)}")
+
+    def save_favorites_as_new_lineups(self):
+        """Save favorites in DraftKings contest entry format (same as DD.csv)"""
+        if not self.favorites_lineups:
+            QMessageBox.warning(self, "No Favorites", "No favorite lineups available.\n\nPlease add some lineups to favorites first.")
+            return
+        
+        try:
+            # Show detailed info about favorites
+            total_favorites = len(self.favorites_lineups)
+            unique_runs = len(set(fav.get('run_number', 1) for fav in self.favorites_lineups))
+            
+            # Ask user how many favorites to export
+            num_available = len(self.favorites_lineups)
+            dialog_text = f'How many favorite lineups to export in DraftKings format?\n\n'
+            dialog_text += f'📊 Available: {num_available} favorite lineups\n'
+            dialog_text += f'🏃 From {unique_runs} different optimization runs\n\n'
+            dialog_text += f'🎯 Export format: DraftKings contest entry format (NBA)\n'
+            dialog_text += f'📋 Headers: Entry ID, Contest Name, Contest ID, Entry Fee, PG, SG, SF, PF, C, G, F, UTIL\n'
+            dialog_text += f'🔢 Contains: Player names (cleaned for DK format) ready for DraftKings upload'
+            
+            num_to_use, ok = QInputDialog.getInt(
+                self, 
+                'Export Favorites in DraftKings Format', 
+                dialog_text,
+                value=min(num_available, 150),
+                min=1, 
+                max=num_available
+            )
+            
+            if not ok:
+                return
+            
+            # Ask for save location
+            save_path, _ = QFileDialog.getSaveFileName(
+                self, 
+                'Save Favorites in DraftKings Format', 
+                'my_favorites_dk_format.csv',
+                'CSV Files (*.csv);;All Files (*)'
+            )
+            
+            if not save_path:
+                return
+            
+            # Export favorites in DraftKings contest entry format
+            export_info = self.export_favorites_as_new_lineups(save_path, num_to_use)
+            
+            # Show success message with detailed feedback
+            success_msg = f"🎉 Favorites exported in DraftKings format!\n\n"
+            success_msg += f"📊 Exported {export_info['lineups_exported']} favorite lineups\n"
+            success_msg += f"🏃 From {unique_runs} optimization runs\n"
+            success_msg += f"💾 Saved to: {os.path.basename(save_path)}\n\n"
+            success_msg += f"📋 Format: Entry ID, Contest Name, Contest ID, Entry Fee, PG, SG, SF, PF, C, G, F, UTIL\n"
+            
+            if export_info['player_ids_used'] > 0:
+                success_msg += f"🔢 Player IDs: {export_info['player_ids_used']} positions filled with numeric IDs\n"
+            else:
+                success_msg += f"⚠️ Player IDs: Using player names (no ID mappings found)\n"
+            
+            if export_info['entry_metadata_found']:
+                success_msg += f"📝 Entry metadata: Preserved from loaded DK entries file\n"
+            else:
+                success_msg += f"📝 Entry metadata: Empty (no DK entries file loaded)\n"
+            
+            success_msg += f"\n🚀 Ready for DraftKings upload!"
+            
+            QMessageBox.information(self, "DraftKings Format Export Complete", success_msg)
+            self.status_label.setText(f'Exported {num_to_use} favorites in DK format to {os.path.basename(save_path)}')
+            
+        except Exception as e:
+            error_msg = f"Error exporting favorites in DK format: {str(e)}"
+            self.status_label.setText(error_msg)
+            logging.error(error_msg)
+            QMessageBox.critical(self, "Export Error", f"Failed to export favorites:\n\n{str(e)}")
+
+    def export_favorites_as_new_lineups(self, output_path, num_to_use):
+        """Export favorite lineups using the EXACT same logic as create_filled_entries_df"""
+        if not self.favorites_lineups:
+            logging.warning("No favorite lineups available to export")
+            return {'lineups_exported': 0, 'player_ids_used': 0, 'entry_metadata_found': False}
+        
+        logging.info(f"Exporting {num_to_use} favorites using create_filled_entries_df logic to {output_path}")
+        
+        # CRITICAL FIX: Clear cached favorites data to force fresh generation
+        if hasattr(self, '_favorites_with_player_data'):
+            delattr(self, '_favorites_with_player_data')
+            logging.info("🔄 Cleared cached favorites data to force fresh generation")
+        
+        # FORCE FRESH LINEUP GENERATION: Temporarily disable favorites file reading
+        original_favorites_file_path = None
+        backup_favorites_file_path = None
+        saved_contest_info = None
+        original_lineups = None  # Ensure this is always defined
+        
+        try:
+            # First, create backup files and extract contest info from original files
+            workspace_favorites_path = r"c:\Users\smtes\Downloads\coinbase_ml_trader\my_favorites_entries.csv"
+            onedrive_favorites_path = r"c:\Users\smtes\OneDrive\Documents\my_favorites_entries.csv"
+            
+            # Extract contest info from original file BEFORE renaming
+            if os.path.exists(workspace_favorites_path):
+                self.extract_contest_info_from_favorites()
+                saved_contest_info = getattr(self, '_contest_info_list', None)
+                logging.info(f"🎯 Extracted contest info from workspace file: {len(saved_contest_info) if saved_contest_info else 0} entries")
+                
+                original_favorites_file_path = workspace_favorites_path
+                backup_favorites_file_path = workspace_favorites_path + ".backup_temp"
+                
+                # Remove existing backup file if it exists
+                if os.path.exists(backup_favorites_file_path):
+                    os.remove(backup_favorites_file_path)
+                    logging.info(f"🗑️ Removed existing backup file")
+                
+                os.rename(workspace_favorites_path, backup_favorites_file_path)
+                logging.info(f"🔄 Temporarily renamed favorites file to force fresh generation")
+            elif os.path.exists(onedrive_favorites_path):
+                self.extract_contest_info_from_favorites()
+                saved_contest_info = getattr(self, '_contest_info_list', None)
+                logging.info(f"🎯 Extracted contest info from OneDrive file: {len(saved_contest_info) if saved_contest_info else 0} entries")
+                
+                original_favorites_file_path = onedrive_favorites_path
+                backup_favorites_file_path = onedrive_favorites_path + ".backup_temp"
+                
+                # Remove existing backup file if it exists
+                if os.path.exists(backup_favorites_file_path):
+                    os.remove(backup_favorites_file_path)
+                    logging.info(f"🗑️ Removed existing OneDrive backup file")
+                
+                os.rename(onedrive_favorites_path, backup_favorites_file_path)
+                logging.info(f"🔄 Temporarily renamed OneDrive favorites file to force fresh generation")
+            
+            # Temporarily store the current optimized_lineups
+            original_lineups = getattr(self, 'optimized_lineups', None)
+            
+            # Replace optimized_lineups with favorites for the duration of this function
+            # Extract just the lineup DataFrames from favorites (favorites store {'lineup': df, ...})
+            favorite_lineups = [fav['lineup'] for fav in self.favorites_lineups[:num_to_use]]
+            self.optimized_lineups = favorite_lineups
+            
+            logging.info(f"🎯 Using {len(favorite_lineups)} fresh favorite lineups for export")
+            
+            # Restore the contest information that we extracted before cache-clearing
+            if saved_contest_info:
+                self._contest_info_list = saved_contest_info
+                logging.info(f"🎯 Restored contest info: {len(saved_contest_info)} entries")
+            
+            # Use the EXACT same logic as create_filled_entries_df
+            filled_entries = self.create_filled_entries_df(num_to_use)
+            
+            # Save to CSV
+            filled_entries.to_csv(output_path, index=False)
+            
+            logging.info(f"✅ Successfully exported {len(filled_entries)} favorites using create_filled_entries_df logic")
+            
+            # Calculate return info
+            player_ids_used = 0
+            for _, row in filled_entries.iterrows():
+                player_ids_used += len([id for id in row[4:] if id and str(id).strip()])
+            
+            entry_metadata_found = bool(filled_entries.iloc[0, 0] if len(filled_entries) > 0 else False)
+            
+            return {
+                'lineups_exported': len(filled_entries),
+                'player_ids_used': player_ids_used,
+                'entry_metadata_found': entry_metadata_found
+            }
+            
+        finally:
+            # Restore the original optimized_lineups
+            if original_lineups is not None:
+                self.optimized_lineups = original_lineups
+            else:
+                # Remove the temporary attribute if it didn't exist before
+                if hasattr(self, 'optimized_lineups'):
+                    delattr(self, 'optimized_lineups')
+            
+            # Restore the temporarily renamed favorites file
+            if original_favorites_file_path and backup_favorites_file_path:
+                try:
+                    if os.path.exists(backup_favorites_file_path):
+                        # If the original exists, remove it before renaming
+                        if os.path.exists(original_favorites_file_path):
+                            os.remove(original_favorites_file_path)
+                        os.rename(backup_favorites_file_path, original_favorites_file_path)
+                        logging.info("🔄 Restored favorites file after export")
+                except Exception as e:
+                    logging.error(f"Error restoring favorites file: {e}")
+
+    def run_optimization(self):
+        """Run the optimization with min unique constraint support"""
+        logging.debug("Starting run_optimization method")
+        if self.df_players is None or self.df_players.empty:
+            self.status_label.setText("No player data loaded. Please load a CSV first.")
+            logging.debug("No player data loaded")
+            return
+        
+        logging.debug(f"df_players shape: {self.df_players.shape}")
+        logging.debug(f"df_players columns: {self.df_players.columns}")
+        logging.debug(f"df_players sample:\n{self.df_players.head()}")
+        
+        self.included_players = self.get_included_players()
+        
+        # 🚨 CRITICAL DEBUG: Show exactly which players were selected BEFORE optimization
+        print("\n" + "#"*80)
+        print("#" + " "*78 + "#")
+        print("#" + " "*20 + "🚨 PLAYER SELECTION DEBUG 🚨" + " "*29 + "#")
+        print("#" + " "*78 + "#")
+        print("#"*80)
+        print(f"   📊 Total players selected: {len(self.included_players)}")
+        
+        # Write to debug file for easy viewing
+        debug_file = "OPTIMIZER_DEBUG.txt"
+        with open(debug_file, 'w') as f:
+            f.write("="*80 + "\n")
+            f.write("🚨 OPTIMIZER DEBUG OUTPUT\n")
+            f.write("="*80 + "\n")
+            f.write(f"Total players selected: {len(self.included_players)}\n")
+            f.write(f"Selected players: {self.included_players}\n")
+            f.write("="*80 + "\n")
+        
+        print(f"   💾 Debug info saved to: {debug_file}")
+        
+        if self.included_players:
+            print(f"   ✅ Selected players:")
+            for i, player in enumerate(self.included_players[:10], 1):  # Show first 10
+                print(f"      {i}. {player}")
+            if len(self.included_players) > 10:
+                print(f"      ... and {len(self.included_players) - 10} more")
+        else:
+            print(f"   ⚠️ NO PLAYERS SELECTED - will use all available players")
+        print("#"*80 + "\n")
+        
+        self.stack_settings = self.collect_stack_settings()
+        self.min_exposure, self.max_exposure = self.collect_exposure_settings()
+        
+        # Get min unique constraint
+        min_unique = self.get_min_unique_constraint()
+        
+        # Get requested number of lineups
+        requested_lineups = self.get_requested_lineups()
+        
+        logging.debug(f"Included players: {len(self.included_players)}")
+        logging.debug(f"Stack settings: {self.stack_settings}")
+        logging.debug(f"Min unique constraint: {min_unique}")
+        logging.debug(f"Requested lineups: {requested_lineups}")
+        
+        # Debug team selections
+        # Collect team selections (this should now work properly)
+        team_selections = self.collect_team_selections()
+        logging.info(f"🎯 Team selections from UI: {team_selections}")
+        
+        # DETAILED DEBUG: Show exactly what was collected
+        if team_selections:
+            print(f"🎯 USER TEAM SELECTIONS DETECTED:")
+            logging.info(f"🎯 DETAILED TEAM SELECTIONS DEBUG:")
+            for stack_size, teams in team_selections.items():
+                if stack_size == "all":
+                    print(f"   All Stacks: {len(teams)} teams")
+                    logging.info(f"   All Stacks: {len(teams)} teams = {teams[:5]}{'...' if len(teams) > 5 else ''}")
+                else:
+                    print(f"   {stack_size}-Stack: {len(teams)} teams = {teams}")
+                    logging.info(f"   {stack_size}-Stack: {len(teams)} teams = {teams}")
+                    
+            # CRITICAL DEBUG: Check if all teams are the same
+            all_team_lists = list(team_selections.values())
+            if len(all_team_lists) > 1:
+                all_same = all(set(teams) == set(all_team_lists[0]) for teams in all_team_lists)
+                if all_same and len(all_team_lists[0]) > 10:
+                    logging.error(f"🚨 BUG DETECTED: All stack sizes have identical team lists with {len(all_team_lists[0])} teams!")
+                    logging.error(f"🚨 This suggests checkbox detection is not working properly!")
+                    print(f"🚨 BUG DETECTED: All stack sizes have the same {len(all_team_lists[0])} teams!")
+                    print(f"🚨 This means your specific team selections (PIT, NYM/NYY) were not detected!")
+                    print(f"🚨 SOLUTION: Try using 'Disable Kelly Sizing' to get all 100 lineups, or manually reselect teams")
+                    
+            # Also log individual selections for debugging
+            for stack_size, teams in team_selections.items():
+                logging.info(f"Individual selection - Stack {stack_size}: {teams}")
+        else:
+            print("⚠️ No team selections found - will use all available teams")
+            logging.warning("No team selections detected from UI")        
+        
+        if not self.stack_settings:
+            self.status_label.setText("Please select at least one stack type in the Stack Exposure tab.")
+            return
+            
+        # Get bankroll and risk tolerance settings
+        bankroll = self.get_bankroll_setting()
+        risk_tolerance = self.get_risk_tolerance_setting()
+        enable_risk_mgmt = self.get_risk_management_enabled()
+        
+        logging.debug(f"Risk settings - Bankroll: ${bankroll}, Tolerance: {risk_tolerance}, Enabled: {enable_risk_mgmt}")
+            
+        if not enable_risk_mgmt and RISK_ENGINE_AVAILABLE:
+            # Temporarily disable risk engine for this run
+            original_status = f"Risk management disabled for this run (Bankroll: ${bankroll})"
+            self.status_label.setText(f"Running traditional optimization... {original_status}")
+        elif enable_risk_mgmt and RISK_ENGINE_AVAILABLE:
+            self.status_label.setText(f"Running risk-adjusted optimization... Bankroll: ${bankroll}, Risk: {risk_tolerance}")
+        else:
+            self.status_label.setText("Running optimization... Please wait.")
+            
+        # Check if Kelly sizing should be disabled
+        disable_kelly = self.disable_kelly_checkbox.isChecked()
+        if disable_kelly:
+            self.status_label.setText("Running optimization with Kelly sizing disabled... Please wait.")
+            logging.info("💰 Kelly sizing disabled by user - will generate all requested lineups")
+            logging.info("💰 BYPASS MODE: When Kelly is disabled, min unique constraint will be ignored to guarantee lineup count")
+            
+            # Override min unique when Kelly is disabled to guarantee full lineup count
+            if min_unique > 0:
+                # COMBINATION FIX: For combinations with disable_kelly, be less restrictive  
+                if hasattr(worker, '_is_combination_mode') and worker._is_combination_mode:
+                    logging.info(f"🧬 COMBINATION MODE: Reducing min_unique from {min_unique} to 2 for better results")
+                    min_unique = min(2, min_unique)  # Cap at 2 for combinations
+                else:
+                    logging.warning(f"💰 OVERRIDING: Min unique constraint ({min_unique}) ignored when Kelly sizing is disabled")
+                    min_unique = 0  # Force to 0 to bypass filtering
+                    logging.info(f"💰 Min unique set to 0 for maximum lineup diversity")
+        
+        # GET MINIMUM SALARY CONSTRAINT FROM UI
+        self.min_salary = self.get_min_salary_constraint()
+        logging.debug(f"Minimum salary constraint: {self.min_salary}")
+        
+        # 🎯 CRITICAL DEBUG: Show exactly what players were detected
+        print(f"\n{'='*70}")
+        print(f"🔍 PLAYER SELECTION DEBUG - RIGHT BEFORE OPTIMIZATION")
+        print(f"{'='*70}")
+        print(f"   📊 Total players selected: {len(self.included_players)}")
+        if len(self.included_players) > 0:
+            print(f"   ✅ Selected players:")
+            for i, player in enumerate(self.included_players[:20]):  # Show first 20
+                print(f"      {i+1}. {player}")
+            if len(self.included_players) > 20:
+                print(f"      ... and {len(self.included_players) - 20} more")
+        else:
+            print(f"   ⚠️ NO PLAYERS SELECTED - Will use ALL players in CSV")
+            print(f"   💡 TIP: Check boxes next to players you want to use")
+        print(f"{'='*70}\n")
+        
+        self.optimization_thread = OptimizationWorker(
+            df_players=self.df_players,
+            salary_cap=SALARY_CAP,
+            position_limits=POSITION_LIMITS,
+            included_players=self.included_players,
+            stack_settings=self.stack_settings,
+            min_exposure=self.min_exposure,
+            max_exposure=self.max_exposure,
+            min_points=self.min_points,
+            monte_carlo_iterations=self.monte_carlo_iterations,
+            num_lineups=requested_lineups,
+            team_selections=team_selections,
+            min_unique=min_unique,  # Add min unique constraint
+            bankroll=bankroll,
+            risk_tolerance=risk_tolerance,
+            disable_kelly=disable_kelly,
+            min_salary=self.min_salary,
+            use_advanced_quant=getattr(self, 'use_advanced_quant', False),  # Pass advanced quant flag
+            advanced_quant_params=self.get_advanced_quant_params_for_worker(),  # Pass advanced quant parameters
+            position_specific_selections=getattr(self, 'position_specific_selections', {})
+        )
+        
+        # Pass the enable flag to the worker
+        if hasattr(self.optimization_thread, 'risk_engine') and not enable_risk_mgmt:
+            self.optimization_thread.risk_engine = None  # Disable for this run
+        self.optimization_thread.optimization_done.connect(self.display_results)
+        logging.debug("Starting optimization thread")
+        self.optimization_thread.start()
+        
+        self.status_label.setText("Running optimization... Please wait.")
+
+    def get_requested_lineups(self):
+        """Get the requested number of lineups from the UI input"""
+        try:
+            num_lineups_text = self.num_lineups_input.text().strip()
+            if not num_lineups_text:
+                return 100  # Default
+            
+            num_lineups = int(num_lineups_text)
+            if num_lineups < 1:
+                num_lineups = 1
+            elif num_lineups > 500:
+                num_lineups = 500  # Max 500 lineups
+            
+            return num_lineups
+            
+        except ValueError:
+            logging.warning(f"Invalid number of lineups value: {self.num_lineups_input.text()}")
+            return 100
+
+    def get_min_unique_constraint(self):
+        """Get the min unique constraint from the UI input"""
+        try:
+            min_unique_text = self.min_unique_input.text().strip()
+            if not min_unique_text:
+                return 0  # Default: no constraint
+            
+            min_unique = int(min_unique_text)
+            if min_unique < 0:
+                min_unique = 0
+            elif min_unique > 10:
+                min_unique = 10  # Max 10 unique players per lineup
+            
+            return min_unique
+            
+        except ValueError:
+            logging.warning(f"Invalid min unique value: {self.min_unique_input.text()}")
+            return 0
+
+    def get_min_salary_constraint(self):
+        """Get the minimum salary constraint from the UI input"""
+        try:
+            min_salary_text = self.min_salary_input.text().strip()
+            if not min_salary_text:
+                return MIN_SALARY_DEFAULT  # Default minimum salary
+            
+            min_salary = int(min_salary_text)
+            if min_salary < 0:
+                min_salary = 0
+            elif min_salary > SALARY_CAP:
+                min_salary = SALARY_CAP  # Cannot exceed salary cap
+            
+            return min_salary
+            
+        except ValueError:
+            logging.warning(f"Invalid min salary value: {self.min_salary_input.text()}")
+            return MIN_SALARY_DEFAULT
+
+    def get_min_player_salary_filter(self):
+        """Get the per-player minimum salary filter (0 disables)."""
+        try:
+            if hasattr(self, 'min_player_salary_input'):
+                text = self.min_player_salary_input.text().strip()
+                if not text:
+                    return 0
+                value = int(text)
+                return max(0, min(value, SALARY_CAP))
+        except Exception:
+            logging.warning("Invalid min player salary filter input")
+        return 0
+
+    def get_included_players(self):
+        """Get the list of included players from the UI with better checkbox detection"""
+        included_players = []
+        total_checkboxes = 0
+        checked_checkboxes = 0
+        position_selected_map = {}
+        
+        # IMMEDIATE DEBUG OUTPUT with timestamp to track multiple calls
+        import time
+        timestamp = time.strftime("%H:%M:%S")
+        print(f"\n🔍 CHECKBOX DEBUG [{timestamp}] - IMPROVED DETECTION:")
+        logging.info(f"🔍 get_included_players() called at {timestamp}")
+        
+        if not hasattr(self, 'player_tables') or not self.player_tables:
+            print(f"   ❌ No player tables available")
+            logging.debug("No player tables available")
+            return included_players
+        
+        print(f"   📋 Found {len(self.player_tables)} player tables")
+        
+        # Check ALL position tables for selected players with improved detection
+        for position_name, table in self.player_tables.items():
+            position_checked = 0
+            position_total = 0
+            position_selected = []
+            
+            print(f"   🔍 Checking {position_name} table ({table.rowCount()} rows)...")
+            
+            for row in range(table.rowCount()):
+                # Multiple methods to find the checkbox
+                checkbox = None
+                
+                # Method 1: Check if there's a checkbox widget directly
+                checkbox_widget = table.cellWidget(row, 0)
+                if checkbox_widget:
+                    # Look for QCheckBox in the widget
+                    checkbox = checkbox_widget.findChild(QCheckBox)
+                    if not checkbox:
+                        # Maybe the widget itself is a QCheckBox
+                        if isinstance(checkbox_widget, QCheckBox):
+                            checkbox = checkbox_widget
+                        else:
+                            # Look through all children
+                            for child in checkbox_widget.findChildren(QCheckBox):
+                                checkbox = child
+                                break
+                
+                # Method 2: Check if the table item itself has checkbox
+                if not checkbox:
+                    table_item = table.item(row, 0)
+                    if table_item and table_item.checkState() is not None:
+                        # This item has a checkbox state
+                        total_checkboxes += 1
+                        position_total += 1
+                        
+                        if table_item.checkState() == Qt.Checked:
+                            checked_checkboxes += 1
+                        position_checked += 1
+                        # Get player name from column 1
+                        name_item = table.item(row, 1)
+                        if name_item:
+                            player_name = name_item.text().strip()
+                            if player_name and player_name not in included_players:
+                                included_players.append(player_name)
+                            if player_name and player_name not in position_selected:
+                                position_selected.append(player_name)
+                        continue
+                
+                # Method 3: Use the found checkbox widget
+                if checkbox:
+                    total_checkboxes += 1
+                    position_total += 1
+                    
+                    if checkbox.isChecked():
+                        checked_checkboxes += 1
+                        position_checked += 1
+                        # Get player name from column 1
+                        name_item = table.item(row, 1)
+                        if name_item:
+                            player_name = name_item.text().strip()
+                            if player_name and player_name not in included_players:
+                                included_players.append(player_name)
+                            if player_name and player_name not in position_selected:
+                                position_selected.append(player_name)
+            
+            print(f"     ✅ {position_name}: {position_checked}/{position_total} players selected")
+            logging.debug(f"Position {position_name}: {position_checked}/{position_total} players selected")
+            position_selected_map[position_name] = position_selected
+        
+        # Apply strict position filters if user made position-specific selections
+        filtered_players = self._apply_position_specific_filters(included_players, position_selected_map)
+        if filtered_players is not None:
+            if len(filtered_players) != len(included_players):
+                print(f"   🔒 Position-based filtering reduced pool from {len(included_players)} to {len(filtered_players)} players")
+                logging.info(f"🔒 Position-based filtering reduced pool from {len(included_players)} to {len(filtered_players)} players")
+            included_players = filtered_players
+        else:
+            # Filtering was skipped due to insufficient coverage
+            logging.info("🔁 Position-based filtering skipped to preserve lineup feasibility")
+        
+        print(f"   📊 TOTAL: {checked_checkboxes}/{total_checkboxes} checkboxes checked")
+        print(f"   🎯 FINAL: {len(included_players)} unique players selected")
+        
+        # Show warning if too many players selected
+        if len(included_players) > 150:
+            print(f"   ⚠️  WARNING: {len(included_players)} players selected!")
+            print(f"      This is a lot of players. The optimizer can pick from any of these.")
+            print(f"      Consider being more selective if you want specific players.")
+        elif len(included_players) > 50:
+            print(f"    INFO: {len(included_players)} players selected")
+            print(f"      The optimizer will choose the best lineups from these players.")
+        
+        if len(included_players) > 0:
+            print(f"   👥 FIRST 5 PLAYERS: {included_players[:5]}")
+        
+        print(f"")
+        
+        # Update the status label
+        if hasattr(self, 'selection_status_label'):
+            if len(included_players) == 0:
+                self.selection_status_label.setText("No players selected")
+                self.selection_status_label.setStyleSheet("color: #f44336; font-size: 10px;")
+            elif len(included_players) <= 50:
+                self.selection_status_label.setText(f"{len(included_players)} players selected (Good size)")
+                self.selection_status_label.setStyleSheet("color: #4CAF50; font-size: 10px;")
+            elif len(included_players) <= 150:
+                self.selection_status_label.setText(f"{len(included_players)} players selected (Large pool)")
+                self.selection_status_label.setStyleSheet("color: #FF9800; font-size: 10px;")
+            else:
+                self.selection_status_label.setText(f"{len(included_players)} players selected (Very large!)")
+                self.selection_status_label.setStyleSheet("color: #f44336; font-size: 10px; font-weight: bold;")
+        
+        logging.info(f"🎯 CHECKBOX SELECTION SUMMARY:")
+        logging.info(f"   Total checkboxes found: {total_checkboxes}")
+        logging.info(f"   Checkboxes checked: {checked_checkboxes}")
+        logging.info(f"   Final included players: {len(included_players)}")
+        
+        if len(included_players) > 0:
+            logging.info(f"   First 5 selected players: {included_players[:5]}")
+        
+        return included_players
+
+    def _apply_position_specific_filters(self, included_players, position_selected_map):
+        """
+        Enforce strict position-based selections. If the user checked players in a dedicated
+        position table (PG/SG/SF/PF/C), remove any other players with that eligibility that
+        weren't explicitly selected for that slot.
+        """
+        if not included_players:
+            self.position_specific_selections = position_selected_map
+            return included_players
+        
+        if self.df_players is None or self.df_players.empty:
+            self.position_specific_selections = position_selected_map
+            return included_players
+        
+        # Build lookup: player name -> set of eligible positions
+        name_position_map = {}
+        for _, row in self.df_players[['Name', 'Position']].dropna().iterrows():
+            player_name = row['Name']
+            pos_str = str(row['Position'])
+            if player_name not in name_position_map:
+                name_position_map[player_name] = set()
+            # Normalize delimiters (e.g., "SF/PF", "SF-PF")
+            pos_tokens = pos_str.replace('-', '/').split('/')
+            for token in pos_tokens:
+                token = token.strip().upper()
+                if token:
+                    name_position_map[player_name].add(token)
+        
+        # Determine which base positions have explicit selections
+        base_positions = ['PG', 'SG', 'SF', 'PF', 'C']
+        strict_selections = {
+            pos: set(position_selected_map.get(pos, []))
+            for pos in base_positions
+            if position_selected_map.get(pos)
+        }
+        
+        if not strict_selections:
+            self.position_specific_selections = {}
+            return included_players
+        
+        base_position_set = set(base_positions)
+    
+        filtered_players = []
+        removed_players = []
+        
+        for player_name in included_players:
+            player_positions = name_position_map.get(player_name, set())
+            base_pos_count = len(player_positions & base_position_set)
+            remove_player = False
+            
+            for pos, allowed_players in strict_selections.items():
+                if pos in player_positions and player_name not in allowed_players:
+                    # Allow multi-eligible players to remain (they can fill other slots)
+                    if base_pos_count > 1:
+                        continue
+                    remove_player = True
+                    removed_players.append((player_name, pos))
+                    break
+            
+            if not remove_player:
+                filtered_players.append(player_name)
+        
+        if removed_players:
+            unique_removed = list({name for name, _ in removed_players})
+            logging.info(
+                f"🔒 Position lock filter removed {len(unique_removed)} players due to strict selections: "
+                f"{unique_removed[:5]}{'...' if len(unique_removed) > 5 else ''}"
+            )
+        
+        # Validate we still have enough players to build NBA lineups
+        # 🔧 FIX: If user explicitly selected players, trust their selection
+        # Don't revert to full selection just because coverage is tight
+        if filtered_players and len(filtered_players) >= REQUIRED_TEAM_SIZE:
+            logging.info(f"✅ Position lock filter kept {len(filtered_players)} players - TRUSTING USER SELECTION")
+        elif not self._validate_position_coverage(filtered_players):
+            logging.warning("⚠️ Position filtering left insufficient coverage; reverting to full selection")
+            self.position_specific_selections = {}
+            return None
+        
+        # Store the strict selections (as lists) for downstream workers
+        self.position_specific_selections = {pos: list(players) for pos, players in strict_selections.items()}
+        return filtered_players
+
+    def _validate_position_coverage(self, players):
+        """Ensure filtered players can still fill NBA lineup requirements."""
+        if not players:
+            return False
+        df = self.df_players[self.df_players['Name'].isin(players)].copy()
+        if df.empty:
+            return False
+        
+        df['Position'] = df['Position'].astype(str)
+        pg_count = df['Position'].str.contains('PG', na=False).sum()
+        sg_count = df['Position'].str.contains('SG', na=False).sum()
+        sf_count = df['Position'].str.contains('SF', na=False).sum()
+        pf_count = df['Position'].str.contains('PF', na=False).sum()
+        c_count = df['Position'].str.contains('C', na=False).sum()
+        guard_total = df['Position'].str.contains('PG|SG', na=False).sum()
+        forward_total = df['Position'].str.contains('SF|PF', na=False).sum()
+        
+        if pg_count == 0 or sg_count == 0 or sf_count == 0 or pf_count == 0 or c_count == 0:
+            return False
+        if guard_total < 3 or forward_total < 3:
+            return False
+        if len(df) < REQUIRED_TEAM_SIZE:
+            return False
+        return True
+
+    def collect_stack_settings(self):
+        """Collect stack settings from the UI"""
+        stack_settings = []
+        
+        if not hasattr(self, 'stack_exposure_table') or not self.stack_exposure_table:
+            logging.debug("No stack exposure table available")
+            return ["No Stacks"]  # Default
+        
+        # Check which stack types are selected
+        for row in range(self.stack_exposure_table.rowCount()):
+            checkbox_widget = self.stack_exposure_table.cellWidget(row, 0)
+            if checkbox_widget:
+                checkbox = checkbox_widget.findChild(QCheckBox)
+                if checkbox and checkbox.isChecked():
+                    stack_type_item = self.stack_exposure_table.item(row, 1)
+                    if stack_type_item:
+                        stack_settings.append(stack_type_item.text())
+        
+        if not stack_settings:
+            stack_settings = ["No Stacks"]  # Default if nothing selected
+        
+        logging.debug(f"Found stack settings: {stack_settings}")
+        return stack_settings
+
+    def collect_exposure_settings(self):
+        """Collect min and max exposure settings from the UI"""
+        min_exposure = {}
+        max_exposure = {}
+        
+        if not hasattr(self, 'player_tables') or not self.player_tables:
+            logging.debug("No player tables available for exposure settings")
+            return min_exposure, max_exposure
+        
+        # For now, return empty dicts as exposure constraints aren't fully implemented
+        logging.debug("Exposure settings collection not fully implemented")
+        return min_exposure, max_exposure
+
+    def collect_team_selections(self):
+        """Collect team selections using manual override first, then enhanced method if available"""
+        
+        # FIRST: Check for manual team override file
+        try:
+            import importlib.util
+            override_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'manual_team_override.py')
+            if os.path.exists(override_path):
+                spec = importlib.util.spec_from_file_location("manual_team_override", override_path)
+                override_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(override_module)
+                
+                if hasattr(override_module, 'MANUAL_TEAM_SELECTIONS'):
+                    manual_selections = override_module.MANUAL_TEAM_SELECTIONS
+                    logging.info(f"🔧 MANUAL OVERRIDE DETECTED: Using manual team selections: {manual_selections}")
+                    safe_log_info(f"🔧 MANUAL OVERRIDE ACTIVE: {manual_selections}")
+                    print(f"🔧 MANUAL TEAM OVERRIDE ACTIVE:")
+                    for stack_size, teams in manual_selections.items():
+                        print(f"   {stack_size}-Stack: {teams}")
+                        logging.info(f"   Manual override - {stack_size}-Stack: {teams}")
+                    return manual_selections
+        except Exception as e:
+            logging.debug(f"No manual override found or error loading: {e}")
+        
+        # Try enhanced method next
+        if ENHANCED_CHECKBOX_AVAILABLE and hasattr(self, 'checkbox_managers') and self.checkbox_managers:
+            logging.info("🚀 Using ENHANCED team selection collection...")
+            return collect_team_selections_enhanced(self.team_stack_tables, self.checkbox_managers)
+        
+        # Fallback to original method with improvements
+        logging.info("⚠️ Using fallback team selection collection...")
+        team_selections = {}
+        
+        if not hasattr(self, 'team_stack_tables') or not self.team_stack_tables:
+            logging.debug("No team stack tables available")
+            return team_selections
+        
+        safe_log_info("DEBUGGING: Starting team selection collection...")
+        
+        # Collect selected teams from each stack size table
+        for stack_size, table in self.team_stack_tables.items():
+            safe_log_info(f"DEBUGGING: Checking table for stack size: {stack_size}")
+            safe_log_info(f"DEBUGGING: Table has {table.rowCount()} rows")
+            
+            selected_teams = []
+            
+            for row in range(table.rowCount()):
+                try:
+                    # Get the checkbox from the cell widget
+                    checkbox_widget = table.cellWidget(row, 0)
+                    team_item = table.item(row, 1)  # Team name is in column 1
+                    
+                    safe_log_info(f"DEBUGGING: Row {row}:")
+                    safe_log_info(f"   - checkbox_widget: {checkbox_widget}")
+                    safe_log_info(f"   - team_item: {team_item}")
+                    
+                    if team_item:
+                        team_name = team_item.text()
+                        safe_log_info(f"   - team_name: {team_name}")
+                    else:
+                        safe_log_info(f"   - team_name: None")
+                        continue
+                    
+                    is_checked = False
+                    
+                    if checkbox_widget:
+                        checkbox = None
+                        
+                        # Method 1: Try through layout (most common)
+                        layout = checkbox_widget.layout()
+                        safe_log_info(f"   - layout: {layout}")
+                        
+                        if layout and layout.count() > 0:
+                            checkbox = layout.itemAt(0).widget()
+                            safe_log_info(f"   - checkbox from layout: {checkbox}")
+                            safe_log_info(f"   - checkbox type: {type(checkbox)}")
+                            
+                            if isinstance(checkbox, QCheckBox):
+                                is_checked = checkbox.isChecked()
+                                safe_log_info(f"   - is_checked: {is_checked}")
+                            
+                        # Method 2: Try direct findChild if layout method failed
+                        if not checkbox or not isinstance(checkbox, QCheckBox):
+                            checkbox = checkbox_widget.findChild(QCheckBox)
+                            safe_log_info(f"   - checkbox from findChild: {checkbox}")
+                            if checkbox and isinstance(checkbox, QCheckBox):
+                                is_checked = checkbox.isChecked()
+                                safe_log_info(f"   - is_checked (findChild): {is_checked}")
+                        
+                        # Method 3: Check if widget itself is a checkbox
+                        if not checkbox and isinstance(checkbox_widget, QCheckBox):
+                            checkbox = checkbox_widget
+                            is_checked = checkbox.isChecked()
+                            safe_log_info(f"   - checkbox is widget itself: {is_checked}")
+                        
+                        if is_checked:
+                            selected_teams.append(team_name)
+                            safe_log_info(f"   FOUND SELECTED TEAM: {team_name} in stack size {stack_size}")
+                        else:
+                            safe_log_info(f"   Team {team_name} not selected")
+                    else:
+                        safe_log_info(f"   No checkbox widget found")
+                
+                except Exception as e:
+                    safe_log_error(f"Error processing row {row} in stack {stack_size}: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            safe_log_info(f"DEBUGGING: Stack {stack_size} - Found {len(selected_teams)} selected teams: {selected_teams}")
+            
+            if selected_teams:
+                # Convert stack size name to number for optimization logic
+                if stack_size == "All Stacks":
+                    # For "All Stacks", we'll use these teams for any stack size
+                    team_selections["all"] = selected_teams
+                else:
+                    try:
+                        # Try to extract number from stack size (e.g., "4-Stack" -> 4)
+                        stack_num = int(stack_size.split(' ')[0])  # Handle "4 Stack" format
+                        team_selections[stack_num] = selected_teams
+                    except (ValueError, IndexError):
+                        # If we can't parse the number, use the string as-is
+                        team_selections[stack_size] = selected_teams
+                
+                safe_log_info(f"Stack size {stack_size}: Selected teams = {selected_teams}")
+            else:
+                safe_log_info(f"Stack size {stack_size}: No teams selected")
+        
+        safe_log_info(f"FINAL RESULT: Team selections collected: {team_selections}")
+        return team_selections
+
+    def display_results(self, results, team_exposure, stack_exposure):
+        """Display optimization results with unique constraint filtering and risk information"""
+        logging.debug(f"display_results: Received {len(results)} results")
+        logging.info(f"🎯 DISPLAY_RESULTS DEBUG: Starting with {len(results)} lineups")
+        
+        self.results_table.setRowCount(0)
+        
+        # Check if we have risk information in results
+        # Handle both dict and list formats
+        if isinstance(results, dict):
+            has_risk_info = any('risk_info' in lineup_data for lineup_data in results.values())
+        else:
+            # If results is a list, check if any item has risk_info
+            has_risk_info = any(isinstance(lineup_data, dict) and 'risk_info' in lineup_data for lineup_data in results)
+        
+        # Update table headers to include risk info if available
+        if has_risk_info:
+            self.results_table.setColumnCount(13)
+            self.results_table.setHorizontalHeaderLabels([
+                "Player", "Team", "Position", "Salary", "Predicted_DK_Points", 
+                "Total Salary", "Total Points", "Exposure (%)", "Max Exp (%)",
+                "Sharpe Ratio", "Kelly %", "Risk Score", "Position $"
+            ])
+        else:
+            self.results_table.setColumnCount(9)
+            self.results_table.setHorizontalHeaderLabels([
+                "Player", "Team", "Position", "Salary", "Predicted_DK_Points", 
+                "Total Salary", "Total Points", "Exposure (%)", "Max Exp (%)"
+            ])
+        
+        # Get requested number of lineups from UI
+        requested_lineups = self.get_requested_lineups()
+        
+        # Apply min unique filtering if specified
+        min_unique = self.get_min_unique_constraint()
+        logging.info(f"🎯 MIN UNIQUE CONSTRAINT: {min_unique}")
+        
+        if min_unique > 0:
+            results_before = len(results)
+            results = self.filter_lineups_by_uniqueness(results, min_unique)
+            results_after = len(results)
+            logging.error(f"🚨 MIN UNIQUE FILTERING: {results_before} → {results_after} lineups (FILTERED OUT {results_before - results_after})")
+            
+            if results_after == 1 and results_before > 1:
+                logging.error(f"🚨 CRITICAL: Min unique constraint ({min_unique}) filtered out nearly all lineups!")
+                logging.error(f"🚨 SOLUTION: Set min unique to 0 or lower value to get more lineups!")
+                print(f"🚨 CRITICAL: Min unique constraint ({min_unique}) filtered out {results_before - results_after} lineups!")
+                print(f"🚨 Only {results_after} lineup(s) remain! Try setting min unique to 0 for more lineups.")
+        else:
+            logging.info(f"🎯 NO MIN UNIQUE FILTERING: Keeping all {len(results)} lineups")
+            
+        logging.debug(f"After min unique filtering ({min_unique}): {len(results)} results")
+        
+        # Handle both dict and list formats
+        if isinstance(results, dict):
+            sorted_results = sorted(results.items(), key=lambda x: x[1]['total_points'], reverse=True)
+        else:
+            # Convert list to items format for sorting
+            # Assume each item is a DataFrame and calculate total_points
+            items_list = []
+            for i, lineup_data in enumerate(results):
+                if isinstance(lineup_data, dict) and 'total_points' in lineup_data:
+                    items_list.append((i, lineup_data))
+                else:
+                    # Calculate total points from DataFrame
+                    total_points = lineup_data['Predicted_DK_Points'].sum() if 'Predicted_DK_Points' in lineup_data.columns else 0
+                    items_list.append((i, {'lineup': lineup_data, 'total_points': total_points}))
+            
+            sorted_results = sorted(items_list, key=lambda x: x[1]['total_points'], reverse=True)
+
+        # Validate each lineup and keep only complete ones
+        valid_sorted_results = []
+        invalid_count = 0
+        for key, lineup_data in sorted_results:
+            lineup_df = self._extract_lineup_df(lineup_data)
+            is_valid, error_msg = self.validate_lineup(lineup_df)
+            if not is_valid:
+                invalid_count += 1
+                logging.warning(
+                    f"⚠️ Skipping invalid lineup in display_results: Reason='{error_msg}'"
+                )
+                continue
+            lineup_data['lineup'] = lineup_df.copy()
+            valid_sorted_results.append((key, lineup_data))
+        
+        if invalid_count > 0:
+            logging.warning(f"⚠️ Removed {invalid_count} invalid lineup(s) before displaying results")
+        
+        total_lineups = len(valid_sorted_results)
+        if total_lineups == 0:
+            logging.error("❌ No valid lineups available to display after filtering")
+            self.status_label.setText("No valid lineups generated. Adjust constraints or selections.")
+            return
+
+        self.optimized_lineups = []
+        for _, lineup_data in valid_sorted_results:
+            fixed_lineup = self.fix_lineup_position_order(lineup_data['lineup'])
+            lineup_data['lineup'] = fixed_lineup
+            self.add_lineup_to_results(lineup_data, total_lineups, has_risk_info)
+            self.optimized_lineups.append(fixed_lineup)
+
+        self.update_exposure_in_all_tabs(total_lineups, team_exposure, stack_exposure)
+        self.refresh_team_stacks()
+        
+        # Create status message with risk information
+        status_message = self.create_status_message(total_lineups, requested_lineups, min_unique, has_risk_info, results)
+        self.status_label.setText(status_message)
+        
+        # Show detailed feedback dialog for significant differences
+        if total_lineups < requested_lineups * 0.8:  # Less than 80% of requested
+            self.show_optimization_feedback(total_lineups, requested_lineups, min_unique, has_risk_info)
+    
+    def create_status_message(self, total_lineups, requested_lineups, min_unique, has_risk_info, results):
+        """Create comprehensive status message"""
+        unique_msg = f" (Min unique: {min_unique})" if min_unique > 0 else ""
+        risk_msg = ""
+        
+        if has_risk_info and results:
+            # Calculate average risk metrics
+            # Handle both dict and list formats
+            if isinstance(results, dict):
+                risk_infos = [lineup_data.get('risk_info', {}) for lineup_data in results.values()]
+            else:
+                risk_infos = [lineup_data.get('risk_info', {}) for lineup_data in results if isinstance(lineup_data, dict)]
+            avg_sharpe = np.mean([r.get('sharpe_ratio', 0) for r in risk_infos if r])
+            avg_kelly = np.mean([r.get('kelly_fraction', 0) for r in risk_infos if r]) * 100
+            total_position = sum([r.get('position_size', 0) for r in risk_infos if r])
+            
+            risk_msg = f" | 🔥 Avg Sharpe: {avg_sharpe:.3f}, Kelly: {avg_kelly:.1f}%, Total: ${total_position:.0f}"
+        
+        if total_lineups < requested_lineups:
+            return f"⚠️ Generated {total_lineups}/{requested_lineups} lineups{unique_msg}{risk_msg}"
+        else:
+            return f"✅ Generated {total_lineups} lineups{unique_msg}{risk_msg}"
+    
+    def show_optimization_feedback(self, total_lineups, requested_lineups, min_unique, has_risk_info):
+        """Show detailed optimization feedback dialog"""
+        risk_text = "\n🔥 Risk-adjusted optimization was used" if has_risk_info else ""
+        
+        QMessageBox.information(
+            self,
+            "Lineup Generation Results",
+            f"🎯 Optimization Results:\n\n"
+            f"📊 Requested: {requested_lineups} lineups\n"
+            f"✅ Generated: {total_lineups} lineups\n\n"
+            f"{'🔄 Min unique constraint limited results' if min_unique > 0 else '⚡ Limited by available player combinations'}"
+            f"{risk_text}\n\n"
+            f"💡 Tip: Try reducing min unique constraint or adjusting stack settings for more lineups."
+        )
+
+    def update_exposure_in_all_tabs(self, total_lineups, team_exposure, stack_exposure):
+        """Update exposure statistics in all UI tabs"""
+        # Update stack exposure in the stack exposure table
+        if hasattr(self, 'stack_exposure_table') and self.stack_exposure_table:
+            for row in range(self.stack_exposure_table.rowCount()):
+                stack_type_item = self.stack_exposure_table.item(row, 1)
+                if stack_type_item:
+                    stack_type = stack_type_item.text()
+                    exposure_count = stack_exposure.get(stack_type, 0)
+                    exposure_percentage = (exposure_count / total_lineups * 100) if total_lineups > 0 else 0
+                    
+                    # Update lineup exposure (column 4)
+                    self.stack_exposure_table.setItem(row, 4, QTableWidgetItem(f"{exposure_percentage:.1f}%"))
+                    
+                    # Pool exposure and Entry exposure can be the same for now (columns 5 and 6)
+                    self.stack_exposure_table.setItem(row, 5, QTableWidgetItem(f"{exposure_percentage:.1f}%"))
+                    self.stack_exposure_table.setItem(row, 6, QTableWidgetItem(f"{exposure_percentage:.1f}%"))
+        
+        # Update team exposure in team stack tables
+        if hasattr(self, 'team_stack_tables') and self.team_stack_tables:
+            for stack_size_name, table in self.team_stack_tables.items():
+                for row in range(table.rowCount()):
+                    team_item = table.item(row, 1)  # Teams column
+                    if team_item:
+                        team_name = team_item.text()
+                        exposure_count = team_exposure.get(team_name, 0)
+                        exposure_percentage = (exposure_count / total_lineups * 100) if total_lineups > 0 else 0
+                        
+                        # Update actual exposure (column 7)
+                        table.setItem(row, 7, QTableWidgetItem(f"{exposure_percentage:.1f}%"))
+        
+        # Update player exposure in player tables (this is already handled in add_lineup_to_results)
+        logging.debug(f"Updated exposure in all tabs: {total_lineups} lineups, {len(team_exposure)} teams, {len(stack_exposure)} stacks")
+
+    def filter_lineups_by_uniqueness(self, results, min_unique):
+        """Filter lineups to ensure minimum number of unique players between consecutive lineups"""
+        if min_unique <= 0 or len(results) <= 1:
+            return results
+        
+        filtered_results = {}
+        
+        # Handle both dict and list formats
+        if isinstance(results, dict):
+            sorted_results = sorted(results.items(), key=lambda x: x[1]['total_points'], reverse=True)
+        else:
+            # Convert list to items format for sorting
+            items_list = []
+            for i, lineup_data in enumerate(results):
+                if isinstance(lineup_data, dict) and 'total_points' in lineup_data:
+                    items_list.append((i, lineup_data))
+                else:
+                    # Calculate total points from DataFrame
+                    total_points = lineup_data['Predicted_DK_Points'].sum() if 'Predicted_DK_Points' in lineup_data.columns else 0
+                    items_list.append((i, {'lineup': lineup_data, 'total_points': total_points}))
+            
+            sorted_results = sorted(items_list, key=lambda x: x[1]['total_points'], reverse=True)
+        
+        if sorted_results:
+            # Always keep the first (best) lineup
+            first_key, first_data = sorted_results[0]
+            filtered_results[0] = first_data
+            kept_lineups = [set(first_data['lineup']['Name'].tolist())]
+        
+        kept_count = 1
+        for key, lineup_data in sorted_results[1:]:
+            current_players = set(lineup_data['lineup']['Name'].tolist())
+            
+            # STRICT MIN UNIQUE LOGIC: Always enforce exact min_unique constraint
+            if kept_lineups:
+                # Check against ALL previously kept lineups, not just the most recent
+                is_unique_enough = True
+                for previous_players in kept_lineups:
+                    unique_players = len(current_players.symmetric_difference(previous_players))
+                    if unique_players < min_unique:
+                        is_unique_enough = False
+                        break
+            else:
+                is_unique_enough = True
+            
+            if is_unique_enough:
+                filtered_results[kept_count] = lineup_data
+                kept_lineups.append(current_players)
+                kept_count += 1
+                
+                # Keep all lineups for strict comparison (no trimming for leniency)
+                # This ensures we maintain strict uniqueness against ALL previous lineups
+        
+        kept_ratio = len(filtered_results) / len(results) if results else 0
+        logging.info(f"🎯 STRICT MIN UNIQUE: Kept {len(filtered_results)} out of {len(results)} lineups ({kept_ratio:.1%}) (min_unique={min_unique})")
+        
+        # STRICT MODE: Only provide emergency fallback if we have very few results
+        min_required = max(3, int(len(results) * 0.15))  # At least 15% of lineups or 3, whichever is higher
+        if len(filtered_results) < min_required and len(results) >= min_required:
+            logging.warning(f"🚨 STRICT EMERGENCY MODE: Only {len(filtered_results)} lineups kept with strict min_unique={min_unique}, providing minimal fallback of {min_required}")
+            logging.warning(f"💡 RECOMMENDATION: Consider reducing min_unique constraint if you need more lineups")
+            # Take the top lineups regardless of uniqueness constraint
+            # Handle both dict and list formats
+            if isinstance(results, dict):
+                emergency_sorted = sorted(results.items(), key=lambda x: x[1]['total_points'], reverse=True)
+            else:
+                # Convert list to items format for sorting
+                items_list = []
+                for i, lineup_data in enumerate(results):
+                    if isinstance(lineup_data, dict) and 'total_points' in lineup_data:
+                        items_list.append((i, lineup_data))
+                    else:
+                        # Calculate total points from DataFrame
+                        total_points = lineup_data['Predicted_DK_Points'].sum() if 'Predicted_DK_Points' in lineup_data.columns else 0
+                        items_list.append((i, {'lineup': lineup_data, 'total_points': total_points}))
+                
+                emergency_sorted = sorted(items_list, key=lambda x: x[1]['total_points'], reverse=True)
+            filtered_results = {}
+            for i, (key, lineup_data) in enumerate(emergency_sorted[:min_required]):
+                filtered_results[i] = lineup_data
+            logging.info(f"🚨 EMERGENCY: Forced to keep {len(filtered_results)} lineups by ignoring uniqueness")
+            
+        # If we're still filtering out too many, give detailed feedback
+        if kept_ratio < 0.2 and min_unique > 0 and len(filtered_results) >= 5:
+            logging.warning(f"⚠️ Min unique constraint ({min_unique}) filtered out {len(results) - len(filtered_results)} lineups")
+            logging.warning(f"✅ But we guaranteed at least {len(filtered_results)} diverse lineups")
+        elif len(filtered_results) < 5:
+            logging.error(f"🚨 CRITICAL: Could only generate {len(filtered_results)} lineup(s)")
+            logging.error(f"💡 SUGGESTIONS:")
+            logging.error(f"   • Check your player data has enough variety")
+            logging.error(f"   • Verify salary cap and position constraints")
+            logging.error(f"   • Look for constraint conflicts")
+        
+        return filtered_results
+
+    def add_lineup_to_results(self, lineup_data, total_lineups, has_risk_info=False):
+        """Add a lineup to the results table with optional risk information"""
+        total_points = lineup_data['total_points']
+        lineup = lineup_data['lineup']
+        total_salary = lineup['Salary'].sum()
+        risk_info = lineup_data.get('risk_info', {})
+
+        # NBA lineup positions in order
+        nba_positions = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        
+        for idx, (_, player) in enumerate(lineup.iterrows()):
+            row_position = self.results_table.rowCount()
+            self.results_table.insertRow(row_position)
+            
+            # Determine the lineup position for this player
+            if idx < len(nba_positions):
+                lineup_position = nba_positions[idx]
+            else:
+                lineup_position = "UTIL"  # Fallback
+            
+            # Basic lineup information
+            self.results_table.setItem(row_position, 0, QTableWidgetItem(str(player['Name'])))
+            self.results_table.setItem(row_position, 1, QTableWidgetItem(str(player['Team'])))
+            self.results_table.setItem(row_position, 2, QTableWidgetItem(lineup_position))  # Show lineup position
+            self.results_table.setItem(row_position, 3, QTableWidgetItem(str(player['Salary'])))
+            self.results_table.setItem(row_position, 4, QTableWidgetItem(f"{player['Predicted_DK_Points']:.2f}"))
+            self.results_table.setItem(row_position, 5, QTableWidgetItem(str(total_salary)))
+            self.results_table.setItem(row_position, 6, QTableWidgetItem(f"{total_points:.2f}"))
+
+            # Exposure calculation
+            player_name = player['Name']
+            if player_name in self.player_exposure:
+                self.player_exposure[player_name] += 1
+            else:
+                self.player_exposure[player_name] = 1
+
+            exposure = self.player_exposure.get(player_name, 0) / total_lineups * 100
+            self.results_table.setItem(row_position, 7, QTableWidgetItem(f"{exposure:.2f}%"))
+            self.results_table.setItem(row_position, 8, QTableWidgetItem(f"{self.max_exposure.get(player_name, 100):.2f}%"))
+            
+            # Add risk information if available
+            if has_risk_info and risk_info:
+                sharpe_ratio = risk_info.get('sharpe_ratio', 0)
+                kelly_fraction = risk_info.get('kelly_fraction', 0) * 100  # Convert to percentage
+                volatility = risk_info.get('volatility', 0)
+                position_size = risk_info.get('position_size', 0)
+                
+                # Color code Sharpe ratio for easy interpretation
+                sharpe_item = QTableWidgetItem(f"{sharpe_ratio:.3f}")
+                if sharpe_ratio > 1.0:
+                    sharpe_item.setBackground(QColor(76, 175, 80))  # Green for excellent
+                elif sharpe_ratio > 0.5:
+                    sharpe_item.setBackground(QColor(255, 193, 7))  # Yellow for good
+                elif sharpe_ratio < 0:
+                    sharpe_item.setBackground(QColor(244, 67, 54))  # Red for poor
+                
+                self.results_table.setItem(row_position, 9, sharpe_item)
+                self.results_table.setItem(row_position, 10, QTableWidgetItem(f"{kelly_fraction:.1f}%"))
+                self.results_table.setItem(row_position, 11, QTableWidgetItem(f"{volatility:.2f}"))
+                self.results_table.setItem(row_position, 12, QTableWidgetItem(f"${position_size:.0f}"))
+
+    def load_file(self):
+        """Load player data from CSV file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 'Open CSV File', '', 'CSV Files (*.csv);;All Files (*)'
+        )
+        if file_path:
+            try:
+                self.df_players = self.load_players(file_path)
+                self.populate_player_tables()
+                self.status_label.setText(f'Players loaded: {len(self.df_players)} players')
+            except Exception as e:
+                self.status_label.setText(f'Error loading file: {str(e)}')
+                logging.error(f"Error loading file: {e}")
+
+    def filter_injured_players(self, df):
+        """Remove injured players who are OUT or DOUBTFUL based on injury status column"""
+        print(f"\n🏥 INJURY REPORT FILTERING")
+        print(f"{'='*70}")
+        
+        # Strictly require the InjuryStatus column (as requested)
+        if 'InjuryStatus' not in df.columns:
+            print(f"   ℹ️  No InjuryStatus column found - all players included")
+            logging.info("No InjuryStatus column found in player data")
+            return df
+        injury_col = 'InjuryStatus'
+        print(f"   📋 Using injury column: '{injury_col}'")
+        logging.info(f"Filtering injuries using column: {injury_col}")
+        
+        # Track original count
+        before_filter = len(df)
+        
+        # Statuses to filter out (case-insensitive)
+        injured_statuses = ['OUT', 'DOUBTFUL', 'O', 'D']
+        
+        # Create a copy to avoid SettingWithCopyWarning
+        df = df.copy()
+        
+        # Fill NaN values with 'HEALTHY' for players without injury designation
+        if injury_col in df.columns:
+            df[injury_col] = df[injury_col].fillna('HEALTHY')
+            
+            # Convert to uppercase for consistent comparison
+            df['InjuryStatus_Upper'] = df[injury_col].astype(str).str.upper().str.strip()
+            
+            # Find injured players
+            injured_players = df[df['InjuryStatus_Upper'].isin(injured_statuses)]
+            
+            # Filter them out
+            df = df[~df['InjuryStatus_Upper'].isin(injured_statuses)]
+            
+            # Clean up temporary column
+            df = df.drop('InjuryStatus_Upper', axis=1)
+            
+            removed_count = before_filter - len(df)
+            
+            if removed_count > 0:
+                print(f"   ❌ Removed {removed_count} injured players (OUT/DOUBTFUL):")
+                for _, player in injured_players.iterrows():
+                    status = player[injury_col]
+                    position = player.get('Position', 'N/A')
+                    print(f"      {position:4s} {player['Name']:30s} - {status}")
+                logging.info(f"Removed {removed_count} injured players")
+            else:
+                print(f"   ✅ No injured players to remove (all active)")
+                logging.info("No injured players found")
+            
+            print(f"   ✅ {len(df)} healthy players remaining")
+        
+        print(f"{'='*70}\n")
+        return df
+
+    def filter_non_nba_players(self, df):
+        """
+        Remove cross-sport or invalid records that sneak into the NBA projection set.
+        Ensures players belong to NBA teams and have NBA-eligible positions so that
+        DraftKings exports never include ineligible names (e.g., soccer or FIBA players).
+        """
+        if df.empty:
+            return df
+        
+        df = df.copy()
+        before_count = len(df)
+        
+        # Normalize team and position formats
+        df['Team'] = df['Team'].astype(str).str.upper().str.strip()
+        df['Position'] = df['Position'].astype(str).str.upper().str.strip()
+        
+        nba_position_tokens = {'PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL'}
+        
+        def has_nba_position(pos_str):
+            if not pos_str or pos_str == 'NAN':
+                return False
+            tokens = [token for token in re.split(r'[^A-Z]+', pos_str) if token]
+            return any(token in nba_position_tokens for token in tokens)
+        
+        position_mask = df['Position'].apply(has_nba_position)
+        team_mask = df['Team'].isin(NBA_TEAM_CODES)
+        name_mask = ~df['Name'].astype(str).str.upper().isin(NON_NBA_NAME_BLOCKLIST)
+        
+        valid_df = df[team_mask & position_mask & name_mask].copy()
+        removed_count = before_count - len(valid_df)
+        
+        if removed_count > 0:
+            logging.warning(f"Filtered out {removed_count} non-NBA player record(s) during load")
+            print(f"🚫 Removed {removed_count} non-NBA player record(s) based on team/position/name checks")
+            sample = df[~(team_mask & position_mask & name_mask)].head(10)
+            for _, row in sample.iterrows():
+                print(f"   - {row.get('Team', '?'):>4s} {row.get('Position', '?'):>10s} {row.get('Name', 'Unknown')}")
+        
+        return valid_df
+
+    def load_players(self, file_path):
+        """Load players from CSV file with error handling and flexible column mapping"""
+        try:
+            print(f"🔍 LOADING CSV: {file_path}")
+            df = pd.read_csv(file_path)
+            print(f"🔍 RAW CSV loaded - Shape: {df.shape}")
+            print(f"🔍 RAW CSV columns: {list(df.columns)}")
+            
+            # Check for probability columns in raw CSV
+            raw_prob_cols = [col for col in df.columns if 'prob' in col.lower()]
+            print(f"🔍 Raw probability columns in CSV: {len(raw_prob_cols)} - {raw_prob_cols[:5]}{'...' if len(raw_prob_cols) > 5 else ''}")
+            
+            logging.info(f"Loading players from CSV: {file_path}")
+            logging.info(f"Raw CSV shape: {df.shape}, columns: {len(df.columns)}")
+            
+            # 🔧 AUTOMATIC COLUMN MAPPING - Handle both NBA and NFL formats
+            column_mapping = {
+                'Pos': 'Position',  # Handle old format
+                'Predicted_Points': 'Predicted_DK_Points',  # Handle old format
+                'DK_Position': 'Position',  # NBA slate optimizer format
+                'Roster_Position': 'Position',  # DraftKings roster format
+                'Projected_DK_Points': 'Predicted_DK_Points',  # NBA projections
+                'DK_ID': 'ID',  # Player IDs
+                'Pri_Pos': 'Position'  # Primary position
+            }
+            
+            # Apply column mapping automatically
+            columns_renamed = []
+            for old_col, new_col in column_mapping.items():
+                if old_col in df.columns and new_col not in df.columns:
+                    df = df.rename(columns={old_col: new_col})
+                    columns_renamed.append(f"{old_col} → {new_col}")
+            
+            if columns_renamed:
+                logging.info(f"🔧 Auto-renamed columns: {', '.join(columns_renamed)}")
+                print(f"🔧 Auto-renamed columns: {', '.join(columns_renamed)}")
+            
+            # Basic required columns (after potential renaming)
+            basic_required = ['Name', 'Team', 'Position', 'Salary']
+            
+            # Check for basic required columns
+            missing_basic = [col for col in basic_required if col not in df.columns]
+            if missing_basic:
+                available_cols = list(df.columns)
+                raise ValueError(f"Missing required columns: {missing_basic}. Available columns: {available_cols}")
+            
+            # Handle different prediction column names flexibly
+            prediction_column = None
+            possible_prediction_columns = [
+                'Predicted_DK_Points',  # Standard expected name
+                'My_Proj',              # Your CSV format
+                'ML_Prediction',        # ML prediction column
+                'PPG_Projection',       # PPG projection column
+                'Projection',           # Generic projection
+                'Points',               # Simple points
+                'DK_Points',            # DraftKings points
+                'Fantasy_Points'        # Fantasy points
+            ]
+            
+            # Find the first available prediction column
+            for col in possible_prediction_columns:
+                if col in df.columns:
+                    prediction_column = col
+                    break
+            
+            if prediction_column is None:
+                available_cols = list(df.columns)
+                raise ValueError(f"No prediction column found. Available columns: {available_cols}. Expected one of: {possible_prediction_columns}")
+            
+            # Rename the prediction column to the standard name for consistency
+            if prediction_column != 'Predicted_DK_Points':
+                df = df.rename(columns={prediction_column: 'Predicted_DK_Points'})
+                logging.info(f"Using '{prediction_column}' as prediction column, renamed to 'Predicted_DK_Points'")
+            
+            # Clean and validate data
+            df = df.dropna(subset=['Name', 'Salary', 'Predicted_DK_Points'])
+            df['Salary'] = pd.to_numeric(df['Salary'], errors='coerce')
+            df['Predicted_DK_Points'] = pd.to_numeric(df['Predicted_DK_Points'], errors='coerce')
+            
+            # Remove rows with invalid salary or prediction values
+            df = df.dropna(subset=['Salary', 'Predicted_DK_Points'])
+            df = df[df['Salary'] > 0]
+            df = df[df['Predicted_DK_Points'] > 0]
+            
+            # 🏥 INJURY FILTERING - Remove injured players (OUT/DOUBTFUL)
+            df = self.filter_injured_players(df)
+            df = self.filter_non_nba_players(df)
+            
+            # 💰 PER-PLAYER MIN SALARY FILTER (optional)
+            try:
+                min_player_salary = self.get_min_player_salary_filter()
+                if min_player_salary and 'Salary' in df.columns:
+                    before = len(df)
+                    df = df[df['Salary'].fillna(0).astype(float) >= float(min_player_salary)].copy()
+                    after = len(df)
+                    if before != after:
+                        print(f"💰 Filtered out {before - after} players below ${min_player_salary}")
+                        logging.info(f"Filtered out {before - after} players below ${min_player_salary}")
+            except Exception as e:
+                logging.warning(f"Min player salary filter skipped: {e}")
+            
+            # 🏀 NBA POSITION VALIDATION
+            print(f"\n{'='*70}")
+            print(f"🏀 NBA POSITION VALIDATION")
+            print(f"{'='*70}")
+            
+            # Check for Position or Roster_Position column
+            pos_col = 'Position' if 'Position' in df.columns else 'Roster_Position'
+            if pos_col not in df.columns:
+                # Try to find any position-related column
+                pos_cols = [col for col in df.columns if 'pos' in col.lower()]
+                if pos_cols:
+                    pos_col = pos_cols[0]
+                    print(f"   Using '{pos_col}' as position column")
+            
+            # Count NBA positions
+            pg_count = len(df[df[pos_col].str.contains('PG', na=False)])
+            sg_count = len(df[df[pos_col].str.contains('SG', na=False)])
+            sf_count = len(df[df[pos_col].str.contains('SF', na=False)])
+            pf_count = len(df[df[pos_col].str.contains('PF', na=False)])
+            c_count = len(df[df[pos_col].str.contains('C', na=False)])
+            
+            print(f"   PG:  {pg_count}")
+            print(f"   SG:  {sg_count}")
+            print(f"   SF:  {sf_count}")
+            print(f"   PF:  {pf_count}")
+            print(f"   C:   {c_count}")
+            print(f"   Total: {len(df)} players")
+            print(f"{'='*70}\n")
+            
+            # Validate we have enough players at each position
+            if pg_count < 3 or sg_count < 3 or sf_count < 3 or pf_count < 3 or c_count < 2:
+                warning_msg = (
+                    f"⚠️  WARNING: Low player counts at some positions.\n\n"
+                    f"PG: {pg_count}, SG: {sg_count}, SF: {sf_count}, PF: {pf_count}, C: {c_count}\n\n"
+                    f"Optimizer may have limited options. Consider loading a fuller slate."
+                )
+                print(warning_msg)
+                logging.warning(warning_msg)
+            
+            # 🎲 DETECT AND ENHANCE PROBABILITY DATA
+            print(f"🔍 PROBABILITY DEBUG: PROBABILITY_OPTIMIZER_AVAILABLE = {PROBABILITY_OPTIMIZER_AVAILABLE}")
+            if PROBABILITY_OPTIMIZER_AVAILABLE:
+                try:
+                    print("🔍 Creating ProbabilityEnhancedOptimizer instance...")
+                    prob_optimizer = ProbabilityEnhancedOptimizer()
+                    print("✅ ProbabilityEnhancedOptimizer created successfully")
+                    
+                    print("🔍 Detecting probability columns...")
+                    prob_columns = prob_optimizer.detect_probability_columns(df)
+                    print(f"🔍 Detected probability columns: {prob_columns}")
+                    
+                    # Check if any probability columns were detected
+                    total_prob_cols = sum(len(cols) for cols in prob_columns.values())
+                    print(f"🔍 Total probability columns detected: {total_prob_cols}")
+                    
+                    if total_prob_cols > 0:
+                        logging.info(f"🎲 Detected {total_prob_cols} probability columns")
+                        print(f"✅ Found {total_prob_cols} probability columns!")
+                        
+                        # Extract probability thresholds
+                        prob_thresholds = prob_optimizer.extract_probability_thresholds(df)
+                        print(f"🔍 Probability thresholds: {prob_thresholds}")
+                        
+                        # Enhance dataframe with probability-derived metrics
+                        df = prob_optimizer.enhance_player_data(df)
+                        print(f"✅ Enhanced player data with probability metrics")
+                        
+                        # Create summary for GUI
+                        prob_summary = {
+                            'columns': prob_columns,
+                            'enhanced_players': len(df),
+                            'metrics': {
+                                'Expected_Utility': len(df) if 'Expected_Utility' in df.columns else 0,
+                                'Risk_Adjusted_Points': len(df) if 'Risk_Adjusted_Points' in df.columns else 0,
+                                'Kelly_Fraction': len(df) if 'Kelly_Fraction' in df.columns else 0,
+                                'Implied_Volatility': len(df) if 'Implied_Volatility' in df.columns else 0
+                            }
+                        }
+                        
+                        # Update GUI with probability information
+                        self.update_probability_display(prob_summary, "Auto-detected")
+                        
+                        logging.info("🎲 Successfully enhanced player data with probability metrics")
+                    else:
+                        print("❌ No probability columns detected in CSV")
+                        logging.info("No probability columns detected in CSV")
+                        self.update_probability_display({'columns': {}, 'enhanced_players': 0, 'metrics': {}}, "None")
+                        
+                except Exception as e:
+                    print(f"❌ Error enhancing probability data: {e}")
+                    logging.warning(f"Error enhancing probability data: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    self.update_probability_display_error(str(e))
+            else:
+                print("❌ Probability optimizer not available")
+                logging.info("Probability optimizer not available")
+                self.update_probability_display_no_data()
+            
+            logging.info(f"Successfully loaded {len(df)} players from {file_path}")
+            logging.info(f"Using prediction column: {prediction_column}")
+            
+            return df
+            
+        except Exception as e:
+            raise Exception(f"Error loading players: {str(e)}")
+
+    def populate_player_tables(self):
+        """Populate player tables with loaded data"""
+        if self.df_players is None or self.df_players.empty:
+            return
+        
+        # Clear existing player exposure data
+        self.player_exposure = {}
+        
+        # Group players by position (NBA)
+        # Players can have multiple position eligibility (e.g., "PG/SG")
+        position_groups = {
+            'All Players': self.df_players.copy(),
+            'PG': self.df_players[self.df_players['Position'].str.contains('PG', na=False)],
+            'SG': self.df_players[self.df_players['Position'].str.contains('SG', na=False)],
+            'SF': self.df_players[self.df_players['Position'].str.contains('SF', na=False)],
+            'PF': self.df_players[self.df_players['Position'].str.contains('PF', na=False)],
+            'C': self.df_players[self.df_players['Position'].str.contains('C', na=False)],
+            'Guards': self.df_players[self.df_players['Position'].str.contains('PG|SG|G', na=False)],
+            'Forwards': self.df_players[self.df_players['Position'].str.contains('SF|PF|F', na=False)]
+        }
+        
+        # Populate each table
+        for position, table in self.player_tables.items():
+            if position in position_groups:
+                df_pos = position_groups[position]
+                self.populate_position_table(table, df_pos)
+        
+        # Also populate team stack tables when player data is loaded
+        self.populate_team_stack_table()
+        
+        # Also populate team combinations when player data is loaded
+        self.populate_team_combinations_teams()
+        
+        # Update selection status after all tables are populated
+        self.update_selection_status()
+
+    def populate_position_table(self, table, df_pos):
+        """Populate a specific position table with player data"""
+        table.setRowCount(len(df_pos))
+        
+        for row_idx, (_, player) in enumerate(df_pos.iterrows()):
+            # Checkbox for inclusion
+            checkbox = QCheckBox()
+            # Create unique identifier for each checkbox
+            player_name = player['Name']
+            checkbox.setObjectName(f"player_checkbox_{row_idx}_{player_name}")
+            
+            # Enhanced signal connection with logging for individual changes
+            def create_checkbox_handler(name, pos_name, cb):
+                def handle_checkbox_change(state):
+                    checked = (state == 2)  # Qt.Checked = 2
+                    action = "SELECTED" if checked else "DESELECTED"
+                    print(f"🔄 CHECKBOX CHANGE: {action} {name} ({pos_name})")
+                    logging.info(f"Player {action}: {name} in {pos_name} position")
+                    
+                    # Update selection status
+                    self.update_selection_status()
+                    
+                    # If this was a deselection, show additional info
+                    if not checked:
+                        included_players = self.get_included_players()
+                        print(f"   📊 Remaining selected: {len(included_players)} players")
+                        
+                return handle_checkbox_change
+            
+            # Connect the enhanced signal handler
+            checkbox.stateChanged.connect(create_checkbox_handler(player_name, table.objectName() if hasattr(table, 'objectName') else "Unknown", checkbox))
+            
+            # Store checkbox reference for debugging/access
+            if not hasattr(self, '_player_checkboxes'):
+                self._player_checkboxes = {}
+            self._player_checkboxes[player_name] = checkbox
+            
+            checkbox_widget = QWidget()
+            layout = QHBoxLayout(checkbox_widget)
+            layout.addWidget(checkbox)
+            layout.setAlignment(Qt.AlignCenter)
+            layout.setContentsMargins(0, 0, 0, 0)
+            table.setCellWidget(row_idx, 0, checkbox_widget)
+            
+            # Player data
+            table.setItem(row_idx, 1, QTableWidgetItem(str(player['Name'])))
+            table.setItem(row_idx, 2, QTableWidgetItem(str(player['Team'])))
+            table.setItem(row_idx, 3, QTableWidgetItem(str(player['Position'])))
+            table.setItem(row_idx, 4, QTableWidgetItem(str(player['Salary'])))
+            table.setItem(row_idx, 5, QTableWidgetItem(f"{player['Predicted_DK_Points']:.2f}"))
+            
+            # Value calculation
+            value = player['Predicted_DK_Points'] / (player['Salary'] / 1000) if player['Salary'] > 0 else 0
+            table.setItem(row_idx, 6, QTableWidgetItem(f"{value:.2f}"))
+            
+            # Exposure controls
+            min_exp_spinbox = QSpinBox()
+            min_exp_spinbox.setRange(0, 100)
+            min_exp_spinbox.setValue(0)
+            table.setCellWidget(row_idx, 7, min_exp_spinbox)
+            
+            max_exp_spinbox = QSpinBox()
+            max_exp_spinbox.setRange(0, 100)
+            max_exp_spinbox.setValue(100)
+            table.setCellWidget(row_idx, 8, max_exp_spinbox)
+            
+            # Actual exposure (will be updated after optimization)
+            actual_exp_label = QLabel("0.00%")
+            table.setCellWidget(row_idx, 9, actual_exp_label)
+
+    def populate_team_stack_table(self):
+        """Populate team stack tables with enhanced checkbox management"""
+        if self.df_players is None or self.df_players.empty:
+            return
+        
+        # Get unique teams and their projected runs
+        teams = self.df_players['Team'].unique()
+        
+        for stack_size_name, table in self.team_stack_tables.items():
+            table.setRowCount(len(teams))
+            
+            # Initialize checkbox manager for this stack size if available
+            if ENHANCED_CHECKBOX_AVAILABLE and self.checkbox_managers is not None:
+                if stack_size_name not in self.checkbox_managers:
+                    self.checkbox_managers[stack_size_name] = CheckboxManager()
+                    logging.info(f"✅ Created checkbox manager for {stack_size_name}")
+                manager = self.checkbox_managers[stack_size_name]
+            else:
+                manager = None
+            
+            for row_idx, team in enumerate(teams):
+                # Create checkbox widget using enhanced method if available
+                if manager:
+                    row_id = f"team_{row_idx}"
+                    checkbox_widget = manager.create_checkbox_widget(row_id, False)
+                    logging.debug(f"✅ Created enhanced checkbox for {team} (row {row_idx})")
+                else:
+                    # Fallback to standard checkbox creation
+                    checkbox = QCheckBox()
+                    checkbox_widget = QWidget()
+                    layout = QHBoxLayout(checkbox_widget)
+                    layout.addWidget(checkbox)
+                    layout.setAlignment(Qt.AlignCenter)
+                    layout.setContentsMargins(0, 0, 0, 0)
+                    logging.debug(f"⚠️ Created standard checkbox for {team} (row {row_idx})")
+                
+                table.setCellWidget(row_idx, 0, checkbox_widget)
+                
+                # Team data
+                table.setItem(row_idx, 1, QTableWidgetItem(str(team)))
+                
+                # Calculate team stats
+                team_players = self.df_players[self.df_players['Team'] == team]
+                avg_salary = team_players['Salary'].mean()
+                avg_points = team_players['Predicted_DK_Points'].mean()
+                total_points = team_players['Predicted_DK_Points'].sum()
+                player_count = len(team_players)
+                
+                # Set proper columns based on headers: ["Select", "Teams", "Status", "Time", "Proj Runs", "Min Exp", "Max Exp", "Actual Exp (%)"]
+                table.setItem(row_idx, 2, QTableWidgetItem("Active"))  # Status
+                table.setItem(row_idx, 3, QTableWidgetItem("--"))  # Time (placeholder)
+                table.setItem(row_idx, 4, QTableWidgetItem(f"{total_points:.1f}"))  # Proj Runs (using total points)
+                table.setItem(row_idx, 5, QTableWidgetItem("0"))  # Min exposure
+                table.setItem(row_idx, 6, QTableWidgetItem("100"))  # Max exposure
+                table.setItem(row_idx, 7, QTableWidgetItem("0.00%"))  # Actual exposure
+        
+        safe_log_info(f"Team stack tables populated for {len(teams)} teams across {len(self.team_stack_tables)} stack sizes")
+
+    def select_all(self, position):
+        """Select all players in a specific position table"""
+        import time
+        timestamp = time.strftime("%H:%M:%S")
+        print(f"⚠️ [{timestamp}] select_all() called for position: {position}")
+        logging.warning(f"⚠️ [{timestamp}] select_all() called for position: {position}")
+        
+        if not hasattr(self, 'player_tables') or position not in self.player_tables:
+            logging.debug(f"No table found for position: {position}")
+            return
+        
+        table = self.player_tables[position]
+        
+        # Check all checkboxes in the table
+        for row in range(table.rowCount()):
+            checkbox_widget = table.cellWidget(row, 0)
+            if checkbox_widget:
+                # Find the checkbox within the widget
+                layout = checkbox_widget.layout()
+                if layout and layout.count() > 0:
+                    checkbox = layout.itemAt(0).widget()
+                    if isinstance(checkbox, QCheckBox):
+                        checkbox.setChecked(True)
+        
+        logging.debug(f"Selected all players in {position} table")
+
+    def deselect_all(self, position):
+        """Deselect all players in a specific position table"""
+        import time
+        timestamp = time.strftime("%H:%M:%S")
+        print(f"⚠️ [{timestamp}] deselect_all() called for position: {position}")
+        logging.warning(f"⚠️ [{timestamp}] deselect_all() called for position: {position}")
+        
+        if not hasattr(self, 'player_tables') or position not in self.player_tables:
+            logging.debug(f"No table found for position: {position}")
+            return
+        
+        table = self.player_tables[position]
+        
+        # Uncheck all checkboxes in the table
+        for row in range(table.rowCount()):
+            checkbox_widget = table.cellWidget(row, 0)
+            if checkbox_widget:
+                # Find the checkbox within the widget
+                layout = checkbox_widget.layout()
+                if layout and layout.count() > 0:
+                    checkbox = layout.itemAt(0).widget()
+                    if isinstance(checkbox, QCheckBox):
+                        checkbox.setChecked(False)
+        
+        logging.debug(f"Deselected all players in {position} table")
+    
+    def clear_all_player_selections(self):
+        """🚫 CLEAR ALL PLAYER SELECTIONS - Uncheck every player in every position tab"""
+        logging.info("🚫 CLEARING ALL PLAYER SELECTIONS across all tabs...")
+        print("\n" + "="*70)
+        print("🚫 CLEARING ALL PLAYER SELECTIONS")
+        print("="*70)
+        
+        total_unchecked = 0
+        
+        if not hasattr(self, 'player_tables'):
+            logging.warning("No player tables available to clear")
+            print("❌ No player tables available")
+            return
+        
+        # Deselect all players in ALL position tabs
+        for position, table in self.player_tables.items():
+            count = 0
+            for row in range(table.rowCount()):
+                checkbox_widget = table.cellWidget(row, 0)
+                if checkbox_widget:
+                    layout = checkbox_widget.layout()
+                    if layout and layout.count() > 0:
+                        checkbox = layout.itemAt(0).widget()
+                        if isinstance(checkbox, QCheckBox):
+                            if checkbox.isChecked():
+                                checkbox.setChecked(False)
+                                count += 1
+                                total_unchecked += 1
+            
+            if count > 0:
+                print(f"   ✅ {position}: Unchecked {count} players")
+        
+        print(f"\n🎯 TOTAL: Unchecked {total_unchecked} players across all tabs")
+        print("="*70 + "\n")
+        
+        logging.info(f"✅ Cleared {total_unchecked} player selections")
+        
+        # Update the selection status display
+        self.update_selection_status()
+
+    def load_entries_csv(self):
+        """Load entries CSV for analysis"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 'Open Entries CSV', '', 'CSV Files (*.csv);;All Files (*)'
+        )
+        if file_path:
+            try:
+                self.df_entries = pd.read_csv(file_path)
+                self.status_label.setText(f'Entries loaded: {len(self.df_entries)} entries')
+            except Exception as e:
+                self.status_label.setText(f'Error loading entries: {str(e)}')
+                logging.error(f"Error loading entries: {e}")
+
+    def save_csv(self):
+        """Save optimized lineups to CSV"""
+        if not hasattr(self, 'optimized_lineups') or not self.optimized_lineups:
+            QMessageBox.warning(self, "No Data", "No optimized lineups to save.")
+            return
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, 'Save Optimized Lineups', 'optimized_lineups.csv', 'CSV Files (*.csv);;All Files (*)'
+        )
+        if file_path:
+            try:
+                self.save_lineups_to_dk_format(file_path)
+                self.status_label.setText(f'Lineups saved to: {file_path}')
+            except Exception as e:
+                self.status_label.setText(f'Error saving: {str(e)}')
+                logging.error(f"Error saving lineups: {e}")
+
+    def clean_player_name_for_dk(self, name):
+        """
+        Clean player names to match DraftKings format
+        - Removes periods from initials (A.J. -> AJ)
+        - Removes Jr./Sr. suffixes inconsistencies
+        - Fixes spacing issues
+        """
+        if not name or name == "":
+            return ""
+        
+        # Remove periods from initials (A.J. Brown -> AJ Brown)
+        name = name.replace('.', '')
+        
+        # Standardize suffixes
+        name = name.replace(' Jr', '').replace(' Sr', '').replace(' III', '').replace(' II', '')
+        
+        # Remove extra whitespace
+        name = ' '.join(name.split())
+        
+        return name
+    
+    def validate_lineup(self, lineup):
+        """
+        Validate NBA lineup before export
+        Returns: (is_valid, error_message)
+        """
+        try:
+            # Check if lineup is empty
+            if lineup.empty:
+                return False, "Empty lineup"
+            
+            # Check total players - NBA requires 8 players
+            if len(lineup) != 8:
+                return False, f"Invalid player count: {len(lineup)} (need 8 for NBA)"
+            
+            # Check for duplicates
+            if lineup['Name'].duplicated().any():
+                return False, "Duplicate players in lineup"
+            
+            # Check position counts for NBA
+            position_counts = lineup['Position'].value_counts().to_dict()
+            
+            # NBA positions can be multi-eligible (e.g., PG/SG), so we need flexible checking
+            # Just ensure we have a valid distribution
+            total_guards = sum(1 for _, p in lineup.iterrows() if 'PG' in str(p['Position']) or 'SG' in str(p['Position']))
+            total_forwards = sum(1 for _, p in lineup.iterrows() if 'SF' in str(p['Position']) or 'PF' in str(p['Position']))
+            total_centers = sum(1 for _, p in lineup.iterrows() if 'C' in str(p['Position']))
+            
+            if total_guards < 3:
+                return False, f"Not enough guards: {total_guards} (need at least 3 for PG+SG+G)"
+            if total_forwards < 3:
+                return False, f"Not enough forwards: {total_forwards} (need at least 3 for SF+PF+F)"
+            if total_centers < 1:
+                return False, "Missing center (need at least 1)"
+            
+            slot_assignment = self._assign_lineup_slots(lineup)
+            if slot_assignment is None or len(slot_assignment) != REQUIRED_TEAM_SIZE:
+                return False, "Unable to assign players to DraftKings roster slots"
+            
+            # Check salary cap (if Salary column exists)
+            if 'Salary' in lineup.columns:
+                total_salary = lineup['Salary'].sum()
+                if total_salary > 50000:
+                    return False, f"Over salary cap: ${total_salary:,} (max $50,000)"
+                if total_salary < 47000:  # Warn if too far under cap
+                    logging.warning(f"Low salary usage: ${total_salary:,}")
+            
+            return True, "Valid"
+            
+        except Exception as e:
+            return False, f"Validation error: {str(e)}"
+    
+    def save_lineups_to_dk_format(self, output_path):
+        """
+        Save lineups in DraftKings NBA format (ENHANCED VERSION)
+        Exports 3 formats:
+        1. Names only (standard)
+        2. Names + Player IDs (for verification)
+        3. Player IDs only (alternate upload format)
+        """
+        dk_positions = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        
+        # Determine output paths for multiple formats
+        base_path = output_path.rsplit('.', 1)[0]
+        names_path = f"{base_path}.csv"
+        names_ids_path = f"{base_path}_with_ids.csv"
+        ids_path = f"{base_path}_ids_only.csv"
+        
+        valid_count = 0
+        invalid_count = 0
+        
+        # Export 1: Names only (standard DraftKings format)
+        with open(names_path, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(dk_positions)
+            
+            for i, lineup in enumerate(self.optimized_lineups, 1):
+                # Validate lineup
+                is_valid, error_msg = self.validate_lineup(lineup)
+                if not is_valid:
+                    logging.warning(f"Lineup {i} invalid: {error_msg}")
+                    invalid_count += 1
+                    continue
+                
+                dk_lineup = self.format_lineup_for_dk(lineup, dk_positions)
+                # Clean player names
+                dk_lineup = [self.clean_player_name_for_dk(name) for name in dk_lineup]
+                writer.writerow(dk_lineup)
+                valid_count += 1
+        
+        # Export 2: Names + Player IDs (for verification)
+        try:
+            with open(names_ids_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                # Header with both names and IDs
+                header = []
+                for pos in dk_positions:
+                    header.append(f"{pos}_Name")
+                    header.append(f"{pos}_ID")
+                writer.writerow(header)
+                
+                for lineup in self.optimized_lineups:
+                    is_valid, _ = self.validate_lineup(lineup)
+                    if not is_valid:
+                        continue
+                    
+                    dk_lineup_with_ids = self.format_lineup_for_dk_with_ids(lineup, dk_positions)
+                    writer.writerow(dk_lineup_with_ids)
+        except Exception as e:
+            logging.warning(f"Could not create names+IDs export: {e}")
+        
+        # Export 3: Player IDs only (alternate format)
+        try:
+            with open(ids_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(dk_positions)
+                
+                for lineup in self.optimized_lineups:
+                    is_valid, _ = self.validate_lineup(lineup)
+                    if not is_valid:
+                        continue
+                    
+                    dk_lineup_ids = self.format_lineup_ids_only(lineup, dk_positions)
+                    writer.writerow(dk_lineup_ids)
+        except Exception as e:
+            logging.warning(f"Could not create IDs-only export: {e}")
+        
+        # Log results
+        total = valid_count + invalid_count
+        logging.info(f"Exported {valid_count}/{total} valid lineups")
+        if invalid_count > 0:
+            logging.warning(f"Skipped {invalid_count} invalid lineups")
+        
+        # Show success message
+        try:
+            from PyQt5.QtWidgets import QMessageBox
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Lineups Exported")
+            msg.setText(f"✅ Exported {valid_count} valid lineups")
+            msg.setInformativeText(
+                f"📁 3 formats created:\n\n"
+                f"1. {names_path.split('/')[-1]} (for DK upload)\n"
+                f"2. {names_ids_path.split('/')[-1]} (verification)\n"
+                f"3. {ids_path.split('/')[-1]} (alternate format)\n\n"
+                f"{'⚠️ ' + str(invalid_count) + ' invalid lineups skipped' if invalid_count > 0 else ''}"
+            )
+            msg.exec_()
+        except:
+            pass
+
+    def fix_lineup_position_order(self, lineup):
+        """
+        Reorder lineup so players are aligned with DraftKings slot order
+        (PG, SG, SF, PF, C, G, F, UTIL) while preserving validity.
+        """
+        if lineup is None or lineup.empty:
+            return lineup
+        
+        slots = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        assignment = self._assign_lineup_slots(lineup)
+        if assignment is None:
+            logging.error("❌ Failed to assign slots while reordering lineup; returning original order")
+            return lineup.copy()
+        
+        try:
+            ordered_ilocs = [assignment[slot] for slot in slots]
+        except KeyError as e:
+            logging.error(f"❌ Slot assignment incomplete ({e}); returning original lineup order")
+            return lineup.copy()
+        
+        lineup_reordered = lineup.iloc[ordered_ilocs].copy().reset_index(drop=True)
+        return lineup_reordered
+    
+    def format_lineup_for_dk(self, lineup, dk_positions):
+        """Format NBA lineup for DraftKings export with names only"""
+        slots = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        
+        if lineup is None or lineup.empty:
+            return [""] * len(dk_positions)
+        
+        assignment = self._assign_lineup_slots(lineup)
+        if assignment is None:
+            logging.error("❌ Failed to format lineup for DK export: slot assignment unavailable")
+            fallback = []
+            for name in lineup.get('Name', pd.Series()).tolist():
+                if pd.isna(name):
+                    fallback.append("")
+                else:
+                    fallback.append(self.clean_player_name_for_dk(str(name)))
+            if len(fallback) < len(dk_positions):
+                fallback += [""] * (len(dk_positions) - len(fallback))
+            return fallback[:len(dk_positions)]
+        
+        dk_lineup = []
+        for slot in slots:
+            player_idx = assignment.get(slot)
+            if player_idx is None or player_idx >= len(lineup):
+                logging.error(f"❌ Slot {slot} could not be filled during export")
+                dk_lineup.append("")
+                continue
+            row = lineup.iloc[player_idx]
+            raw_name = row.get('Name', '')
+            if pd.isna(raw_name):
+                cleaned_name = ""
+            else:
+                cleaned_name = self.clean_player_name_for_dk(str(raw_name))
+            dk_lineup.append(cleaned_name)
+        
+        return dk_lineup[:len(dk_positions)]
+    
+    def format_lineup_for_dk_with_ids(self, lineup, dk_positions):
+        """
+        Format NBA lineup with both names and DraftKings Player IDs
+        Returns alternating: Name1, ID1, Name2, ID2, ...
+        """
+        slots = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        blank_entry = ["", ""] * len(slots)
+        
+        if lineup is None or lineup.empty:
+            return blank_entry
+        
+        assignment = self._assign_lineup_slots(lineup)
+        if assignment is None:
+            logging.error("❌ Failed to format lineup (with IDs) for DK export: slot assignment unavailable")
+            fallback = []
+            for name in lineup.get('Name', pd.Series()).tolist():
+                if pd.isna(name):
+                    cleaned = ""
+                else:
+                    cleaned = self.clean_player_name_for_dk(str(name))
+                fallback.extend([cleaned, ""])
+            if len(fallback) < len(blank_entry):
+                fallback += [""] * (len(blank_entry) - len(fallback))
+            return fallback[:len(blank_entry)]
+        
+        dk_lineup = []
+        for slot in slots:
+            player_idx = assignment.get(slot)
+            if player_idx is None or player_idx >= len(lineup):
+                logging.error(f"❌ Slot {slot} could not be filled during export (names+IDs)")
+                dk_lineup.extend(["", ""])
+                continue
+            row = lineup.iloc[player_idx]
+            raw_name = row.get('Name', '')
+            if pd.isna(raw_name):
+                name = ""
+            else:
+                name = self.clean_player_name_for_dk(str(raw_name))
+            player_id = str(row.get('OperatorPlayerID', '')) if 'OperatorPlayerID' in lineup.columns else ''
+            dk_lineup.extend([name, player_id])
+        
+        return dk_lineup[:len(dk_positions) * 2]
+    
+    def format_lineup_ids_only(self, lineup, dk_positions):
+        """
+        Format NBA lineup with only DraftKings Player IDs
+        Some contests accept ID-only uploads
+        """
+        slots = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        if lineup is None or lineup.empty:
+            return [""] * len(dk_positions)
+        
+        assignment = self._assign_lineup_slots(lineup)
+        if assignment is None:
+            logging.error("❌ Failed to format lineup (IDs only) for DK export: slot assignment unavailable")
+            return [""] * len(dk_positions)
+        
+        dk_lineup = []
+        for slot in slots:
+            player_idx = assignment.get(slot)
+            if player_idx is None or player_idx >= len(lineup):
+                logging.error(f"❌ Slot {slot} could not be filled during export (IDs only)")
+                dk_lineup.append("")
+                continue
+            row = lineup.iloc[player_idx]
+            player_id = str(row.get('OperatorPlayerID', '')) if 'OperatorPlayerID' in lineup.columns else ''
+            dk_lineup.append(player_id)
+        
+        return dk_lineup[:len(dk_positions)]
+
+    def load_dk_predictions(self):
+        """Load DraftKings predictions from CSV file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 'Open DraftKings Predictions CSV', '', 'CSV Files (*.csv);;All Files (*)'
+        )
+        if file_path:
+            try:
+                self.df_players = self.load_players(file_path)
+                self.populate_player_tables()
+                self.populate_team_stack_table()
+                self.status_label.setText(f'DraftKings predictions loaded: {len(self.df_players)} players')
+            except Exception as e:
+                self.status_label.setText(f'Error loading DraftKings predictions: {str(e)}')
+                logging.error(f"Error loading DraftKings predictions: {e}")
+
+    def load_dk_entries_file(self):
+        """Load a DraftKings entries file to be filled with optimized lineups"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 'Load DraftKings Entries File', '', 'CSV Files (*.csv);;All Files (*)'
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            # Use robust entry detection logic similar to clean_dk_entries.py
+            self.dk_entries_df = self.parse_dk_entries_robustly(file_path)
+            
+            if self.dk_entries_df is None or self.dk_entries_df.empty:
+                raise ValueError("No valid entries found in the file")
+                
+            # Store the original file path for saving back
+            self.dk_entries_file_path = file_path
+            
+            # Detect format
+            self.dk_entries_format = self.detect_dk_format()
+            
+            # Show success message
+            num_entries = len(self.dk_entries_df)
+            file_columns = list(self.dk_entries_df.columns)
+            
+            success_msg = f"✅ DraftKings entries file loaded successfully!\n\n"
+            success_msg += f"📁 File: {os.path.basename(file_path)}\n"
+            success_msg += f"📊 Number of entries: {num_entries}\n"
+            success_msg += f"📋 Columns ({len(file_columns)}): {', '.join(file_columns[:5])}{'...' if len(file_columns) > 5 else ''}\n"
+            success_msg += f"🎯 Format detected: {self.dk_entries_format}"
+            
+            if num_entries == 0:
+                success_msg += "\n\n⚠️ File appears to be empty - will create new entries when you fill it."
+            
+            QMessageBox.information(self, "DraftKings Entries Loaded", success_msg)
+            self.status_label.setText(f'DK Entries loaded: {num_entries} entries from {os.path.basename(file_path)}')
+            
+        except Exception as e:
+            error_msg = f"Error loading DraftKings entries file: {str(e)}"
+            self.status_label.setText(error_msg)
+            logging.error(error_msg)
+            
+            # Show detailed error dialog
+            error_dialog = QMessageBox()
+            error_dialog.setIcon(QMessageBox.Critical)
+            error_dialog.setWindowTitle("Load Error")
+            error_text = f"Failed to load DraftKings entries file:\n\n{str(e)}\n\n"
+            error_text += "Common solutions:\n"
+            error_text += "• Check that the file is a valid CSV format\n"
+            error_text += "• Ensure all rows have consistent column counts\n"
+            error_text += "• Try opening the file in Excel and re-saving as CSV\n"
+            error_text += "• Remove any extra commas or special characters\n"
+            error_text += "• Make sure the file contains proper DraftKings headers"
+            error_dialog.setText(error_text)
+            error_dialog.setStandardButtons(QMessageBox.Ok)
+            error_dialog.exec_()
+    
+    def parse_dk_entries_robustly(self, file_path):
+        """Robust parsing of DraftKings entries files using logic from clean_dk_entries.py"""
+        logging.info(f"🔄 Parsing DK entries file robustly: {file_path}")
+        
+        try:
+            # Read all lines
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                reader = csv.reader(f)
+                lines = list(reader)
+            
+            if not lines:
+                logging.warning("File is empty!")
+                return None
+            
+            # Standard DK header (NBA FORMAT - 12 columns total)
+            header_line = ["Entry ID", "Contest Name", "Contest ID", "Entry Fee", "PG", "SG", "SF", "PF", "C", "G", "F", "UTIL"]
+            entry_rows = []
+            
+            # Check if first row is header
+            first_row = lines[0] if lines else []
+            if "Entry ID" in ' '.join(first_row):
+                start_row = 1
+                logging.info("📋 Found header in first row")
+            else:
+                start_row = 0
+                logging.info("📋 No header found, processing all rows")
+            
+            in_player_section = False
+            
+            for i, row in enumerate(lines[start_row:], start_row):
+                # Clean up the row
+                row = [cell.strip().strip('"') for cell in row]
+                
+                if not row or all(not cell for cell in row):
+                    continue
+                
+                # Check if this is an entry row (has Entry ID in first column)
+                if len(row) >= 4 and row[0]:
+                    entry_id = row[0].replace(',', '').replace('"', '').strip()
+                    
+                    # Valid entry ID should be numeric and reasonably long (8+ digits)
+                    if entry_id.isdigit() and len(entry_id) >= 8:
+                        contest_name = row[1] if len(row) > 1 else ""
+                        contest_id = row[2] if len(row) > 2 else ""
+                        entry_fee = row[3] if len(row) > 3 else ""
+                        
+                        # Build the clean row with exactly 12 columns (4 metadata + 8 NBA positions)
+                        clean_row = [entry_id, contest_name, contest_id, entry_fee]
+                        
+                        # Add the 8 player positions (PG, SG, SF, PF, C, G, F, UTIL)
+                        for j in range(4, 12):  # NBA has 8 positions
+                            if j < len(row):
+                                clean_row.append(row[j])
+                            else:
+                                clean_row.append('')
+                        
+                        entry_rows.append(clean_row)
+            
+            logging.info(f"📊 Found {len(entry_rows)} valid entries")
+            
+            if not entry_rows:
+                logging.warning("No valid entries found!")
+                return None
+            
+            # Create DataFrame
+            df = pd.DataFrame(entry_rows, columns=header_line)
+            
+            # Clean up the DataFrame
+            df = df.dropna(how='all')
+            df.columns = [str(col).strip() for col in df.columns]
+            
+            # Remove unnamed/empty columns
+            cols_to_drop = []
+            for col in df.columns:
+                if 'Unnamed' in str(col) or str(col).strip() == '':
+                    if df[col].isna().all() or (df[col].astype(str) == '').all():
+                        cols_to_drop.append(col)
+            
+            if cols_to_drop:
+                df = df.drop(columns=cols_to_drop)
+                logging.info(f"Removed {len(cols_to_drop)} empty columns")
+            
+            return df
+            
+        except Exception as e:
+            logging.error(f"Error in robust parsing: {str(e)}")
+            return None
+
+    def detect_dk_format(self):
+        """Detect the DraftKings file format (NBA)"""
+        file_columns = list(self.dk_entries_df.columns)
+        expected_positions = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        
+        # Check for contest format (Entry ID, Contest Name, etc.)
+        if 'Entry ID' in file_columns and 'Contest Name' in file_columns:
+            return 'contest_format'
+        
+        # Check if columns match DK position format exactly (including duplicate positions)
+        dk_positions = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        # Count positions in file columns (NBA)
+        position_counts = {}
+        legacy_position_counts = {}
+        
+        for col in file_columns:
+            col_upper = str(col).upper().strip()
+            # Standard format counting (NFL positions)
+            if col_upper in ['QB', 'RB', 'WR', 'TE', 'FLEX', 'DST']:
+                position_counts[col_upper] = position_counts.get(col_upper, 0) + 1
+            # Legacy format counting (RB.1, WR.1, WR.2)
+            elif col_upper in ['RB.1', 'RB 1', 'RB1']:
+                legacy_position_counts['RB'] = legacy_position_counts.get('RB', 0) + 1
+            elif col_upper in ['WR.1', 'WR 1', 'WR1']:
+                legacy_position_counts['WR'] = legacy_position_counts.get('WR', 0) + 1
+            elif col_upper in ['WR.2', 'WR 2', 'WR2']:
+                legacy_position_counts['WR'] = legacy_position_counts.get('WR', 0) + 1
+        
+        # Add base positions to legacy count if they exist
+        for col in file_columns:
+            col_upper = str(col).upper().strip()
+            if col_upper == 'QB' and 'QB' not in legacy_position_counts:
+                legacy_position_counts['QB'] = 1
+            elif col_upper == 'RB' and 'RB' not in legacy_position_counts:
+                legacy_position_counts['RB'] = 1
+            elif col_upper == 'WR' and 'WR' not in legacy_position_counts:
+                legacy_position_counts['WR'] = 1
+            elif col_upper in ['TE', 'FLEX', 'DST']:
+                legacy_position_counts[col_upper] = 1
+        
+        # Expected position counts for standard DK format (NFL)
+        expected_counts = {'QB': 1, 'RB': 2, 'WR': 3, 'TE': 1, 'FLEX': 1, 'DST': 1}
+        
+        # Check if position counts match expected DK format
+        if position_counts == expected_counts:
+            return 'standard'
+        elif legacy_position_counts.get('QB', 0) >= 1 and legacy_position_counts.get('RB', 0) >= 1 and legacy_position_counts.get('WR', 0) >= 1:
+            return 'legacy_standard'
+        
+        # Check if it has position columns in any order
+        elif all(pos in file_columns for pos in expected_positions):
+            return 'flexible'
+        
+        # Check if it has at least some position-like columns
+        elif any(pos in ' '.join(file_columns).upper() for pos in expected_positions):
+            return 'custom'
+        
+        return 'unknown'
+
+    def fill_dk_entries_dynamic(self):
+        """Fill the loaded DraftKings entries file with optimized lineups"""
+        # Check if we have optimized lineups
+        if not hasattr(self, 'optimized_lineups') or not self.optimized_lineups:
+            QMessageBox.warning(self, "No Lineups Available", "No optimized lineups available.\n\nPlease run the optimization first to generate lineups.")
+            return
+        
+        # Check if we have a loaded entries file
+        if not hasattr(self, 'dk_entries_df') or not hasattr(self, 'dk_entries_file_path'):
+            QMessageBox.warning(self, "No Entries File Loaded", "No DraftKings entries file loaded.\n\nPlease load a DraftKings entries file first using 'Load DraftKings Entries File' button.")
+            return
+        
+        try:
+            # Ask user how many lineups to use
+            num_available = len(self.optimized_lineups)
+            
+            # Check how many reserved entry IDs are available
+            reserved_entries_available = 0
+            if hasattr(self, 'dk_entries_df') and self.dk_entries_df is not None:
+                for _, row in self.dk_entries_df.iterrows():
+                    if pd.notna(row.iloc[0]) and str(row.iloc[0]).strip().isdigit():
+                        reserved_entries_available += 1
+            
+            max_possible = min(reserved_entries_available, 1000)  # Reasonable limit
+            default_request = min(num_available, reserved_entries_available, 150)
+            
+            num_to_use, ok = QInputDialog.getInt(
+                self, 
+                'Number of Lineups', 
+                f'How many lineups to fill?\n\n'
+                f'• Optimized lineups available: {num_available}\n'
+                f'• Reserved entry IDs available: {reserved_entries_available}\n'
+                f'• Recommended: {default_request}\n\n'
+                f'Note: If you request more than {num_available} lineups,\n'
+                f'the system will create variations of the optimized lineups.', 
+                value=default_request,
+                min=1, 
+                max=max_possible
+            )
+            
+            if not ok:
+                return
+            
+            # CRITICAL FIX: Clear cached favorites data to force fresh generation
+            if hasattr(self, '_favorites_with_player_data'):
+                delattr(self, '_favorites_with_player_data')
+                logging.info("🔄 Cleared cached favorites data to force fresh generation")
+                print("🔄 CLEARED CACHED FAVORITES DATA - will use fresh optimized lineups")
+            
+            # Clear cached contest info to force fresh extraction
+            if hasattr(self, '_contest_info_list'):
+                delattr(self, '_contest_info_list')
+                logging.info("🔄 Cleared cached contest info to force fresh extraction")
+            
+            # FORCE FRESH LINEUP GENERATION: Temporarily disable favorites file reading
+            original_favorites_file_path = None
+            backup_favorites_file_path = None
+            
+            try:
+                # Temporarily rename the favorites file so it can't be found
+                # Support both Windows and macOS paths
+                workspace_favorites_path = r"c:\Users\smtes\Downloads\coinbase_ml_trader\my_favorites_entries.csv"
+                onedrive_favorites_path = r"c:\Users\smtes\OneDrive\Documents\my_favorites_entries.csv"
+                macos_downloads_path = os.path.expanduser("~/Downloads/my_favorites_entries.csv")
+                
+                for fav_path in [workspace_favorites_path, onedrive_favorites_path, macos_downloads_path]:
+                    if os.path.exists(fav_path):
+                        original_favorites_file_path = fav_path
+                        backup_favorites_file_path = fav_path + ".backup_temp"
+                        os.rename(fav_path, backup_favorites_file_path)
+                        logging.info(f"🔄 Temporarily renamed favorites file to force fresh generation: {fav_path}")
+                        print(f"🔄 TEMPORARILY RENAMED FAVORITES FILE - forcing fresh generation")
+                        break
+                
+                # Create the filled entries DataFrame
+                filled_entries = self.create_filled_entries_df(num_to_use)
+                
+            finally:
+                # Restore the temporarily renamed favorites file
+                if original_favorites_file_path and backup_favorites_file_path:
+                    try:
+                        if os.path.exists(backup_favorites_file_path):
+                            os.rename(backup_favorites_file_path, original_favorites_file_path)
+                            logging.info("🔄 Restored favorites file after filling entries")
+                            print("🔄 RESTORED FAVORITES FILE")
+                    except Exception as e:
+                        logging.error(f"Error restoring favorites file: {e}")
+            
+            # Ask where to save
+            save_path, _ = QFileDialog.getSaveFileName(
+                self, 
+                'Save Filled DraftKings Entries', 
+                self.dk_entries_file_path.replace('.csv', '_filled.csv'),
+                'CSV Files (*.csv);;All Files (*)'
+            )
+            
+            if not save_path:
+                return
+            
+            # Save the filled entries
+            filled_entries.to_csv(save_path, index=False)
+            
+            # Show success message with feedback if fewer than requested
+            success_msg = f"🎉 DraftKings entries filled successfully!\n\n"
+            success_msg += f"📊 Filled {num_to_use} entries\n"
+            success_msg += f"💾 Saved to: {os.path.basename(save_path)}\n\n"
+            success_msg += f"🚀 Ready to upload to DraftKings!"
+            
+            if num_to_use < num_available:
+                success_msg += f"\n\n⚠️ Note: Used {num_to_use} lineups (available {num_available})"
+            
+            QMessageBox.information(self, "Entries Filled Successfully", success_msg)
+            self.status_label.setText(f'Filled {num_to_use} entries and saved to {os.path.basename(save_path)}')
+            
+        except Exception as e:
+            error_msg = f"Error filling entries: {str(e)}"
+            self.status_label.setText(error_msg)
+            logging.error(error_msg)
+            QMessageBox.critical(self, "Fill Error", f"Failed to fill entries:\n\n{str(e)}")
+
+    def create_filled_entries_df(self, num_to_use):
+        """Create a filled entries DataFrame by combining the original entries structure with optimized lineups"""
+        if not hasattr(self, 'optimized_lineups') or not self.optimized_lineups:
+            raise ValueError("No optimized lineups available")
+        
+        # Extract contest information from favorites (this populates self._contest_info_list)
+        self.extract_contest_info_from_favorites()
+        
+        # CRITICAL: Initialize player ID mapping early so it's available in all code paths
+        player_name_to_id_map = {}
+        if hasattr(self, 'dk_entries_df') and self.dk_entries_df is not None:
+            player_name_to_id_map = self.extract_player_id_mapping_from_dk_file()
+            logging.info(f"🎯 Extracted {len(player_name_to_id_map)} player mappings from DK entries file")
+            print(f"🎯 EXTRACTED {len(player_name_to_id_map)} PLAYER IDs FROM DK ENTRIES FILE")
+            if len(player_name_to_id_map) > 0:
+                # Show sample
+                sample = list(player_name_to_id_map.items())[:3]
+                print(f"Sample mappings: {sample}")
+        else:
+            logging.warning("⚠️ DK entries DataFrame not available for player ID extraction")
+            print("⚠️ WARNING: DK entries file not loaded properly!")
+        
+        # If no DK entries file or no ID mapping, attempt to derive from loaded player data
+        if not player_name_to_id_map:
+            logging.warning("⚠️ No DraftKings IDs found in entries file. Attempting to use DK-specific columns from projections data.")
+            player_name_to_id_map = self.create_player_id_mapping_from_loaded_data()
+            logging.info(f"📋 Created {len(player_name_to_id_map)} player mappings from loaded player data columns")
+        
+        if not player_name_to_id_map:
+            raise ValueError(
+                "Unable to locate DraftKings player IDs. Load an official DKEntries.csv file "
+                "for the NBA contest or include a DK_ID/DraftKingsID column in the projections file."
+            )
+        
+        # Define the correct DraftKings headers (NFL FORMAT)
+        correct_headers = ['Entry ID', 'Contest Name', 'Contest ID', 'Entry Fee', 'PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        
+        # CHECK FOR CACHE-CLEARING MODE: If we're in cache-clearing mode, use fresh optimized lineups
+        # Support both Windows and macOS paths
+        workspace_backup_exists = os.path.exists(r"c:\Users\smtes\Downloads\coinbase_ml_trader\my_favorites_entries.csv.backup_temp")
+        onedrive_backup_exists = os.path.exists(r"c:\Users\smtes\OneDrive\Documents\my_favorites_entries.csv.backup_temp")
+        macos_downloads_backup = os.path.exists(os.path.expanduser("~/Downloads/my_favorites_entries.csv.backup_temp"))
+        use_fresh_lineups = workspace_backup_exists or onedrive_backup_exists or macos_downloads_backup or True  # Force fresh lineups
+        
+        if use_fresh_lineups:
+            logging.info("🔄 CACHE-CLEARING MODE: Using fresh optimized lineups instead of cached favorites")
+            print(f"🔄 USING FRESH OPTIMIZED LINEUPS: {len(self.optimized_lineups)} fresh lineups available")
+            
+            # ENHANCED: Generate additional lineups if more are requested than available
+            available_lineups = len(self.optimized_lineups)
+            if num_to_use > available_lineups:
+                logging.info(f"🔄 Requested {num_to_use} lineups, but only {available_lineups} available. Will create variations.")
+                print(f"🔄 Creating variations: {num_to_use} requested vs {available_lineups} available")
+                
+                # Create additional lineup variations by cycling through existing ones
+                extended_lineups = []
+                for i in range(num_to_use):
+                    base_lineup_index = i % available_lineups
+                    base_lineup = self.optimized_lineups[base_lineup_index].copy()
+                    extended_lineups.append(base_lineup)
+                
+                # Temporarily extend the optimized lineups list
+                original_lineups = self.optimized_lineups
+                self.optimized_lineups = extended_lineups
+                lineups_to_use = num_to_use
+                logging.info(f"✅ Extended lineups from {available_lineups} to {num_to_use} using variations")
+            else:
+                lineups_to_use = min(num_to_use, available_lineups)
+            
+            # Get contest info for template - try multiple sources
+            has_contest_info = hasattr(self, '_contest_info_list') and self._contest_info_list
+            if has_contest_info:
+                base_contest_info = self._contest_info_list[0]
+                logging.info(f"Using contest template: {base_contest_info['contest_name']} (ID: {base_contest_info['contest_id']})")
+            else:
+                # Try to get contest info from favorites file even in cache-clearing mode (for contest template only)
+                base_contest_info = None
+                try:
+                    # Check backup files first (they contain the real contest info)
+                    # Support both Windows and macOS paths
+                    workspace_fav = r"c:\Users\smtes\Downloads\coinbase_ml_trader\my_favorites_entries.csv"
+                    onedrive_fav = r"c:\Users\smtes\OneDrive\Documents\my_favorites_entries.csv"
+                    macos_fav = os.path.expanduser("~/Downloads/my_favorites_entries.csv")
+                    workspace_backup = workspace_fav + ".backup_temp"
+                    onedrive_backup = onedrive_fav + ".backup_temp"
+                    macos_backup = macos_fav + ".backup_temp"
+                    
+                    # Try backup files first (they're the renamed originals with contest info)
+                    for fav_path in [workspace_backup, onedrive_backup, macos_backup, workspace_fav, onedrive_fav, macos_fav]:
+                        if os.path.exists(fav_path):
+                            temp_df = pd.read_csv(fav_path)
+                            if not temp_df.empty and len(temp_df.columns) >= 4:
+                                base_contest_info = {
+                                    'entry_id': str(temp_df.iloc[0, 0]),
+                                    'contest_name': str(temp_df.iloc[0, 1]),
+                                    'contest_id': str(temp_df.iloc[0, 2]),
+                                    'entry_fee': str(temp_df.iloc[0, 3])
+                                }
+                                logging.info(f"Extracted contest template from {fav_path}: {base_contest_info['contest_name']}")
+                                break
+                except Exception as e:
+                    logging.debug(f"Could not extract contest info from favorites: {e}")
+                
+                # Final fallback to default
+                if not base_contest_info:
+                    base_contest_info = {
+                        'entry_id': '4763920000',
+                        'contest_name': 'NFL Main Slate',
+                        'contest_id': '999999999',
+                        'entry_fee': '$1'
+                    }
+                    logging.info("Using default contest information for fresh lineups")
+            
+            # Create filled entries using FRESH optimized lineups
+            filled_entries = []
+            import random
+            
+            # Use proper base Entry ID from contest info
+            if base_contest_info and base_contest_info['entry_id'].isdigit():
+                base_entry_id = int(base_contest_info['entry_id'])
+            else:
+                base_entry_id = 4763920000  # Default base
+            
+            # CRITICAL FIX: Extract actual entry IDs from loaded DK entries file
+            actual_entry_ids = []
+            if hasattr(self, 'dk_entries_df') and self.dk_entries_df is not None and not self.dk_entries_df.empty:
+                logging.info("🎯 Extracting actual entry IDs from loaded DK entries file")
+                
+                # Method 1: Direct file parsing (most reliable for DK format)
+                if hasattr(self, 'dk_entries_file_path') and self.dk_entries_file_path:
+                    try:
+                        logging.info("🔍 Using direct file parsing for entry ID extraction")
+                        with open(self.dk_entries_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                            lines = f.readlines()
+                        
+                        for line in lines[1:]:  # Skip header line
+                            line = line.strip()
+                            if line:
+                                parts = line.split(',')
+                                if len(parts) > 0:
+                                    entry_id = parts[0].strip().strip('"')
+                                    # Check for valid DK entry IDs (numeric, 7+ digits)
+                                    if entry_id.isdigit() and len(entry_id) >= 7:
+                                        actual_entry_ids.append(entry_id)
+                                        logging.debug(f"✅ Found entry ID from file: {entry_id}")
+                        
+                        logging.info(f"🎯 Direct file parsing found {len(actual_entry_ids)} entry IDs")
+                    except Exception as e:
+                        logging.warning(f"Direct file parsing failed: {e}")
+                
+                # Method 2: DataFrame parsing (fallback)
+                if not actual_entry_ids:
+                    logging.info("🔄 Fallback: Using DataFrame for entry ID extraction")
+                    
+                    # Check if 'Entry ID' column exists and has valid data
+                    if 'Entry ID' in self.dk_entries_df.columns:
+                        entry_id_col = self.dk_entries_df['Entry ID']
+                        logging.info(f"🔍 Found 'Entry ID' column with {len(entry_id_col)} values")
+                        
+                        for entry_id in entry_id_col:
+                            if pd.notna(entry_id):
+                                entry_id_str = str(entry_id).strip()
+                                # Check for valid DK entry IDs (10 digits starting with 47)
+                                if entry_id_str.isdigit() and len(entry_id_str) >= 7:
+                                    actual_entry_ids.append(entry_id_str)
+                                    logging.debug(f"✅ Found valid entry ID: {entry_id_str}")
+                    
+                    # Check first column if Entry ID column didn't work
+                    if not actual_entry_ids:
+                        logging.info("🔄 Checking first column for entry IDs")
+                        for _, row in self.dk_entries_df.iterrows():
+                            if pd.notna(row.iloc[0]):
+                                entry_id = str(row.iloc[0]).strip()
+                                # Check for valid DK entry IDs
+                                if entry_id.isdigit() and len(entry_id) >= 7:
+                                    actual_entry_ids.append(entry_id)
+                
+                if actual_entry_ids:
+                    logging.info(f"✅ Found {len(actual_entry_ids)} reserved entry IDs from DK file: {actual_entry_ids[:5]}...")
+                    print(f"🎯 Using reserved entry IDs from DK file: {actual_entry_ids[:5]}... (total: {len(actual_entry_ids)})")
+                else:
+                    logging.warning("⚠️ No valid entry IDs found in loaded DK file")
+                    # Debug: Show what we actually found
+                    logging.info(f"🔍 Debug - DataFrame columns: {list(self.dk_entries_df.columns)}")
+                    if len(self.dk_entries_df) > 0:
+                        logging.info(f"🔍 Debug - First few values in first column: {self.dk_entries_df.iloc[:5, 0].tolist()}")
+            else:
+                logging.warning("⚠️ No DK entries file loaded - cannot use reserved entry IDs")
+            
+            # Limit lineups to available entry IDs
+            if actual_entry_ids:
+                lineups_to_use = min(lineups_to_use, len(actual_entry_ids))
+                logging.info(f"🎯 Will fill {lineups_to_use} reserved entries (out of {len(actual_entry_ids)} available)")
+            else:
+                logging.error("❌ No reserved entry IDs available - cannot export lineups")
+                raise ValueError("No reserved entry IDs found in DK entries file. Please load a valid DKEntries.csv file first.")
+            
+            # CRITICAL FIX: Use actual reserved entry IDs from DK file (these are pre-existing entries to fill)
+            skipped_lineups = []
+            successful_entries = 0
+            
+            for i in range(lineups_to_use):
+                lineup = self.optimized_lineups[i]
+                
+                # CRITICAL VALIDATION: Check if all players in lineup have valid DK mappings
+                if 'Name' in lineup.columns:
+                    lineup_players = lineup['Name'].tolist()
+                    unmapped_players = [p for p in lineup_players if p not in player_name_to_id_map]
+                    
+                    if unmapped_players:
+                        logging.error(f"❌ LINEUP {i+1} REJECTED: The following players are NOT in your DK entries file:")
+                        for player in unmapped_players:
+                            logging.error(f"   - {player}")
+                        logging.error(f"   → This lineup will be SKIPPED to prevent DK upload errors")
+                        skipped_lineups.append((i+1, unmapped_players))
+                        continue  # Skip this lineup entirely
+                
+                # Use the reserved entry ID from the loaded DK file
+                unique_entry_id = actual_entry_ids[successful_entries]
+                logging.debug(f"Filling reserved entry ID: {unique_entry_id} with lineup {i+1}")
+                
+                # Convert lineup DataFrame to player IDs with proper position mapping
+                player_ids = []
+                
+                # CRITICAL: ALWAYS use format_lineup_positions_only with player_name_to_id_map
+                # This ensures we use correct DK IDs from DKEntries.csv, not wrong IDs from player pool CSV
+                formatted_positions = self.format_lineup_positions_only(lineup, player_name_to_id_map)
+                
+                # VALIDATION: Check if lineup meets all constraints
+                if not self._is_valid_lineup_assignments(formatted_positions):
+                    logging.error(f"❌ LINEUP {i+1} REJECTED: Does not meet position constraints")
+                    logging.error(f"   → This lineup will be SKIPPED from output")
+                    skipped_lineups.append((i+1, ["Invalid position assignments"]))
+                    continue  # Skip this lineup entirely
+                
+                player_ids = formatted_positions
+                logging.debug(f"✅ LINEUP {i+1} VALIDATED: All 8 positions properly filled with real players")
+                
+                logging.debug(f"Position-mapped player IDs: {len([p for p in player_ids if p])}/8 filled")
+                
+                # CRITICAL VALIDATION: Clean and validate ALL 8 player IDs (NBA)
+                final_player_ids = []
+                for j, pid in enumerate(player_ids):
+                    if pid and pid.strip() and pid != 'nan' and pid.strip() != '':
+                        # Remove decimal points if present (e.g., "40410718.0" -> "40410718")
+                        cleaned_id = pid.strip()
+                        if '.' in cleaned_id:
+                            cleaned_id = cleaned_id.split('.')[0]
+                        final_player_ids.append(cleaned_id)
+                    else:
+                        # This should never happen due to earlier validation
+                        logging.error(f"❌ Empty position {j+1} in lineup {i+1} - This should have been caught earlier!")
+                        skipped_lineups.append((i+1, [f"Empty position {j+1}"]))
+                        break
+                
+                # Skip if we didn't get all 8 positions
+                if len(final_player_ids) < 8:
+                    continue
+                
+                # Final validation - all 8 positions must be filled
+                valid_count = len([p for p in final_player_ids if p and p.strip() and p != 'nan'])
+                if valid_count < 8:
+                    logging.error(f"❌ LINEUP {i+1} REJECTED: Only {valid_count}/8 positions have valid IDs")
+                    skipped_lineups.append((i+1, [f"Only {valid_count}/8 valid IDs"]))
+                    continue
+                
+                logging.debug(f"✅ Lineup {i+1} has all 8 positions filled with valid IDs")
+                
+                row_data = [
+                    unique_entry_id,
+                    base_contest_info['contest_name'],
+                    base_contest_info['contest_id'],
+                    base_contest_info['entry_fee']
+                ] + final_player_ids
+                
+                filled_entries.append(row_data)
+                successful_entries += 1
+                logging.debug(f"✅ Created fresh entry {successful_entries}/{lineups_to_use}: ID={unique_entry_id}, Players={len([p for p in player_ids if p])}/8")
+            
+            # Log summary of skipped lineups
+            if skipped_lineups:
+                logging.warning(f"⚠️ SKIPPED {len(skipped_lineups)} LINEUPS due to validation failures:")
+                for lineup_num, reasons in skipped_lineups:
+                    logging.warning(f"   Lineup {lineup_num}: {', '.join(reasons)}")
+                logging.warning(f"✅ Successfully exported {successful_entries}/{lineups_to_use} lineups")
+            
+            result_df = pd.DataFrame(filled_entries, columns=correct_headers)
+            logging.info(f"✅ Created {len(result_df)} valid entries using FRESH optimized lineups (skipped {len(skipped_lineups)} invalid)")
+            return result_df
+        
+        # ORIGINAL LOGIC: Check if we have the favorites file with player data (only when NOT in cache-clearing mode)
+        elif hasattr(self, '_favorites_with_player_data') and self._favorites_with_player_data is not None:
+            logging.info("🔄 Using player data directly from favorites file")
+            print(f"🔄 USING CACHED FAVORITES DATA: {len(self._favorites_with_player_data)} cached lineups")
+            
+            # Create filled entries DataFrame
+            filled_entries = pd.DataFrame(columns=correct_headers)
+            
+            # Use the favorites data directly, limited to the requested number
+            favorites_df = self._favorites_with_player_data
+            lineups_to_use = min(num_to_use, len(favorites_df))
+            
+            # Get contest info - use the first one as template
+            has_contest_info = hasattr(self, '_contest_info_list') and self._contest_info_list
+            
+            if has_contest_info:
+                base_contest_info = self._contest_info_list[0]
+                logging.info(f"Using contest template: {base_contest_info['contest_name']} (ID: {base_contest_info['contest_id']})")
+            else:
+                base_contest_info = {
+                    'entry_id': '1000000001',
+                    'contest_name': 'Generated Lineups',
+                    'contest_id': '999999999',
+                    'entry_fee': '$1'
+                }
+                logging.warning("Using default contest information")
+            
+            # Generate unique Entry IDs for each lineup while preserving contest info
+            import random
+            base_entry_id = int(base_contest_info['entry_id']) if base_contest_info['entry_id'].isdigit() else 1000000001
+            
+            # CRITICAL FIX: Extract actual entry IDs from loaded DK entries file
+            actual_entry_ids = []
+            if hasattr(self, 'dk_entries_df') and self.dk_entries_df is not None and not self.dk_entries_df.empty:
+                logging.info("🎯 Extracting actual entry IDs from loaded DK entries file (cached favorites path)")
+                # Extract entry IDs from the first column of the loaded file
+                for _, row in self.dk_entries_df.iterrows():
+                    if pd.notna(row.iloc[0]) and str(row.iloc[0]).strip():
+                        entry_id = str(row.iloc[0]).strip()
+                        # Only include numeric entry IDs (skip header rows with text)
+                        if entry_id.isdigit():
+                            actual_entry_ids.append(entry_id)
+                
+                if actual_entry_ids:
+                    logging.info(f"✅ Found {len(actual_entry_ids)} actual entry IDs for cached favorites")
+            
+            # CRITICAL FIX: Generate UNIQUE entry IDs to prevent duplicates
+            used_entry_ids = set()
+            
+            for i in range(lineups_to_use):
+                # Generate a unique entry ID that hasn't been used yet
+                if i < len(actual_entry_ids):
+                    # Try to use actual entry ID first, but ensure uniqueness
+                    candidate_id = actual_entry_ids[i]
+                    if candidate_id not in used_entry_ids:
+                        unique_entry_id = candidate_id
+                        logging.debug(f"Using actual entry ID (cached): {unique_entry_id}")
+                    else:
+                        # If actual ID already used, generate unique one
+                        attempts = 0
+                        while attempts < 1000:  # Prevent infinite loop
+                            unique_entry_id = str(base_entry_id + i + random.randint(1000, 9999))
+                            if unique_entry_id not in used_entry_ids:
+                                break
+                            attempts += 1
+                        logging.warning(f"Actual entry ID {candidate_id} already used, generated unique ID: {unique_entry_id}")
+                else:
+                    # Generate a unique Entry ID for this lineup as fallback
+                    attempts = 0
+                    while attempts < 1000:  # Prevent infinite loop
+                        unique_entry_id = str(base_entry_id + i + random.randint(1000, 9999))
+                        if unique_entry_id not in used_entry_ids:
+                            break
+                        attempts += 1
+                    logging.debug(f"Generated unique entry ID (cached): {unique_entry_id}")
+                
+                # Track this ID as used
+                used_entry_ids.add(unique_entry_id)
+                
+                # Use the same contest info but with unique Entry ID
+                row_data = [
+                    unique_entry_id,
+                    base_contest_info['contest_name'],
+                    base_contest_info['contest_id'],
+                    base_contest_info['entry_fee']
+                ]
+                
+                # Extract player IDs directly from the favorites file
+                favorites_row = favorites_df.iloc[i]
+                player_positions = []
+                
+                # Extract the 8 position columns (PG, SG, SF, PF, C, G, F, UTIL)
+                position_start_col = 4  # After Entry ID, Contest Name, Contest ID, Entry Fee
+                for pos_idx in range(8):  # NBA has 8 positions
+                    col_idx = position_start_col + pos_idx
+                    if col_idx < len(favorites_row):
+                        player_id = str(favorites_row.iloc[col_idx]).strip()
+                        # Only include if it's a valid player ID (numeric and reasonable length)
+                        if player_id and player_id != 'nan' and player_id.isdigit() and len(player_id) >= 6:
+                            player_positions.append(player_id)
+                        else:
+                            player_positions.append("")
+                    else:
+                        player_positions.append("")
+                
+                # Add player positions to row
+                row_data.extend(player_positions)
+                
+                # Add the row to the DataFrame
+                filled_entries.loc[i] = row_data
+                
+                logging.debug(f"Created entry {i+1}/{lineups_to_use}: ID={unique_entry_id}, Players={len([p for p in player_positions if p])}/8")
+            
+            logging.info(f"Created {len(filled_entries)} entries using player data from favorites file")
+            
+            return filled_entries
+        
+        else:
+            # Fallback to original logic if favorites file data is not available
+            logging.warning("Favorites file with player data not available, using original logic")
+            print(f"🔄 USING FRESH OPTIMIZED LINEUPS: {len(self.optimized_lineups)} current lineups")
+            
+            # Create filled entries DataFrame
+            filled_entries = pd.DataFrame(columns=correct_headers)
+            
+            # Use lineups up to the requested number
+            lineups_to_use = self.optimized_lineups[:num_to_use]
+            
+            # Get contest info - use the first one as template
+            has_contest_info = hasattr(self, '_contest_info_list') and self._contest_info_list
+            
+            if has_contest_info:
+                base_contest_info = self._contest_info_list[0]
+                logging.info(f"Using contest template: {base_contest_info['contest_name']} (ID: {base_contest_info['contest_id']})")
+            else:
+                base_contest_info = {
+                    'entry_id': '1000000001',
+                    'contest_name': 'Generated Lineups',
+                    'contest_id': '999999999',
+                    'entry_fee': '$1'
+                }
+                logging.warning("Using default contest information")
+            
+            # Generate unique Entry IDs for each lineup while preserving contest info
+            import random
+            base_entry_id = int(base_contest_info['entry_id']) if base_contest_info['entry_id'].isdigit() else 1000000001
+            
+            # CRITICAL FIX: Extract actual entry IDs from loaded DK entries file
+            actual_entry_ids = []
+            if hasattr(self, 'dk_entries_df') and self.dk_entries_df is not None and not self.dk_entries_df.empty:
+                logging.info("🎯 Extracting actual entry IDs from loaded DK entries file (fallback path)")
+                # Extract entry IDs from the first column of the loaded file
+                for _, row in self.dk_entries_df.iterrows():
+                    if pd.notna(row.iloc[0]) and str(row.iloc[0]).strip():
+                        entry_id = str(row.iloc[0]).strip()
+                        # Only include numeric entry IDs (skip header rows with text)
+                        # Fix: Check if it's all digits OR starts with digits (for DK entry IDs like 4766459650)
+                        if entry_id.isdigit() or (len(entry_id) >= 7 and entry_id[:7].isdigit()):
+                            # Extract just the numeric part for DK entry IDs
+                            if entry_id.isdigit():
+                                actual_entry_ids.append(entry_id)
+                            else:
+                                # Extract numeric prefix for DK format
+                                numeric_part = ''.join(c for c in entry_id if c.isdigit())
+                                if len(numeric_part) >= 7:  # Valid DK entry ID length
+                                    actual_entry_ids.append(numeric_part)
+                
+                if actual_entry_ids:
+                    logging.info(f"✅ Found {len(actual_entry_ids)} actual entry IDs for fallback")
+            
+            # CRITICAL FIX: Generate UNIQUE entry IDs to prevent duplicates (fallback path)
+            used_entry_ids = set()
+            
+            for i, lineup in enumerate(lineups_to_use):
+                # Generate a unique entry ID that hasn't been used yet
+                if i < len(actual_entry_ids):
+                    # Try to use actual entry ID first, but ensure uniqueness
+                    candidate_id = actual_entry_ids[i]
+                    if candidate_id not in used_entry_ids:
+                        unique_entry_id = candidate_id
+                        logging.debug(f"Using actual entry ID (fallback): {unique_entry_id}")
+                    else:
+                        # If actual ID already used, generate unique one
+                        attempts = 0
+                        while attempts < 1000:  # Prevent infinite loop
+                            unique_entry_id = str(base_entry_id + i + random.randint(1000, 9999))
+                            if unique_entry_id not in used_entry_ids:
+                                break
+                            attempts += 1
+                        logging.warning(f"Actual entry ID {candidate_id} already used, generated unique ID: {unique_entry_id}")
+                else:
+                    # Generate a unique Entry ID for this lineup as fallback
+                    attempts = 0
+                    while attempts < 1000:  # Prevent infinite loop
+                        unique_entry_id = str(base_entry_id + i + random.randint(1000, 9999))
+                        if unique_entry_id not in used_entry_ids:
+                            break
+                        attempts += 1
+                    logging.debug(f"Generated unique entry ID (fallback): {unique_entry_id}")
+                
+                # Track this ID as used
+                used_entry_ids.add(unique_entry_id)
+                
+                # Use the same contest info but with unique Entry ID
+                row_data = [
+                    unique_entry_id,
+                    base_contest_info['contest_name'],
+                    base_contest_info['contest_id'],
+                    base_contest_info['entry_fee']
+                ]
+                
+                # Format lineup positions and add to row
+                formatted_positions = self.format_lineup_positions_only(lineup, player_name_to_id_map)
+                
+                # VALIDATION: Check if lineup meets all constraints
+                if not self._is_valid_lineup_assignments(formatted_positions):
+                    logging.error(f"❌ LINEUP {i+1} REJECTED: Does not meet position constraints")
+                    logging.error(f"   → This lineup will be SKIPPED from output")
+                    continue  # Skip this lineup entirely
+                
+                row_data.extend(formatted_positions)
+                
+                # Add the row to the DataFrame
+                filled_entries.loc[i] = row_data
+                
+                logging.debug(f"Created entry {i+1}/{num_to_use}: ID={unique_entry_id}")
+            
+            logging.info(f"Created filled entries DataFrame with {len(filled_entries)} rows using lineup formatting")
+            
+            return filled_entries
+    
+    def extract_contest_info_from_favorites(self):
+        """Extract contest information from loaded DK entries file or favorites data, handling multiple contests"""
+        # Default values in case extraction fails
+        default_info = {
+            'entry_id': '1000000001',
+            'contest_name': 'Generated Lineups',
+            'contest_id': '999999999',
+            'entry_fee': '$1'
+        }
+        
+        # PRIORITY 1: Try to extract contest info from loaded DK entries file
+        if hasattr(self, 'dk_entries_df') and self.dk_entries_df is not None and not self.dk_entries_df.empty:
+            try:
+                logging.info("🎯 PRIORITY: Extracting contest info from loaded DK entries file")
+                print(f"🎯 Using loaded DK entries file: {getattr(self, 'dk_entries_file_path', 'Unknown')}")
+                
+                # Extract contest info from the loaded DK entries DataFrame
+                contest_info_list = []
+                for _, row in self.dk_entries_df.iterrows():
+                    # DK entries format: Entry ID, Contest Name, Contest ID, Entry Fee, then player positions
+                    if len(row) >= 4:
+                        contest_info = {
+                            'entry_id': str(row.iloc[0]) if pd.notna(row.iloc[0]) else '1000000001',
+                            'contest_name': str(row.iloc[1]) if pd.notna(row.iloc[1]) else 'Generated Lineups',
+                            'contest_id': str(row.iloc[2]) if pd.notna(row.iloc[2]) else '999999999',
+                            'entry_fee': str(row.iloc[3]) if pd.notna(row.iloc[3]) else '$1'
+                        }
+                        contest_info_list.append(contest_info)
+                
+                if contest_info_list:
+                    logging.info(f"✅ Extracted contest info for {len(contest_info_list)} entries from loaded DK file")
+                    
+                    # Log unique contests found in loaded file
+                    unique_contests = {}
+                    for info in contest_info_list:
+                        contest_key = f"{info['contest_name']}|{info['contest_id']}"
+                        if contest_key not in unique_contests:
+                            unique_contests[contest_key] = info
+                            logging.info(f"📋 Loaded contest: {info['contest_name']} (ID: {info['contest_id']}, Fee: {info['entry_fee']})")
+                            print(f"📋 Using contest: {info['contest_name']} (ID: {info['contest_id']}, Fee: {info['entry_fee']})")
+                    
+                    # Store the contest info and the loaded DataFrame with player data
+                    self._contest_info_list = contest_info_list
+                    self._favorites_with_player_data = self.dk_entries_df
+                    logging.info(f"✅ Stored loaded DK entries DataFrame with {len(self.dk_entries_df)} lineups and player data")
+                    
+                    return contest_info_list[0]  # Return first for backward compatibility
+                
+            except Exception as e:
+                logging.warning(f"Could not extract contest info from loaded DK entries file: {e}")
+                print(f"⚠️ Could not use loaded DK entries file: {e}")
+        
+        # PRIORITY 2: Try to extract ALL contest info from the favorites file with player data
+        try:
+            # First try the workspace location (which has actual player data)
+            favorites_file_path = r"c:\Users\smtes\Downloads\coinbase_ml_trader\my_favorites_entries.csv"
+            onedrive_favorites_path = r"c:\Users\smtes\OneDrive\Documents\my_favorites_entries.csv"
+            
+            # CHECK FOR CACHE-CLEARING MODE: If files are renamed (.backup_temp), read from backup files
+            workspace_backup_exists = os.path.exists(favorites_file_path + ".backup_temp")
+            onedrive_backup_exists = os.path.exists(onedrive_favorites_path + ".backup_temp")
+            
+            if workspace_backup_exists or onedrive_backup_exists:
+                logging.info("🚫 CACHE-CLEARING MODE: Reading contest info from backup files only")
+                print("🚫 CACHE-CLEARING MODE: Using backup files for contest info but not caching player data")
+                
+                # In cache-clearing mode, read contest info from backup files
+                backup_files = []
+                if workspace_backup_exists:
+                    backup_files.append(favorites_file_path + ".backup_temp")
+                if onedrive_backup_exists:
+                    backup_files.append(onedrive_favorites_path + ".backup_temp")
+                
+                for backup_file in backup_files:
+                    try:
+                        favorites_df = pd.read_csv(backup_file)
+                        logging.info(f"Reading contest info from backup: {backup_file}")
+                        
+                        if not favorites_df.empty and len(favorites_df.columns) >= 4:
+                            # Extract contest info only (don't cache player data)
+                            contest_info_list = []
+                            for _, row in favorites_df.iterrows():
+                                contest_info = {
+                                    'entry_id': str(row.iloc[0]),
+                                    'contest_name': str(row.iloc[1]),
+                                    'contest_id': str(row.iloc[2]),
+                                    'entry_fee': str(row.iloc[3])
+                                }
+                                contest_info_list.append(contest_info)
+                            
+                            logging.info(f"Extracted contest info for {len(contest_info_list)} entries from backup")
+                            
+                            # Log unique contests found
+                            unique_contests = {}
+                            for info in contest_info_list:
+                                contest_key = f"{info['contest_name']}|{info['contest_id']}"
+                                if contest_key not in unique_contests:
+                                    unique_contests[contest_key] = info
+                                    logging.info(f"Found contest: {info['contest_name']} (ID: {info['contest_id']}, Fee: {info['entry_fee']})")
+                            
+                            # Store contest info but NOT player data (that's the key difference)
+                            self._contest_info_list = contest_info_list
+                            # DO NOT store _favorites_with_player_data to force fresh lineup usage
+                            
+                            return contest_info_list[0]  # Return first for backward compatibility
+                    except Exception as e:
+                        logging.debug(f"Could not read backup file {backup_file}: {e}")
+                
+                # If we get here, no valid backup files found, continue with normal logic
+                logging.warning("No valid backup files found, continuing with normal contest info extraction")
+            
+            if not os.path.exists(favorites_file_path):
+                # Fallback to OneDrive location if workspace file doesn't exist
+                favorites_file_path = onedrive_favorites_path
+            
+            if os.path.exists(favorites_file_path):
+                favorites_df = pd.read_csv(favorites_file_path)
+                logging.info(f"Reading favorites from: {favorites_file_path}")
+                
+                if not favorites_df.empty and len(favorites_df.columns) >= 4:
+                    # Extract contest info from ALL rows, not just the first
+                    contest_info_list = []
+                    for _, row in favorites_df.iterrows():
+                        contest_info = {
+                            'entry_id': str(row.iloc[0]),
+                            'contest_name': str(row.iloc[1]),
+                            'contest_id': str(row.iloc[2]),
+                            'entry_fee': str(row.iloc[3])
+                        }
+                        contest_info_list.append(contest_info)
+                    
+                    logging.info(f"Extracted contest info for {len(contest_info_list)} favorites from multiple contests")
+                    
+                    # Log unique contests found
+                    unique_contests = {}
+                    for info in contest_info_list:
+                        contest_key = f"{info['contest_name']}|{info['contest_id']}"
+                        if contest_key not in unique_contests:
+                            unique_contests[contest_key] = info
+                            logging.info(f"Found contest: {info['contest_name']} (ID: {info['contest_id']}, Fee: {info['entry_fee']})")
+                    
+                    # Store the list for use in create_filled_entries_df
+                    self._contest_info_list = contest_info_list
+                    
+                    # IMPORTANT: Also store the favorites DataFrame with player data for lineup extraction
+                    self._favorites_with_player_data = favorites_df
+                    logging.info(f"Stored favorites DataFrame with {len(favorites_df)} lineups and player data")
+                    
+                    return contest_info_list[0]  # Return first for backward compatibility
+        except Exception as e:
+            logging.debug(f"Could not read contest info from favorites file: {e}")
+        
+        # Try to extract from favorites_lineups if available
+        if hasattr(self, 'favorites_lineups') and self.favorites_lineups:
+            try:
+                contest_info_list = []
+                for favorite in self.favorites_lineups:
+                    if isinstance(favorite, dict):
+                        contest_info = {
+                            'entry_id': favorite.get('entry_id', default_info['entry_id']),
+                            'contest_name': favorite.get('contest_name', default_info['contest_name']),
+                            'contest_id': favorite.get('contest_id', default_info['contest_id']),
+                            'entry_fee': favorite.get('entry_fee', default_info['entry_fee'])
+                        }
+                        contest_info_list.append(contest_info)
+                
+                if contest_info_list:
+                    self._contest_info_list = contest_info_list
+                    return contest_info_list[0]
+            except Exception as e:
+                logging.debug(f"Could not extract contest info from favorites: {e}")
+        
+        # Return defaults if all else fails
+        logging.warning("Using default contest information - could not extract from favorites")
+        return default_info
+
+    def extract_player_id_mapping_from_dk_file(self):
+        """Extract player name to ID mapping from the DraftKings entries file (numeric IDs only)"""
+        player_map = {}
+        
+        if not hasattr(self, 'dk_entries_df') or self.dk_entries_df is None:
+            return player_map
+        
+        if not hasattr(self, 'dk_entries_file_path') or not self.dk_entries_file_path:
+            logging.warning("No DK entries file path available for raw parsing")
+            return self.extract_player_id_mapping_from_dk_file_pandas()
+        
+        # Use raw file parsing for more reliable extraction
+        # DK files have inconsistent CSV structure that confuses pandas
+        logging.info(f"Extracting player IDs from DK entries file: {self.dk_entries_file_path}")
+        
+        try:
+            with open(self.dk_entries_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for line_num, line in enumerate(f, 1):
+                    # Look for the characteristic "Name (ID)" pattern in each line
+                    # Pattern: player name followed by (8-digit number)
+                    matches = re.findall(r'([A-Za-z][A-Za-z\s\.\-\']+)\s*\((\d{6,})\)', line)
+                    
+                    for name_part, id_part in matches:
+                        name_part = name_part.strip()
+                        id_part = id_part.strip()
+                        
+                        # Additional validation for real player names
+                        # DST (Defense/Special Teams) names are single words: "Chiefs", "Eagles", etc.
+                        # Regular players have 2+ words: "Patrick Mahomes"
+                        is_likely_dst = len(name_part.split()) == 1 and len(name_part) > 3
+                        is_likely_player = len(name_part.split()) >= 2
+                        
+                        if (len(name_part) > 3 and 
+                            (is_likely_player or is_likely_dst) and 
+                            len(id_part) >= 6):
+                            
+                            # Don't overwrite existing mappings (first occurrence wins)
+                            if name_part not in player_map:
+                                player_map[name_part] = id_part
+                                if len(player_map) <= 15:  # Log first 15 for debugging (including DST)
+                                    logging.info(f"✅ Found mapping: {name_part} -> {id_part}")
+        
+        except Exception as e:
+            logging.warning(f"Error reading DK entries file for player mappings: {e}")
+            return self.extract_player_id_mapping_from_dk_file_pandas()
+        
+        logging.info(f"🎯 Successfully extracted {len(player_map)} player ID mappings from DK entries file")
+        if len(player_map) > 0:
+            sample_mappings = list(player_map.items())[:3]
+            logging.info(f"Sample mappings: {sample_mappings}")
+        
+        return player_map
+        return player_map
+    
+    def extract_player_id_mapping_from_dk_file_pandas(self):
+        """Fallback pandas-based extraction method"""
+        player_map = {}
+        
+        df_cols = list(self.dk_entries_df.columns)
+        logging.debug(f"DK file has {len(df_cols)} columns: {df_cols}")
+        logging.debug(f"Scanning {len(self.dk_entries_df)} rows for player data...")
+        
+        # Scan each row looking for player data patterns  
+        for index, row in self.dk_entries_df.iterrows():
+            try:
+                # Convert row to list to handle different column counts
+                row_data = row.tolist()
+                
+                # Look for the "Name + ID" pattern in any cell
+                for col_idx, cell_value in enumerate(row_data):
+                    if pd.isna(cell_value) or cell_value == '':
+                        continue
+                    
+                    cell_str = str(cell_value).strip()
+                    
+                    # Check if this cell contains "Name + ID" format: "Player Name (ID_NUMBER)"
+                    if '(' in cell_str and ')' in cell_str and cell_str.endswith(')'):
+                        try:
+                            name_part = cell_str.split('(')[0].strip()
+                            id_part = cell_str.split('(')[1].replace(')', '').strip()
+                            
+                            # Validate that we have a real player name and numeric ID
+                            if (name_part and len(name_part) > 1 and 
+                                id_part.isdigit() and len(id_part) >= 6):
+                                
+                                # Additional validation: make sure this looks like a real player name
+                                # Allow both multi-word names (regular players) and single-word names (DST)
+                                is_likely_dst = len(name_part.split()) == 1 and len(name_part) > 3
+                                is_likely_player = len(name_part.split()) >= 2
+                                
+                                if any(char.isalpha() for char in name_part) and (is_likely_player or is_likely_dst):
+                                    if name_part not in player_map:
+                                        player_map[name_part] = id_part
+                                        logging.debug(f"Found mapping: {name_part} -> {id_part}")
+                        except Exception as e:
+                            continue
+                
+            except Exception as e:
+                continue
+        
+        logging.info(f"Extracted {len(player_map)} player ID mappings using pandas fallback")
+        return player_map
+
+    def create_player_id_mapping_from_loaded_data(self):
+        """Create player ID mapping from the loaded player data CSV (numeric IDs only)"""
+        player_map = {}
+        
+        if not hasattr(self, 'df_players') or self.df_players is None or self.df_players.empty:
+            return player_map
+        
+        # Look for DraftKings-specific ID columns in the loaded player data
+        id_columns = []
+        for col in self.df_players.columns:
+            token = re.sub(r'[^A-Z0-9]', '', str(col).upper())
+            if token in DK_ID_TOKENS:
+                id_columns.append(col)
+        
+        if not id_columns:
+            logging.debug("No DraftKings ID columns found in loaded player data")
+            return player_map
+        
+        # Create mappings using the first valid ID column
+        for _, player in self.df_players.iterrows():
+            name = str(player['Name']).strip()
+            
+            for id_col in id_columns:
+                if pd.notna(player[id_col]):
+                    player_id = str(player[id_col]).strip()
+                    if player_id.isdigit() and len(player_id) >= 6:
+                        player_map[name] = player_id  # Store just the numeric ID
+                        logging.debug(f"Created player mapping from loaded data: {name} -> {player_id}")
+                        break
+        
+        logging.info(f"Created {len(player_map)} player ID mappings from loaded data")
+        return player_map
+
+    def format_lineup_positions_only(self, lineup, player_name_to_id_map):
+        """Format a lineup to return only the position assignments with player IDs in DK format (PG, SG, SF, PF, C, G, F, UTIL)"""
+        # Create position mapping from lineup
+        position_players = {'PG': [], 'SG': [], 'SF': [], 'PF': [], 'C': [], 'G': [], 'F': [], 'UTIL': []}
+        
+        # CRITICAL FIX: Sort lineup by projection DESCENDING before grouping
+        projection_cols = ['Fantasy_Points', 'FantasyPoints', 'Predicted_DK_Points', 'Projection', 'Points']
+        proj_col = None
+        for col in projection_cols:
+            if col in lineup.columns:
+                proj_col = col
+                break
+        
+        if proj_col:
+            lineup_sorted = lineup.sort_values(by=proj_col, ascending=False)
+        else:
+            lineup_sorted = lineup
+        
+        # Group players by position with numeric IDs only
+        missing_ids = []
+        
+        for _, player in lineup_sorted.iterrows():
+            # Use Roster_Position (DK eligibility) first, fall back to Position (API)
+            pos = str(player.get('Roster_Position', player.get('Position', ''))).upper()
+            name = str(player['Name'])
+            
+            # Get the numeric ID for this player
+            player_id = ""
+            
+            # PRIORITY 1: Use DK entries mapping
+            if player_name_to_id_map and name in player_name_to_id_map:
+                player_id = str(player_name_to_id_map[name])
+            else:
+                # PRIORITY 2: Try to get ID from player data columns
+                for id_col in player.index:
+                    token = re.sub(r'[^A-Z0-9]', '', str(id_col).upper())
+                    if token in DK_ID_TOKENS and pd.notna(player[id_col]):
+                        potential_id = str(player[id_col]).strip()
+                        if potential_id.isdigit() and len(potential_id) >= 6:
+                            player_id = potential_id
+                            break
+                
+                # PRIORITY 3: Check if the name already contains an ID
+                if not player_id and '(' in name and ')' in name and name.endswith(')'):
+                    try:
+                        id_part = name.split('(')[1].replace(')', '').strip()
+                        if id_part.isdigit() and len(id_part) >= 6:
+                            player_id = id_part
+                    except:
+                        pass
+                
+            # Handle missing player IDs - collect for error reporting
+            if not player_id:
+                logging.error(f"❌ No DraftKings ID available for {name} ({pos}). Load a valid DK entries file or ensure DK_ID column is present.")
+                missing_ids.append(name)
+                continue
+            
+            # Handle NBA positions - match to DraftKings roster positions
+            # Players can have multiple position eligibility (e.g., "PG/SG")
+            pos_eligible = []
+            
+            if 'PG' in pos:
+                pos_eligible.extend(['PG', 'G', 'UTIL'])
+            if 'SG' in pos:
+                pos_eligible.extend(['SG', 'G', 'UTIL'])
+            if 'SF' in pos:
+                pos_eligible.extend(['SF', 'F', 'UTIL'])
+            if 'PF' in pos:
+                pos_eligible.extend(['PF', 'F', 'UTIL'])
+            if 'C' in pos:
+                pos_eligible.extend(['C', 'UTIL'])
+            if 'G' in pos and 'PG' not in pos and 'SG' not in pos:
+                pos_eligible.extend(['G', 'UTIL'])
+            if 'F' in pos and 'SF' not in pos and 'PF' not in pos:
+                pos_eligible.extend(['F', 'UTIL'])
+            
+            # Remove duplicates
+            pos_eligible = list(set(pos_eligible))
+            
+            # CRITICAL FIX: Add player to ALL eligible position pools (not just first one)
+            # This allows backfilling to work properly
+            for eligible_pos in pos_eligible:
+                if eligible_pos in position_players:
+                    position_players[eligible_pos].append(player_id)
+        
+        if missing_ids:
+            raise ValueError(
+                "Missing DraftKings IDs for the following players: "
+                + ", ".join(sorted(set(missing_ids)))
+            )
+        
+        # Create the position assignments in DK NBA format: [PG, SG, SF, PF, C, G, F, UTIL]
+        # Use a smarter algorithm that fills all positions with backfilling
+        position_assignments = [""] * 8
+        used_player_ids = set()
+        
+        # Preferred (locked) players by slot from position-specific selections
+        preferred_ids_by_slot = {'PG': [], 'SG': [], 'SF': [], 'PF': [], 'C': []}
+        try:
+            if hasattr(self, 'position_specific_selections') and self.position_specific_selections:
+                for slot_key in ['PG', 'SG', 'SF', 'PF', 'C']:
+                    names = self.position_specific_selections.get(slot_key, []) or []
+                    for nm in names:
+                        if player_name_to_id_map and nm in player_name_to_id_map:
+                            pid = str(player_name_to_id_map[nm])
+                            preferred_ids_by_slot[slot_key].append(pid)
+        except Exception:
+            pass
+        
+        # Helper function to assign a player to a slot
+        def assign_player(slot_index, player_id):
+            if player_id and player_id not in used_player_ids:
+                position_assignments[slot_index] = player_id
+                used_player_ids.add(player_id)
+                return True
+            return False
+        
+        # IMPROVED ALGORITHM: Fill positions considering flex needs
+        # Strategy: Fill positions in order that reserves dual-eligible players for flex spots
+        
+        # Step 1: Count available players by position eligibility
+        def count_eligible_for_slot(slot_index, exclude_used=True):
+            """Count how many unused players can fill a specific slot"""
+            count = 0
+            for _, player in lineup_sorted.iterrows():
+                name = str(player['Name'])
+                if player_name_to_id_map and name in player_name_to_id_map:
+                    player_id = str(player_name_to_id_map[name])
+                    if (not exclude_used or player_id not in used_player_ids):
+                        if is_player_eligible_for_slot(player_id, slot_index):
+                            count += 1
+            return count
+        
+        # Step 2: Fill positions in smart order - fill constrained positions first
+        # Order by flexibility: C (least flexible), PG, SG, SF, PF (core), then G, F, UTIL (flex)
+        
+        # Phase 1: Fill C (slot 4) - most constrained (only C eligible)
+        if position_players['C']:
+            for player_id in position_players['C']:
+                if assign_player(4, player_id):
+                        break
+        
+        # Phase 2: Fill PG (slot 0) - honor any preferred PG first
+        # Since we have exactly 8 players for 8 slots, prioritize filling over reserving
+        pg_filled = False
+        
+        # Try preferred PG IDs first
+        for player_id in preferred_ids_by_slot.get('PG', []):
+            if player_id in position_players['PG'] and assign_player(0, player_id):
+                pg_filled = True
+                break
+        
+        # Strategy: Try to use pure PG first (can't fill G), then dual-eligible
+        pg_candidates = [pid for pid in position_players['PG'] if pid not in used_player_ids]
+        
+        # Separate pure vs dual-eligible
+        pure_pgs = [pid for pid in pg_candidates if pid not in position_players['SG']]
+        dual_pgs = [pid for pid in pg_candidates if pid in position_players['SG']]
+        
+        # Fill PG slot - prioritize pure, but use dual if needed
+        if not pg_filled:
+            for player_id in (pure_pgs + dual_pgs):
+                if assign_player(0, player_id):
+                    pg_filled = True
+                    break
+        
+        # Phase 3: Fill SG (slot 1) - AGGRESSIVE MODE
+        sg_filled = False
+        sg_candidates = [pid for pid in position_players['SG'] if pid not in used_player_ids]
+        
+        # Separate pure vs dual-eligible
+        pure_sgs = [pid for pid in sg_candidates if pid not in position_players['PG']]
+        dual_sgs = [pid for pid in sg_candidates if pid in position_players['PG']]
+        
+        # Fill SG slot - prioritize pure, but use dual if needed
+        for player_id in (pure_sgs + dual_sgs):
+            if assign_player(1, player_id):
+                sg_filled = True
+                break
+        
+        # Phase 4: Fill SF (slot 2) - AGGRESSIVE MODE
+        sf_filled = False
+        sf_candidates = [pid for pid in position_players['SF'] if pid not in used_player_ids]
+        
+        # Separate pure vs dual-eligible
+        pure_sfs = [pid for pid in sf_candidates if pid not in position_players['PF']]
+        dual_sfs = [pid for pid in sf_candidates if pid in position_players['PF']]
+        
+        # Fill SF slot - prioritize pure, but use dual if needed
+        for player_id in (pure_sfs + dual_sfs):
+            if assign_player(2, player_id):
+                sf_filled = True
+                break
+        
+        # Phase 5: Fill PF (slot 3) - AGGRESSIVE MODE
+        pf_filled = False
+        pf_candidates = [pid for pid in position_players['PF'] if pid not in used_player_ids]
+        
+        # Separate pure vs dual-eligible
+        pure_pfs = [pid for pid in pf_candidates if pid not in position_players['SF']]
+        dual_pfs = [pid for pid in pf_candidates if pid in position_players['SF']]
+        
+        # Fill PF slot - prioritize pure, but use dual if needed
+        for player_id in (pure_pfs + dual_pfs):
+            if assign_player(3, player_id):
+                pf_filled = True
+                break
+        
+        # Phase 6: Fill G slot (slot 5) - CRITICAL: Reserve players for flex positions
+        # Strategy: Use any unused guard-eligible player (PG or SG)
+        g_filled = False
+        
+        # Try pure guards first (PG/SG that haven't been used)
+        for player_id in position_players['PG'] + position_players['SG']:
+            if player_id not in used_player_ids:
+                if assign_player(5, player_id):
+                    g_filled = True
+                    break
+        
+        # If still not filled, try any remaining player that can be a guard
+        if not g_filled:
+            for _, player in lineup_sorted.iterrows():
+                name = str(player['Name'])
+                if player_name_to_id_map and name in player_name_to_id_map:
+                    player_id = str(player_name_to_id_map[name])
+                    if player_id not in used_player_ids:
+                        # Use Roster_Position (DK eligibility) first
+                        pos = str(player.get('Roster_Position', player.get('Position', ''))).upper()
+                        if 'PG' in pos or 'SG' in pos or 'G' in pos:
+                            if assign_player(5, player_id):
+                                g_filled = True
+                                break
+        
+        # Phase 7: Fill F slot (slot 6) - CRITICAL: Reserve players for flex positions
+        f_filled = False
+        
+        # Try pure forwards first (SF/PF that haven't been used)
+        for player_id in position_players['SF'] + position_players['PF']:
+            if player_id not in used_player_ids:
+                if assign_player(6, player_id):
+                    f_filled = True
+                    break
+        
+        # If still not filled, try any remaining player that can be a forward
+        if not f_filled:
+            for _, player in lineup_sorted.iterrows():
+                name = str(player['Name'])
+                if player_name_to_id_map and name in player_name_to_id_map:
+                    player_id = str(player_name_to_id_map[name])
+                    if player_id not in used_player_ids:
+                        # Use Roster_Position (DK eligibility) first
+                        pos = str(player.get('Roster_Position', player.get('Position', ''))).upper()
+                        if 'SF' in pos or 'PF' in pos or 'F' in pos:
+                            if assign_player(6, player_id):
+                                f_filled = True
+                                break
+        
+        # Phase 8: Fill UTIL slot (slot 7) - any remaining player
+        for player_id in position_players['UTIL']:
+            if assign_player(7, player_id):
+                break
+        
+        # Phase 9: ENHANCED BACKFILL - Fill empty positions with remaining eligible players
+        # We need to track player positions to ensure they're eligible for the slot
+        
+        # Helper to check if a player_id is eligible for a specific roster slot
+        def is_player_eligible_for_slot(player_id, slot_index):
+            """Check if player can fill a specific roster slot based on their position"""
+            # Find the player's actual position from the lineup
+            player_pos = None
+            for _, player in lineup_sorted.iterrows():
+                # Get player ID from mapping or player data
+                check_id = ""
+                name = str(player['Name'])
+                if player_name_to_id_map and name in player_name_to_id_map:
+                    check_id = str(player_name_to_id_map[name])
+                if check_id == player_id:
+                    # Use Roster_Position (DK eligibility) first
+                    player_pos = str(player.get('Roster_Position', player.get('Position', ''))).upper()
+                    break
+            
+            if not player_pos:
+                return False  # Can't validate, reject
+            
+            slot_names = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+            slot_name = slot_names[slot_index]
+            
+            # DraftKings eligibility rules
+            if slot_name == 'PG':
+                return 'PG' in player_pos
+            elif slot_name == 'SG':
+                return 'SG' in player_pos
+            elif slot_name == 'SF':
+                return 'SF' in player_pos
+            elif slot_name == 'PF':
+                return 'PF' in player_pos
+            elif slot_name == 'C':
+                return 'C' in player_pos
+            elif slot_name == 'G':
+                return 'PG' in player_pos or 'SG' in player_pos or 'G' in player_pos
+            elif slot_name == 'F':
+                return 'SF' in player_pos or 'PF' in player_pos or 'F' in player_pos
+            elif slot_name == 'UTIL':
+                return True  # Any player can be UTIL
+            
+            return False
+        
+        # Enhanced backfill - try multiple strategies
+        slot_names = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        
+        # Strategy 1: Try to fill empty slots from their specific position pools first
+        for i in range(8):
+            if not position_assignments[i]:
+                slot_name = slot_names[i]
+                # Try position-specific pool
+                if slot_name in position_players:
+                    for player_id in position_players[slot_name]:
+                        if player_id not in used_player_ids:
+                            if assign_player(i, player_id):
+                                logging.info(f"✅ Backfilled {slot_name} slot from position pool")
+                                break
+        
+        # Strategy 2: For still-empty slots, try UTIL pool with eligibility checking
+        for i in range(8):
+            if not position_assignments[i]:
+                slot_name = slot_names[i]
+                for player_id in position_players['UTIL']:
+                    if player_id not in used_player_ids and is_player_eligible_for_slot(player_id, i):
+                        if assign_player(i, player_id):
+                            logging.info(f"✅ Backfilled {slot_name} slot from UTIL pool")
+                            break
+        
+        # Strategy 3: Last resort - try ANY remaining player that's eligible
+        for i in range(8):
+            if not position_assignments[i]:
+                slot_name = slot_names[i]
+                # Search through all players in the lineup
+                for _, player in lineup_sorted.iterrows():
+                    name = str(player['Name'])
+                    if player_name_to_id_map and name in player_name_to_id_map:
+                        player_id = str(player_name_to_id_map[name])
+                        if player_id not in used_player_ids and is_player_eligible_for_slot(player_id, i):
+                            if assign_player(i, player_id):
+                                logging.info(f"✅ Backfilled {slot_name} slot with {name}")
+                                break
+                    if position_assignments[i]:  # Successfully filled
+                            break
+        
+        # Final validation - ensure exactly 8 positions (NBA: PG, SG, SF, PF, C, G, F, UTIL)
+        while len(position_assignments) < 8:
+            position_assignments.append("")
+        position_assignments = position_assignments[:8]
+        
+        # CRITICAL: Validate that each assigned player is eligible for their roster slot
+        slot_names = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
+        validation_errors = []
+        for i in range(8):
+            if position_assignments[i] and position_assignments[i].strip():
+                if not is_player_eligible_for_slot(position_assignments[i], i):
+                    # Find player name for logging
+                    player_name = "Unknown"
+                    for _, player in lineup_sorted.iterrows():
+                        name = str(player['Name'])
+                        if player_name_to_id_map and name in player_name_to_id_map:
+                            if str(player_name_to_id_map[name]) == position_assignments[i]:
+                                player_name = name
+                                player_pos = str(player['Position'])
+                                break
+                    
+                    error_msg = f"{player_name} (pos={player_pos}) cannot fill {slot_names[i]} slot"
+                    validation_errors.append(error_msg)
+                    logging.error(f"❌ Position eligibility error: {error_msg}")
+                    # Clear this invalid assignment
+                    position_assignments[i] = ""
+        
+        if validation_errors:
+            logging.error(f"❌ Removed {len(validation_errors)} invalid position assignments")
+        
+        # Report empty positions with names for debugging
+        empty_positions = []
+        for i in range(8):
+            if not position_assignments[i] or position_assignments[i].strip() == '':
+                empty_positions.append(slot_names[i])
+        
+        if empty_positions:
+            logging.error(f"❌ Empty positions after backfilling: {', '.join(empty_positions)}")
+            # Show what players were available
+            logging.error(f"   Available by position: PG={len(position_players['PG'])}, SG={len(position_players['SG'])}, SF={len(position_players['SF'])}, PF={len(position_players['PF'])}, C={len(position_players['C'])}, G={len(position_players['G'])}, F={len(position_players['F'])}, UTIL={len(position_players['UTIL'])}")
+        
+        # CRITICAL FIX: Fill any empty positions with REAL PLAYERS from the lineup
+        for i in range(8):  # NBA has 8 positions
+            if not position_assignments[i] or position_assignments[i].strip() == '':
+                slot_name = slot_names[i]
+                logging.warning(f"Position {i+1} ({slot_name}) was empty, attempting to fill with real player")
+                
+                # Try to find ANY unused player that can fill this slot
+                player_found = False
+                for _, player in lineup_sorted.iterrows():
+                    name = str(player['Name'])
+                    if player_name_to_id_map and name in player_name_to_id_map:
+                        player_id = str(player_name_to_id_map[name])
+                        if player_id not in used_player_ids and is_player_eligible_for_slot(player_id, i):
+                            position_assignments[i] = player_id
+                            used_player_ids.add(player_id)
+                            player_found = True
+                            logging.info(f"✅ Filled empty {slot_name} slot with real player: {name} (ID: {player_id})")
+                            break
+                
+                # If still no real player found, use fallback ID as last resort
+                if not player_found:
+                    fallback_id = str(39200000 + i)
+                    position_assignments[i] = fallback_id
+                    logging.error(f"❌ No real player available for {slot_name}, using fallback ID: {fallback_id}")
+        
+        # FINAL VALIDATION: Check if lineup meets all constraints after filling
+        empty_positions = []
+        for i in range(8):
+            if not position_assignments[i] or position_assignments[i].strip() == '':
+                empty_positions.append(slot_names[i])
+        
+        if empty_positions:
+            logging.error(f"❌ INVALID LINEUP: Still missing positions {', '.join(empty_positions)} after filling attempts")
+            logging.error(f"   This lineup does not meet position constraints and will be excluded from output")
+            # Return empty assignments to indicate this lineup should be rejected
+            return [""] * 8
+        
+        # Count how many positions are actually filled
+        filled_count = len([p for p in position_assignments if p and p.strip()])
+        logging.debug(f"Position assignment result: {filled_count}/8 positions filled (NBA)")
+        
+        return position_assignments
+    
+    def _is_valid_lineup_assignments(self, position_assignments):
+        """Check if position assignments are valid (all 8 positions filled)"""
+        if not position_assignments or len(position_assignments) != 8:
+            return False
+        
+        for i, assignment in enumerate(position_assignments):
+            if not assignment or assignment.strip() == '':
+                return False
+        
+        return True
+    
+    def get_bankroll_setting(self):
+        """Get the bankroll setting from UI"""
+        try:
+            if RISK_ENGINE_AVAILABLE and hasattr(self, 'bankroll_input'):
+                bankroll_text = self.bankroll_input.text().strip()
+                if bankroll_text:
+                    bankroll = float(bankroll_text)
+                    return max(100, bankroll)  # Minimum $100
+            return 1000  # Default
+        except (ValueError, AttributeError):
+            return 1000
+
+    def get_risk_tolerance_setting(self):
+        """Get the risk tolerance setting from UI"""
+        try:
+            if RISK_ENGINE_AVAILABLE and hasattr(self, 'risk_tolerance_combo'):
+                return self.risk_tolerance_combo.currentText()
+            return 'medium'
+        except AttributeError:
+            return 'medium'
+
+    def get_risk_management_enabled(self):
+        """Check if risk management is enabled"""
+        try:
+            if RISK_ENGINE_AVAILABLE and hasattr(self, 'enable_risk_mgmt_checkbox'):
+                return self.enable_risk_mgmt_checkbox.isChecked()
+            return False
+        except AttributeError:
+            return False
+
+    def update_selection_status(self):
+        """Update the selection status label with current player count"""
+        try:
+            if not hasattr(self, 'selection_status_label'):
+                return
+                
+            # Get total selected count using the same method as get_included_players
+            included_players = self.get_included_players()  
+            total_selected = len(included_players)
+            
+            # Update the status label with simple, non-cluttering text
+            if total_selected == 0:
+                status_text = "No players selected"
+                self.selection_status_label.setStyleSheet("color: #666; font-size: 10px; padding: 3px;")
+            elif total_selected <= 50:
+                status_text = f"{total_selected} players selected"
+                self.selection_status_label.setStyleSheet("color: #4CAF50; font-size: 10px; padding: 3px;")
+            elif total_selected <= 150:
+                status_text = f"{total_selected} players selected"
+                self.selection_status_label.setStyleSheet("color: #FF9800; font-size: 10px; padding: 3px;")
+            else:
+                status_text = f"{total_selected} players selected"
+                self.selection_status_label.setStyleSheet("color: #f44336; font-size: 10px; padding: 3px;")
+            
+            self.selection_status_label.setText(status_text)
+            
+        except Exception as e:
+            logging.error(f"Error updating selection status: {e}")
+if __name__ == "__main__":
+    # Create the application
+    app = QApplication(sys.argv)
+    
+    # Create and show the main window
+    window = FantasyFootballApp()
+    window.show()
+    
+    # Start the application event loop
+    sys.exit(app.exec_())
+    

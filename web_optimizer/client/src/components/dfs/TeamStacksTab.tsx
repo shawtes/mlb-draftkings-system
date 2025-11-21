@@ -158,7 +158,28 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>Select</TableCell>
+              <TableCell>
+                <Checkbox
+                  color="primary"
+                  indeterminate={
+                    teams.some(t => t.selected) && !teams.every(t => t.selected)
+                  }
+                  checked={teams.length > 0 && teams.every(t => t.selected)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setTeamStackSettings(prev => {
+                      const next = { ...prev };
+                      const current = { ...(next[stackSize] || {}) };
+                      Object.keys(current).forEach(teamName => {
+                        current[teamName] = { ...current[teamName], selected: checked };
+                      });
+                      next[stackSize] = current;
+                      return next;
+                    });
+                  }}
+                  size="small"
+                />
+              </TableCell>
               <TableCell>Team</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Players</TableCell>
@@ -173,6 +194,7 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({
               <TableRow key={team.team}>
                 <TableCell>
                   <Checkbox
+                    color="primary"
                     checked={team.selected}
                     onChange={(e) => handleTeamSelection(stackSize, team.team, e.target.checked)}
                     size="small"
