@@ -189,10 +189,13 @@ const LineupsTab: React.FC<LineupsTabProps> = ({
           </div>
           <h3 className="text-xl font-semibold text-white mb-2">No Lineups Generated</h3>
           <p className="text-slate-400 mb-4">Run optimization to generate lineups</p>
-          <Button variant="outline" className="border-cyan-500/30 hover:bg-cyan-500/10 text-white">
-            <Target className="w-4 h-4 mr-2" />
+          <button
+            type="button"
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-cyan-500/40 bg-slate-700/60 px-4 py-2 text-sm font-semibold text-white shadow-none transition-none"
+          >
+            <Target className="w-4 h-4" />
             Generate Lineups
-          </Button>
+          </button>
         </div>
       </div>
     );

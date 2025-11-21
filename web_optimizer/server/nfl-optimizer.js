@@ -51,8 +51,20 @@ class NFLOptimizer {
       exposureSettings = {},
       riskTolerance = 'medium',
       contestMode = 'gpp',
+      advancedQuantSettings = {},
       onProgress 
     } = config;
+
+    // Log quant settings if enabled
+    if (advancedQuantSettings && advancedQuantSettings.enabled) {
+      console.log('📊 Advanced Quant Settings enabled:', {
+        strategy: advancedQuantSettings.strategy,
+        riskTolerance: advancedQuantSettings.riskTolerance,
+        varConfidence: advancedQuantSettings.varConfidence,
+        targetVolatility: advancedQuantSettings.targetVolatility,
+        monteCarloSims: advancedQuantSettings.monteCarloSims,
+      });
+    }
 
     // Try Python optimizer first (preferred for production)
     if (this.pythonOptimizerPath) {

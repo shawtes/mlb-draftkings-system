@@ -363,12 +363,13 @@ app.put('/api/players/bulk', (req, res) => {
 app.post('/api/set-sport', (req, res) => {
   const { sport } = req.body;
   
-  if (!sport || !['MLB', 'NFL'].includes(sport.toUpperCase())) {
-    return res.status(400).json({ error: 'Invalid sport. Must be MLB or NFL' });
+  if (!sport || !['MLB', 'NFL', 'NBA'].includes(sport.toUpperCase())) {
+    return res.status(400).json({ error: 'Invalid sport. Must be MLB, NFL, or NBA' });
   }
   
   currentSport = sport.toUpperCase();
-  console.log(`🏈 Sport mode set to: ${currentSport}`);
+  const sportEmoji = currentSport === 'MLB' ? '⚾' : currentSport === 'NFL' ? '🏈' : '🏀';
+  console.log(`${sportEmoji} Sport mode set to: ${currentSport}`);
   
   res.json({ success: true, sport: currentSport });
 });
@@ -399,7 +400,8 @@ app.post('/api/optimize', async (req, res) => {
       exposureSettings = {},
       riskTolerance = 'medium',
       contestMode = 'gpp',
-      bankroll = 1000
+      bankroll = 1000,
+      advancedQuantSettings = {}
     } = req.body;
     
     // Validate inputs
@@ -408,7 +410,7 @@ app.post('/api/optimize', async (req, res) => {
     }
     
     const selectedPlayers = playersData.filter(p => p.selected);
-    const minPlayersRequired = sport === 'NFL' ? 9 : 10;
+    const minPlayersRequired = sport === 'NFL' ? 9 : sport === 'NBA' ? 8 : 10;
     
     if (selectedPlayers.length < minPlayersRequired) {
       return res.status(400).json({ 
@@ -434,6 +436,9 @@ app.post('/api/optimize', async (req, res) => {
     
     if (sport === 'NFL') {
       console.log('🏈 Using NFL Optimizer');
+      if (advancedQuantSettings && Object.keys(advancedQuantSettings).length > 0) {
+        console.log('📊 Advanced Quant Settings:', JSON.stringify(advancedQuantSettings, null, 2));
+      }
       optimizer = new NFLOptimizer();
       results = await optimizer.optimize({
         players: selectedPlayers,
@@ -448,6 +453,39 @@ app.post('/api/optimize', async (req, res) => {
         riskTolerance,
         contestMode,
         bankroll,
+        advancedQuantSettings,
+        onProgress: (progress) => {
+          broadcast({
+            type: 'OPTIMIZATION_PROGRESS',
+            data: { id: optimizationId, progress, timestamp: new Date().toISOString() }
+          });
+        }
+      });
+    } else if (sport === 'NBA') {
+      console.log('🏀 Using NBA Optimizer');
+      if (advancedQuantSettings && Object.keys(advancedQuantSettings).length > 0) {
+        console.log('📊 Advanced Quant Settings:', JSON.stringify(advancedQuantSettings, null, 2));
+      }
+      // For now, use MLB optimizer for NBA (can be replaced with dedicated NBA optimizer later)
+      optimizer = new MLBOptimizer();
+      results = await optimizer.optimize({
+        players: selectedPlayers,
+        numLineups,
+        minSalary: minSalary || 48000, // NBA default
+        maxSalary,
+        stackSettings,
+        uniquePlayers,
+        maxExposure,
+        monteCarloIterations,
+        sortingMethod,
+        minUniquePlayersBetweenLineups,
+        enableRiskManagement,
+        disableKellySizing,
+        stackTypes,
+        exposureSettings,
+        riskTolerance,
+        bankroll,
+        advancedQuantSettings,
         onProgress: (progress) => {
           broadcast({
             type: 'OPTIMIZATION_PROGRESS',
@@ -457,6 +495,9 @@ app.post('/api/optimize', async (req, res) => {
       });
     } else {
       console.log('⚾ Using MLB Optimizer');
+      if (advancedQuantSettings && Object.keys(advancedQuantSettings).length > 0) {
+        console.log('📊 Advanced Quant Settings:', JSON.stringify(advancedQuantSettings, null, 2));
+      }
       optimizer = new MLBOptimizer();
       results = await optimizer.optimize({
         players: selectedPlayers,
@@ -475,6 +516,7 @@ app.post('/api/optimize', async (req, res) => {
         exposureSettings,
         riskTolerance,
         bankroll,
+        advancedQuantSettings,
         onProgress: (progress) => {
           broadcast({
             type: 'OPTIMIZATION_PROGRESS',

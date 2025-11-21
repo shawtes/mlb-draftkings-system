@@ -1,7 +1,6 @@
 import { useState, useMemo, useCallback, lazy, Suspense } from 'react';
 import { Button } from './ui/button';
 import { 
-  TrendingUp, 
   Settings, 
   HelpCircle, 
   MessageSquare,
@@ -21,10 +20,6 @@ import { DashboardLoader } from './SkeletonLoader';
 import type { DashboardProps } from '../types';
 
 // Lazy load dashboard components for better performance
-const PropBettingCenter = lazy(() => import('./PropBettingCenter').catch(err => {
-  console.error('Failed to load PropBettingCenter:', err);
-  return { default: () => <div className="text-white p-8">Error loading Prop Betting Center. Check console.</div> };
-}));
 const DFSOptimizer = lazy(() => import('./DFSOptimizer')); // Original 7-tab version with all functionality
 const HowToUse = lazy(() => import('./HowToUse').catch(err => {
   console.error('Failed to load HowToUse:', err);
@@ -33,32 +28,20 @@ const HowToUse = lazy(() => import('./HowToUse').catch(err => {
 const AccountSettings = lazy(() => import('./AccountSettings'));
 
 export default function Dashboard({ onLogout }: DashboardProps) {
-  const [activeView, setActiveView] = useState('prop-betting');
-  const [selectedSport, setSelectedSport] = useState<'NFL' | 'NBA' | 'MLB'>('NFL');
-  const isFullScreenView = activeView === 'prop-betting' || activeView === 'dfs-optimizer';
+  const [activeView, setActiveView] = useState('dfs-optimizer');
+  const isFullScreenView = activeView === 'dfs-optimizer' || activeView === 'how-to-use' || activeView === 'settings';
 
   // Memoize navigation handlers to prevent unnecessary re-renders
   const handleNavigation = useCallback((view: string) => {
     setActiveView(view);
   }, []);
 
-  // Memoize sport change handler
-  const handleSportChange = useCallback((sport: 'NFL' | 'NBA' | 'MLB') => {
-    setSelectedSport(sport);
-  }, []);
-
   const renderMainContent = useMemo(() => {
     switch (activeView) {
-      case 'prop-betting':
-        return (
-          <Suspense fallback={<DashboardLoader />}>
-            <PropBettingCenter sport={selectedSport} />
-          </Suspense>
-        );
       case 'dfs-optimizer':
         return (
           <Suspense fallback={<DashboardLoader />}>
-            <DFSOptimizer sport={selectedSport} />
+            <DFSOptimizer />
           </Suspense>
         );
       case 'how-to-use':
@@ -83,7 +66,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           </div>
         );
     }
-  }, [activeView, selectedSport]);
+  }, [activeView]);
 
   return (
     <div
@@ -108,43 +91,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         {/* Sport Selection & User Controls */}
         <div className="px-8 py-6 border-b border-slate-700/30" style={{ backgroundColor: '#192C57' }}>
           <div className="flex flex-wrap items-center justify-between gap-6">
-            {/* Left: Sport Tabs */}
             <div className="flex items-center gap-3">
-              <span className="text-slate-400 text-sm font-medium mr-2">Select Sport:</span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleSportChange('NFL')}
-                  className={`px-6 py-3 rounded-lg font-bold text-lg transition-all ${
-                    selectedSport === 'NFL'
-                      ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30 border-2 border-cyan-400'
-                      : 'bg-slate-700/40 text-slate-300 border-2 border-slate-600/30 hover:bg-slate-700 hover:border-cyan-500/50 hover:text-white'
-                  }`}
-                >
-                  🏈 NFL
-                </button>
-                <button
-                  onClick={() => handleSportChange('NBA')}
-                  className={`px-6 py-3 rounded-lg font-bold text-lg transition-all ${
-                    selectedSport === 'NBA'
-                      ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30 border-2 border-cyan-400'
-                      : 'bg-slate-700/40 text-slate-300 border-2 border-slate-600/30 hover:bg-slate-700 hover:border-cyan-500/50 hover:text-white'
-                  }`}
-                >
-                  🏀 NBA
-                </button>
-                <button
-                  onClick={() => handleSportChange('MLB')}
-                  className={`px-6 py-3 rounded-lg font-bold text-lg transition-all ${
-                    selectedSport === 'MLB'
-                      ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30 border-2 border-cyan-400'
-                      : 'bg-slate-700/40 text-slate-300 border-2 border-slate-600/30 hover:bg-slate-700 hover:border-cyan-500/50 hover:text-white'
-                  }`}
-                >
-                  ⚾ MLB
-                </button>
-              </div>
+              <span className="text-slate-300 text-lg font-semibold">Welcome to the Optimizer Suite</span>
             </div>
-            
+
             <div className="flex items-center gap-8">
               {/* Right: Quick Stats */}
               <div className="flex items-center gap-4">
@@ -210,36 +160,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         {/* Navigation Menu Bar */}
         <nav className="px-8 py-3" style={{ backgroundColor: '#13233f' }}>
           <div className="flex items-center gap-2">
-            {/* Prop Betting Section */}
-            <button
-              onClick={() => handleNavigation('prop-betting')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all group border border-transparent text-slate-400 ${
-                activeView === 'prop-betting' ? '' : 'hover:text-[#4197E8] hover:border-[#4197E8]/20'
-              }`}
-              style={
-                activeView === 'prop-betting'
-                  ? {
-                      backgroundColor: 'rgba(65, 151, 232, 0.18)',
-                      borderColor: 'rgba(65, 151, 232, 0.45)',
-                      boxShadow: '0 0 20px rgba(65, 151, 232, 0.18)',
-                      color: '#4197E8',
-                    }
-                  : undefined
-              }
-            >
-              <TrendingUp className="w-5 h-5" />
-              <span className="font-medium">Prop Betting</span>
-              {activeView === 'prop-betting' && (
-                <div
-                  className="w-2 h-2 rounded-full animate-pulse"
-                  style={{ backgroundColor: '#4197E8', boxShadow: '0 0 8px rgba(65, 151, 232, 0.8)' }}
-                />
-              )}
-            </button>
-
-            {/* Separator */}
-            <div className="h-8 w-px bg-cyan-500/10" />
-
             {/* DFS Tools Section */}
             <button
               onClick={() => handleNavigation('dfs-optimizer')}

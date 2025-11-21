@@ -6,10 +6,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
-import { Users, Link2, BarChart3, Target, Cpu, Star, Upload, Play, Save, FileText, Download, Plus, CheckSquare, XSquare, Trophy } from 'lucide-react';
-import { Sport, SPORT_CONFIGS, getPositionFilters, filterPlayersByPosition, getPositionCount } from './sport-config';
+import { Users, Link2, BarChart3, Target, Cpu, Star, Upload, Play, Save, FileText, Download, Plus, CheckSquare, XSquare, Trophy, RefreshCcw } from 'lucide-react';
+import { Sport, SPORT_CONFIGS, getPositionFilters, filterPlayersByPosition, getPositionCount, getStackDescription } from './sport-config';
 import LineupsTab from './LineupsTab';
 import { dfsApi } from '../services/dfs-api';
+import { toast } from 'react-hot-toast';
 
 // Player data interface
 interface Player {
@@ -38,11 +39,49 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
   const sportConfig = SPORT_CONFIGS[sport];
   const [positionFilter, setPositionFilter] = useState(sport === 'MLB' ? 'all-batters' : 'all-offense');
   const [sortBy, setSortBy] = useState('points');
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isSyncingRef = useRef(false);
+  const selectedPlayersRef = useRef(selectedPlayers);
+
+  // Keep ref in sync with selectedPlayers
+  useEffect(() => {
+    selectedPlayersRef.current = selectedPlayers;
+  }, [selectedPlayers]);
 
   // Update filter when sport changes
   useEffect(() => {
     setPositionFilter(sport === 'MLB' ? 'all-batters' : 'all-offense');
   }, [sport]);
+
+  // Debounced function to sync player selection with backend
+  const debouncedSyncWithBackend = useCallback(async (playerId: string, isSelected: boolean) => {
+    // Clear existing timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Set new timer
+    debounceTimerRef.current = setTimeout(async () => {
+      if (isSyncingRef.current) return;
+      
+      try {
+        isSyncingRef.current = true;
+        await dfsApi.updatePlayer(playerId, { selected: isSelected });
+        // Success feedback is optional to avoid too many toasts
+      } catch (error) {
+        console.error('Failed to sync player selection with backend:', error);
+        toast.error(`Failed to ${isSelected ? 'select' : 'deselect'} player`);
+        // Revert the selection on error using current ref value
+        const currentSelected = selectedPlayersRef.current;
+        const revertedSelected = isSelected
+          ? currentSelected.filter(id => id !== playerId)
+          : [...currentSelected, playerId];
+        onPlayersChange(revertedSelected);
+      } finally {
+        isSyncingRef.current = false;
+      }
+    }, 300); // 300ms debounce delay
+  }, [onPlayersChange]);
 
   // Position counts
   const positionCounts = useMemo(() => {
@@ -98,13 +137,35 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
     onPlayersChange(newSelected);
   };
 
-  // Toggle player selection
-  const togglePlayer = (playerId: string) => {
-    const newSelected = selectedPlayers.includes(playerId)
+  // Toggle player selection with backend sync
+  const togglePlayer = useCallback((playerId: string, event?: React.MouseEvent) => {
+    // Prevent event propagation if called from row click to avoid double-toggling
+    if (event) {
+      event.stopPropagation();
+    }
+    
+    const isCurrentlySelected = selectedPlayers.includes(playerId);
+    const newSelected = isCurrentlySelected
       ? selectedPlayers.filter(id => id !== playerId)
       : [...selectedPlayers, playerId];
+    
+    // Update local state immediately for responsive UI
     onPlayersChange(newSelected);
-  };
+    
+    // Sync with backend (debounced) - fire and forget
+    debouncedSyncWithBackend(playerId, !isCurrentlySelected).catch(error => {
+      console.error('Backend sync error:', error);
+    });
+  }, [selectedPlayers, onPlayersChange, debouncedSyncWithBackend]);
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
 
   // Update exposure
   const updateExposure = (playerId: string, field: 'minExp' | 'maxExp', value: number) => {
@@ -134,10 +195,13 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
           </div>
           <h3 className="text-xl font-semibold text-white mb-2">No Player Data</h3>
           <p className="text-white mb-4">Load a CSV file to view and select players</p>
-          <Button variant="outline" className="border-cyan-500/30 hover:bg-cyan-500/10 text-white">
-            <Upload className="w-4 h-4 mr-2" />
+          <button
+            type="button"
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-cyan-500/40 bg-slate-700/60 px-4 py-2 text-sm font-semibold text-white shadow-none transition-none"
+          >
+            <Upload className="w-4 h-4" />
             Load CSV
-          </Button>
+          </button>
         </div>
       </div>
     );
@@ -210,7 +274,7 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
           <thead className="bg-slate-700 sticky top-0 z-10">
             <tr className="border-b border-slate-600">
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-12">
-                <Checkbox className="border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400" />
+                <Checkbox className="cursor-pointer" />
               </th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider min-w-[150px]">Name</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-16">Team</th>
@@ -231,27 +295,37 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
               return (
                 <tr
                   key={player.id}
-                  className={`border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors ${
+                  onClick={(e) => {
+                    // Don't toggle if clicking on input fields
+                    const target = e.target as HTMLElement;
+                    if (target.tagName === 'INPUT' || target.closest('input')) {
+                      return;
+                    }
+                    togglePlayer(player.id, e);
+                  }}
+                  className={`border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors cursor-pointer ${
                     idx % 2 === 0 ? 'bg-slate-800/20' : ''
-                  }`}
+                  } ${isSelected ? 'bg-cyan-500/10 hover:bg-cyan-500/15' : ''}`}
                 >
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                     <Checkbox
                       checked={isSelected}
-                      onCheckedChange={() => togglePlayer(player.id)}
-                      className="border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
-                      style={{ 
-                        accentColor: '#1f2937'
+                      onCheckedChange={(checked) => {
+                        // Only toggle if the checked state doesn't match current state
+                        if (checked !== isSelected) {
+                          togglePlayer(player.id);
+                        }
                       }}
+                      className="cursor-pointer transition-all duration-200"
                     />
                   </td>
                   <td className="px-3 py-2 text-white font-medium">{player.name}</td>
                   <td className="px-3 py-2 text-white">{player.team}</td>
                   <td className="px-3 py-2 text-white">{player.position}</td>
                   <td className="px-3 py-2 text-right text-white">${player.salary.toLocaleString()}</td>
-                  <td className="px-3 py-2 text-right text-white font-medium">{player.projectedPoints.toFixed(1)}</td>
+                  <td className="px-3 py-2 text-right text-white font-medium">{player.projectedPoints.toFixed(2)}</td>
                   <td className="px-3 py-2 text-right text-cyan-400 font-medium">{value}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                     <Input
                       type="number"
                       min="0"
@@ -261,7 +335,7 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ playerData, selectedPlayers, sp
                       className="bg-slate-700 border-slate-600 text-white text-xs h-8 w-20 text-right"
                     />
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                     <Input
                       type="number"
                       min="0"
@@ -357,9 +431,15 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
   };
 
   // Toggle team selection
-  const toggleTeam = (team: string) => {
+  const toggleTeam = useCallback((team: string, event?: React.MouseEvent) => {
+    // Prevent event propagation if called from row click to avoid double-toggling
+    if (event) {
+      event.stopPropagation();
+    }
+    
     const current = getSelectedTeams(activeStackSize);
-    const updated = current.includes(team)
+    const isCurrentlySelected = current.includes(team);
+    const updated = isCurrentlySelected
       ? current.filter(t => t !== team)
       : [...current, team];
     
@@ -367,7 +447,7 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
       ...teamSelections,
       [activeStackSize]: updated,
     });
-  };
+  }, [activeStackSize, teamSelections, onTeamSelectionsChange]);
 
   // Select all teams in current stack size
   const handleSelectAll = () => {
@@ -491,7 +571,7 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
           <thead className="bg-slate-700 sticky top-0 z-10">
             <tr className="border-b border-slate-600">
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-12">
-                <Checkbox className="border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400" />
+                <Checkbox className="cursor-pointer" />
               </th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-20">Team</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-24">Status</th>
@@ -511,19 +591,33 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
               return (
                 <tr
                   key={team.abbr}
+                  onClick={(e) => {
+                    // Don't toggle if team can't stack or if clicking on disabled inputs
+                    if (!canStack) return;
+                    const target = e.target as HTMLElement;
+                    if (target.tagName === 'INPUT' || target.closest('input')) {
+                      return;
+                    }
+                    toggleTeam(team.abbr, e);
+                  }}
                   className={`border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors ${
                     idx % 2 === 0 ? 'bg-slate-800/20' : ''
-                  } ${!canStack ? 'opacity-50' : ''}`}
+                  } ${!canStack ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${
+                    isSelected && canStack ? 'bg-cyan-500/10 hover:bg-cyan-500/15' : ''
+                  }`}
                 >
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                     <Checkbox
                       checked={isSelected}
-                      onCheckedChange={() => toggleTeam(team.abbr)}
-                      disabled={!canStack}
-                      className="border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
-                      style={{ 
-                        accentColor: '#1f2937'
+                      onCheckedChange={(checked) => {
+                        // Only toggle if the checked state doesn't match current state and team can stack
+                        if (!canStack) return;
+                        if (checked !== isSelected) {
+                          toggleTeam(team.abbr);
+                        }
                       }}
+                      disabled={!canStack}
+                      className="cursor-pointer transition-all duration-200"
                     />
                   </td>
                   <td className="px-3 py-2 text-white font-bold">{team.abbr}</td>
@@ -547,7 +641,7 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right text-cyan-400 font-medium">{team.batterCount}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                     <Input
                       type="number"
                       min="0"
@@ -557,7 +651,7 @@ const TeamStacksTab: React.FC<TeamStacksTabProps> = ({ playerData, teamSelection
                       disabled
                     />
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                     <Input
                       type="number"
                       min="0"
@@ -628,12 +722,17 @@ interface StackExposureTabProps {
 const StackExposureTab: React.FC<StackExposureTabProps> = ({ stackSettings, sport, onStackSettingsChange }) => {
   const sportConfig = SPORT_CONFIGS[sport];
   // Toggle stack type enabled
-  const toggleStackType = (id: string) => {
+  const toggleStackType = useCallback((id: string, event?: React.MouseEvent) => {
+    // Prevent event propagation if called from row click to avoid double-toggling
+    if (event) {
+      event.stopPropagation();
+    }
+    
     const updated = stackSettings.map(s => 
       s.id === id ? { ...s, enabled: !s.enabled } : s
     );
     onStackSettingsChange(updated);
-  };
+  }, [stackSettings, onStackSettingsChange]);
 
   // Update exposure values
   const updateExposure = (id: string, field: 'minExp' | 'maxExp', value: number) => {
@@ -661,154 +760,216 @@ const StackExposureTab: React.FC<StackExposureTabProps> = ({ stackSettings, spor
   const hasConflict = totalMinExp > 100;
   const hasNoSelection = enabledStacks.length === 0;
 
+  const minRemaining = Math.max(0, 100 - totalMinExp);
+  const maxHeadroom = Math.max(0, 100 - totalMaxExp);
+
+  const handleEnableAll = () => {
+    if (stackSettings.every(s => s.enabled)) return;
+    const updated = stackSettings.map(s => ({ ...s, enabled: true }));
+    onStackSettingsChange(updated);
+  };
+
+  const handleDisableAll = () => {
+    if (enabledStacks.length === 0) return;
+    const updated = stackSettings.map(s => ({ ...s, enabled: false }));
+    onStackSettingsChange(updated);
+  };
+
+  const handleResetRanges = () => {
+    const updated = stackSettings.map(s => ({
+      ...s,
+      minExp: 0,
+      maxExp: 100,
+    }));
+    onStackSettingsChange(updated);
+  };
+
+  const getExposureBadges = (stack: StackType) => {
+    const badges: Array<{ label: string; value: number }> = [];
+    if (typeof stack.lineupExp === 'number') {
+      badges.push({ label: 'Lineup', value: stack.lineupExp });
+    }
+    if (typeof stack.poolExp === 'number') {
+      badges.push({ label: 'Pool', value: stack.poolExp });
+    }
+    if (typeof stack.entryExp === 'number') {
+      badges.push({ label: 'Entries', value: stack.entryExp });
+    }
+    return badges;
+  };
+
   return (
-    <div className="flex flex-col h-full p-8 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between pb-4 border-b border-slate-700">
+    <div className="flex h-full flex-col gap-4 p-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-white">Stack Exposure Configuration</h2>
-          <p className="text-slate-300 text-base mt-1">
-            Select stack types and set exposure ranges
+          <h2 className="text-xl font-semibold text-white">Stack Exposure</h2>
+          <p className="text-sm text-slate-300">
+            Toggle the stacks you want and set simple min/max exposure targets.
           </p>
         </div>
-        <div className="flex items-center gap-6">
-          <div className="text-right">
-            <div className="text-sm text-slate-400">Active Stacks</div>
-            <div className="text-3xl font-bold text-cyan-400">{enabledStacks.length}/{stackSettings.length}</div>
-          </div>
-          <div className="text-right">
-            <div className="text-sm text-slate-400">Total Min</div>
-            <div className={`text-3xl font-bold ${hasConflict ? 'text-red-400' : 'text-white'}`}>{totalMinExp}%</div>
-          </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={handleEnableAll}
+            disabled={stackSettings.length === 0 || stackSettings.every(s => s.enabled)}
+            className="gap-2 border-cyan-500/40 bg-slate-900/60 text-white hover:bg-cyan-500/20 disabled:opacity-60"
+          >
+            <CheckSquare className="h-4 w-4" />
+            Enable All
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleDisableAll}
+            disabled={enabledStacks.length === 0}
+            className="gap-2 border-slate-700/70 bg-slate-900/60 text-white hover:bg-slate-800 disabled:opacity-60"
+          >
+            <XSquare className="h-4 w-4" />
+            Disable All
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleResetRanges}
+            disabled={stackSettings.length === 0}
+            className="gap-2 border-amber-500/40 bg-slate-900/60 text-white hover:bg-amber-500/20 disabled:opacity-60"
+          >
+            <RefreshCcw className="h-4 w-4" />
+            Reset Exposure Ranges
+          </Button>
         </div>
       </div>
 
-      {/* Warnings */}
-      {hasNoSelection && (
-        <div className="bg-red-500/10 border-l-4 border-red-500 rounded-lg p-4">
-          <p className="text-red-400 text-base font-semibold">⚠ Select at least one stack type to optimize</p>
-        </div>
-      )}
-      {hasConflict && (
-        <div className="bg-yellow-500/10 border-l-4 border-yellow-500 rounded-lg p-4">
-          <p className="text-yellow-400 text-base font-semibold">⚠ Total minimum exposure exceeds 100% - adjust your minimums</p>
-        </div>
-      )}
-
-      {/* Stack Options - Large Vertical Cards */}
-      <div className="flex-1 overflow-auto">
-        <div className="space-y-4 pr-2">
-          {stackSettings.map((stack) => (
-            <div
-              key={stack.id}
-              className={`border-2 rounded-xl p-6 transition-all ${
-                stack.enabled 
-                  ? 'bg-slate-800/50 border-cyan-500/50' 
-                  : 'bg-slate-800/20 border-slate-700'
-              }`}
-            >
-              <div className="flex items-center gap-8">
-                {/* Checkbox and Label */}
-                <div className="flex items-center gap-4 min-w-[280px]">
-                  <Checkbox
-                    checked={stack.enabled}
-                    onCheckedChange={() => toggleStackType(stack.id)}
-                    className="h-6 w-6 border-2 border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
-                    style={{ accentColor: '#1f2937' }}
-                  />
-                  <span className={`font-bold text-xl ${stack.enabled ? 'text-white' : 'text-slate-400'}`}>
-                    {stack.label}
-                  </span>
-                </div>
-
-                {/* Exposure Controls */}
-                <div className="flex items-center gap-8 flex-1">
-                  <div className="flex items-center gap-3">
-                    <label className="text-base text-slate-300 w-12 font-medium">Min</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={stack.minExp}
-                      onChange={(e) => updateExposure(stack.id, 'minExp', parseInt(e.target.value) || 0)}
-                      disabled={!stack.enabled}
-                      className={`w-20 h-12 rounded-lg border-2 text-center text-lg font-bold ${
-                        stack.enabled
-                          ? 'bg-slate-700 border-slate-600 text-white'
-                          : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
-                      }`}
-                    />
-                    <span className="text-slate-300 text-lg font-medium">%</span>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <label className="text-base text-slate-300 w-12 font-medium">Max</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={stack.maxExp}
-                      onChange={(e) => updateExposure(stack.id, 'maxExp', parseInt(e.target.value) || 0)}
-                      disabled={!stack.enabled}
-                      className={`w-20 h-12 rounded-lg border-2 text-center text-lg font-bold ${
-                        stack.enabled
-                          ? 'bg-slate-700 border-slate-600 text-white'
-                          : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
-                      }`}
-                    />
-                    <span className="text-slate-300 text-lg font-medium">%</span>
-                  </div>
-                </div>
-
-                {/* Current Exposure Stats */}
-                {(stack.lineupExp !== undefined || stack.poolExp !== undefined || stack.entryExp !== undefined) && stack.enabled && (
-                  <div className="flex items-center gap-4 text-base text-slate-300">
-                    {stack.lineupExp !== undefined && (
-                      <div>
-                        <span>Lineup: </span>
-                        <span className="text-white font-bold text-lg">{stack.lineupExp.toFixed(1)}%</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+      {(hasNoSelection || hasConflict) && (
+        <div className="space-y-2">
+          {hasNoSelection && (
+            <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+              Select at least one stack to include in generated lineups.
             </div>
-          ))}
+          )}
+          {hasConflict && (
+            <div className="rounded-md border border-yellow-400/40 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-100">
+              Total minimum exposure exceeds 100%. Lower a few minimums to proceed.
+            </div>
+          )}
         </div>
+      )}
+
+      <div className="flex-1">
+        {stackSettings.length === 0 ? (
+          <div className="flex h-full items-center justify-center px-6 py-10 text-sm text-slate-400">
+            No stack types available for {sport}. Configure sport settings to populate options.
+          </div>
+        ) : (
+          <div className="mx-auto h-full w-full max-w-4xl overflow-hidden rounded-lg border border-slate-700">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-slate-800/90 backdrop-blur">
+                <tr className="text-left text-slate-300">
+                  <th className="w-14 px-2 py-2 font-semibold">Use</th>
+                  <th className="px-2 py-2 font-semibold">Stack Type</th>
+                  <th className="w-28 px-2 py-2 text-right font-semibold">Min %</th>
+                  <th className="w-28 px-2 py-2 text-right font-semibold">Max %</th>
+                  <th className="px-2 py-2 text-right font-semibold">Live Exposure</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stackSettings.map((stack, index) => {
+                  const exposureBadges = getExposureBadges(stack);
+                  const exposureSummary = exposureBadges.length
+                    ? exposureBadges.map((badge) => `${badge.label}: ${badge.value.toFixed(1)}%`).join(' • ')
+                    : '—';
+
+                  return (
+                    <tr
+                      key={stack.id}
+                      onClick={(e) => {
+                        // Don't toggle if clicking on input fields
+                        const target = e.target as HTMLElement;
+                        if (target.tagName === 'INPUT' || target.closest('input')) {
+                          return;
+                        }
+                        toggleStackType(stack.id, e);
+                      }}
+                      className={`border-t border-slate-800 cursor-pointer transition-colors hover:bg-slate-800/50 ${
+                        index % 2 === 0 ? 'bg-slate-900/70' : 'bg-slate-900/50'
+                      } ${stack.enabled ? 'bg-cyan-500/10 hover:bg-cyan-500/15' : ''}`}
+                    >
+                      <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={stack.enabled}
+                          onCheckedChange={(checked) => {
+                            // Only toggle if the checked state doesn't match current state
+                            if (checked !== stack.enabled) {
+                              toggleStackType(stack.id);
+                            }
+                          }}
+                          className="cursor-pointer transition-all duration-200"
+                        />
+                      </td>
+                      <td className="px-2 py-2 align-middle">
+                        <div className={`font-medium ${stack.enabled ? 'text-white' : 'text-slate-400'}`}>
+                          {stack.label}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {getStackDescription(stack.label, sport)}
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={stack.minExp}
+                          onChange={(e) => updateExposure(stack.id, 'minExp', parseInt(e.target.value) || 0)}
+                          disabled={!stack.enabled}
+                          className={`h-9 w-full text-right ${
+                            stack.enabled ? 'bg-slate-800 text-white' : 'bg-slate-900 text-slate-500'
+                          }`}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={stack.maxExp}
+                          onChange={(e) => updateExposure(stack.id, 'maxExp', parseInt(e.target.value) || 0)}
+                          disabled={!stack.enabled}
+                          className={`h-9 w-full text-right ${
+                            stack.enabled ? 'bg-slate-800 text-white' : 'bg-slate-900 text-slate-500'
+                          }`}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right text-slate-300">
+                        {stack.enabled ? exposureSummary : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* Summary Footer */}
-      {enabledStacks.length > 0 && (
-        <div className="border-t-2 border-slate-700 pt-5">
-          <div className="flex items-center justify-between text-lg">
-            <div className="flex gap-8">
-              <div>
-                <span className="text-slate-300 font-medium">Total Min: </span>
-                <span className={`font-bold text-xl ${hasConflict ? 'text-red-400' : 'text-cyan-400'}`}>
-                  {totalMinExp}%
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-300 font-medium">Total Max: </span>
-                <span className="font-bold text-xl text-white">{totalMaxExp}%</span>
-              </div>
-            </div>
-            <div className="text-slate-300 text-base">
-              {enabledStacks.length} of {stackSettings.length} enabled
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tip */}
-      <div className="bg-slate-800/40 border border-slate-600 rounded-lg p-4">
-        <div className="flex items-start gap-3">
-          <div className="text-cyan-400 text-lg">💡</div>
-          <p className="text-slate-200 text-base leading-relaxed">
-            <span className="font-bold text-cyan-400">Tip:</span> Selected stack types will be distributed across generated lineups. 
-            Exposure percentages are calculated after optimization completes.
-          </p>
-        </div>
+      <div className="mx-auto mt-auto flex w-full max-w-4xl flex-wrap items-center justify-between gap-3 rounded-md border border-slate-700 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+        <span>
+          Active stacks:{' '}
+          <span className="font-semibold text-white">
+            {enabledStacks.length}
+          </span>{' '}
+          / {stackSettings.length}
+        </span>
+        <span>
+          Total min:{' '}
+          <span className={`font-semibold ${hasConflict ? 'text-red-300' : 'text-white'}`}>
+            {totalMinExp}%
+          </span>
+          <span className="ml-3">
+            Total max: <span className="font-semibold text-white">{totalMaxExp}%</span>
+          </span>
+        </span>
+        <span className="text-xs text-slate-500">
+          Min remaining: {minRemaining}% • Max headroom: {maxHeadroom}%
+        </span>
       </div>
     </div>
   );
@@ -1166,6 +1327,24 @@ interface AdvancedQuantSettings {
   expectedWinRate: number;
 }
 
+// Default Advanced Quant Settings
+const DEFAULT_ADVANCED_QUANT_SETTINGS: AdvancedQuantSettings = {
+  enabled: false,
+  strategy: 'combined',
+  riskTolerance: 1.0,
+  varConfidence: 0.95,
+  targetVolatility: 0.20,
+  monteCarloSims: 10000,
+  timeHorizon: 1,
+  garchP: 1,
+  garchQ: 1,
+  lookbackPeriod: 100,
+  copulaFamily: 'gaussian',
+  dependencyThreshold: 0.3,
+  maxKellyFraction: 0.25,
+  expectedWinRate: 0.20,
+};
+
 // Advanced Quant Tab Component
 interface AdvancedQuantTabProps {
   settings: AdvancedQuantSettings;
@@ -1173,8 +1352,14 @@ interface AdvancedQuantTabProps {
 }
 
 const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSettingsChange }) => {
+  // Merge with defaults to ensure all properties exist
+  const safeSettings: AdvancedQuantSettings = {
+    ...DEFAULT_ADVANCED_QUANT_SETTINGS,
+    ...settings,
+  };
+
   const updateSetting = <K extends keyof AdvancedQuantSettings>(key: K, value: AdvancedQuantSettings[K]) => {
-    onSettingsChange({ ...settings, [key]: value });
+    onSettingsChange({ ...safeSettings, [key]: value });
   };
 
   return (
@@ -1197,7 +1382,7 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Checkbox
-              checked={settings.enabled}
+              checked={safeSettings.enabled}
               onCheckedChange={(checked: boolean) => updateSetting('enabled', checked as boolean)}
               className="border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
               style={{ 
@@ -1205,7 +1390,7 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
               }}
             />
             <div>
-              <Label className="text-white font-semibold text-base cursor-pointer" onClick={() => updateSetting('enabled', !settings.enabled)}>
+              <Label className="text-white font-semibold text-base cursor-pointer" onClick={() => updateSetting('enabled', !safeSettings.enabled)}>
                 Enable Advanced Quantitative Optimization
               </Label>
               <p className="text-xs text-slate-400 mt-1">
@@ -1213,7 +1398,7 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
               </p>
             </div>
           </div>
-          {settings.enabled && (
+          {safeSettings.enabled && (
             <div className="flex items-center gap-2 text-white">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
               <span className="text-xs font-medium">ENABLED</span>
@@ -1228,9 +1413,9 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
         <div>
           <Label className="text-white block mb-2 text-sm">Strategy</Label>
           <Select 
-            value={settings.strategy} 
+            value={safeSettings.strategy} 
             onValueChange={(v: string) => updateSetting('strategy', v)}
-            disabled={!settings.enabled}
+            disabled={!safeSettings.enabled}
           >
             <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
               <SelectValue />
@@ -1244,11 +1429,11 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
             </SelectContent>
           </Select>
           <p className="text-xs text-slate-400 mt-1">
-            {settings.strategy === 'combined' && 'Combines multiple optimization techniques for balanced approach'}
-            {settings.strategy === 'kelly_criterion' && 'Pure Kelly optimal betting strategy - maximizes long-term growth'}
-            {settings.strategy === 'risk_parity' && 'Equal risk contribution - balances volatility across lineup'}
-            {settings.strategy === 'mean_variance' && 'Classic Markowitz optimization - maximizes return for given risk'}
-            {settings.strategy === 'equal_weight' && 'Simple equal allocation - baseline strategy'}
+            {safeSettings.strategy === 'combined' && 'Combines multiple optimization techniques for balanced approach'}
+            {safeSettings.strategy === 'kelly_criterion' && 'Pure Kelly optimal betting strategy - maximizes long-term growth'}
+            {safeSettings.strategy === 'risk_parity' && 'Equal risk contribution - balances volatility across lineup'}
+            {safeSettings.strategy === 'mean_variance' && 'Classic Markowitz optimization - maximizes return for given risk'}
+            {safeSettings.strategy === 'equal_weight' && 'Simple equal allocation - baseline strategy'}
           </p>
         </div>
       </Card>
@@ -1260,16 +1445,16 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
           <div>
             <div className="flex justify-between mb-2">
               <Label className="text-white text-sm">Risk Tolerance</Label>
-              <span className="text-cyan-400 font-medium text-sm">{settings.riskTolerance.toFixed(2)}</span>
+              <span className="text-cyan-400 font-medium text-sm">{(safeSettings.riskTolerance ?? 1.0).toFixed(2)}</span>
             </div>
             <input
               type="range"
               min="0.1"
               max="2.0"
               step="0.1"
-              value={settings.riskTolerance}
+              value={safeSettings.riskTolerance}
               onChange={(e) => updateSetting('riskTolerance', parseFloat(e.target.value))}
-              disabled={!settings.enabled}
+              disabled={!safeSettings.enabled}
               className="w-full"
             />
             <p className="text-xs text-slate-400 mt-1">Range: 0.1 - 2.0 (1.0 = neutral, &lt;1.0 = conservative, &gt;1.0 = aggressive)</p>
@@ -1278,16 +1463,16 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
           <div>
             <div className="flex justify-between mb-2">
               <Label className="text-white text-sm">VaR Confidence Level</Label>
-              <span className="text-cyan-400 font-medium text-sm">{(settings.varConfidence * 100).toFixed(0)}%</span>
+              <span className="text-cyan-400 font-medium text-sm">{((safeSettings.varConfidence ?? 0.95) * 100).toFixed(0)}%</span>
             </div>
             <input
               type="range"
               min="0.90"
               max="0.99"
               step="0.01"
-              value={settings.varConfidence}
+              value={safeSettings.varConfidence}
               onChange={(e) => updateSetting('varConfidence', parseFloat(e.target.value))}
-              disabled={!settings.enabled}
+              disabled={!safeSettings.enabled}
               className="w-full"
             />
             <p className="text-xs text-slate-400 mt-1">Range: 90% - 99% (probability level for Value-at-Risk)</p>
@@ -1296,16 +1481,16 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
           <div>
             <div className="flex justify-between mb-2">
               <Label className="text-white text-sm">Target Volatility</Label>
-              <span className="text-cyan-400 font-medium text-sm">{(settings.targetVolatility * 100).toFixed(0)}%</span>
+              <span className="text-cyan-400 font-medium text-sm">{((safeSettings.targetVolatility ?? 0.20) * 100).toFixed(0)}%</span>
             </div>
             <input
               type="range"
               min="0.05"
               max="0.50"
               step="0.01"
-              value={settings.targetVolatility}
+              value={safeSettings.targetVolatility}
               onChange={(e) => updateSetting('targetVolatility', parseFloat(e.target.value))}
-              disabled={!settings.enabled}
+              disabled={!safeSettings.enabled}
               className="w-full"
             />
             <p className="text-xs text-slate-400 mt-1">Range: 5% - 50% (target standard deviation of returns)</p>
@@ -1324,9 +1509,9 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
               min="1000"
               max="50000"
               step="1000"
-              value={settings.monteCarloSims}
+              value={safeSettings.monteCarloSims}
               onChange={(e) => updateSetting('monteCarloSims', parseInt(e.target.value) || 10000)}
-              disabled={!settings.enabled}
+              disabled={!safeSettings.enabled}
               className="bg-slate-700 border-slate-600 text-white"
             />
             <p className="text-xs text-slate-400 mt-1">1K - 50K (10K recommended)</p>
@@ -1337,9 +1522,9 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
               type="number"
               min="1"
               max="30"
-              value={settings.timeHorizon}
+              value={safeSettings.timeHorizon}
               onChange={(e) => updateSetting('timeHorizon', parseInt(e.target.value) || 1)}
-              disabled={!settings.enabled}
+              disabled={!safeSettings.enabled}
               className="bg-slate-700 border-slate-600 text-white"
             />
             <p className="text-xs text-slate-400 mt-1">1 - 30 days (1 = single slate)</p>
@@ -1357,9 +1542,9 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
               type="number"
               min="1"
               max="5"
-              value={settings.garchP}
+              value={safeSettings.garchP}
               onChange={(e) => updateSetting('garchP', parseInt(e.target.value) || 1)}
-              disabled={!settings.enabled}
+              disabled={!safeSettings.enabled}
               className="bg-slate-700 border-slate-600 text-white"
             />
             <p className="text-xs text-slate-400 mt-1">1 - 5 (ARCH terms)</p>
@@ -1370,9 +1555,9 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
               type="number"
               min="1"
               max="5"
-              value={settings.garchQ}
+              value={safeSettings.garchQ}
               onChange={(e) => updateSetting('garchQ', parseInt(e.target.value) || 1)}
-              disabled={!settings.enabled}
+              disabled={!safeSettings.enabled}
               className="bg-slate-700 border-slate-600 text-white"
             />
             <p className="text-xs text-slate-400 mt-1">1 - 5 (GARCH terms)</p>
@@ -1384,9 +1569,9 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
               min="30"
               max="365"
               step="10"
-              value={settings.lookbackPeriod}
+              value={safeSettings.lookbackPeriod}
               onChange={(e) => updateSetting('lookbackPeriod', parseInt(e.target.value) || 100)}
-              disabled={!settings.enabled}
+              disabled={!safeSettings.enabled}
               className="bg-slate-700 border-slate-600 text-white"
             />
             <p className="text-xs text-slate-400 mt-1">30 - 365 days</p>
@@ -1404,9 +1589,9 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
           <div>
             <Label className="text-white block mb-2 text-sm">Copula Family</Label>
             <Select 
-              value={settings.copulaFamily} 
+              value={safeSettings.copulaFamily} 
               onValueChange={(v: string) => updateSetting('copulaFamily', v)}
-              disabled={!settings.enabled}
+              disabled={!safeSettings.enabled}
             >
               <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
                 <SelectValue />
@@ -1420,26 +1605,26 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
               </SelectContent>
             </Select>
             <p className="text-xs text-slate-400 mt-1">
-              {settings.copulaFamily === 'gaussian' && 'Normal distribution - symmetric, general use'}
-              {settings.copulaFamily === 't' && 'Student\'s t - heavy tails, extreme events'}
-              {settings.copulaFamily === 'clayton' && 'Lower tail dependence - fail together'}
-              {settings.copulaFamily === 'frank' && 'Weak tail dependence - more independent'}
-              {settings.copulaFamily === 'gumbel' && 'Upper tail dependence - succeed together'}
+              {safeSettings.copulaFamily === 'gaussian' && 'Normal distribution - symmetric, general use'}
+              {safeSettings.copulaFamily === 't' && 'Student\'s t - heavy tails, extreme events'}
+              {safeSettings.copulaFamily === 'clayton' && 'Lower tail dependence - fail together'}
+              {safeSettings.copulaFamily === 'frank' && 'Weak tail dependence - more independent'}
+              {safeSettings.copulaFamily === 'gumbel' && 'Upper tail dependence - succeed together'}
             </p>
           </div>
           <div>
             <div className="flex justify-between mb-2">
               <Label className="text-white text-sm">Dependency Threshold</Label>
-              <span className="text-cyan-400 font-medium text-sm">{(settings.dependencyThreshold * 100).toFixed(0)}%</span>
+              <span className="text-cyan-400 font-medium text-sm">{((safeSettings.dependencyThreshold ?? 0.3) * 100).toFixed(0)}%</span>
             </div>
             <input
               type="range"
               min="0.1"
               max="0.9"
               step="0.05"
-              value={settings.dependencyThreshold}
+              value={safeSettings.dependencyThreshold}
               onChange={(e) => updateSetting('dependencyThreshold', parseFloat(e.target.value))}
-              disabled={!settings.enabled}
+              disabled={!safeSettings.enabled}
               className="w-full"
             />
             <p className="text-xs text-slate-400 mt-1">Min correlation to model (10% - 90%)</p>
@@ -1454,16 +1639,16 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
           <div>
             <div className="flex justify-between mb-2">
               <Label className="text-white text-sm">Max Kelly Fraction</Label>
-              <span className="text-cyan-400 font-medium text-sm">{(settings.maxKellyFraction * 100).toFixed(0)}%</span>
+              <span className="text-cyan-400 font-medium text-sm">{((safeSettings.maxKellyFraction ?? 0.25) * 100).toFixed(0)}%</span>
             </div>
             <input
               type="range"
               min="0.1"
               max="1.0"
               step="0.05"
-              value={settings.maxKellyFraction}
+              value={safeSettings.maxKellyFraction}
               onChange={(e) => updateSetting('maxKellyFraction', parseFloat(e.target.value))}
-              disabled={!settings.enabled}
+              disabled={!safeSettings.enabled}
               className="w-full"
             />
             <p className="text-xs text-slate-400 mt-1">10% - 100% of bankroll (25% = quarter Kelly, recommended)</p>
@@ -1471,16 +1656,16 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
           <div>
             <div className="flex justify-between mb-2">
               <Label className="text-white text-sm">Expected Win Rate</Label>
-              <span className="text-cyan-400 font-medium text-sm">{(settings.expectedWinRate * 100).toFixed(0)}%</span>
+              <span className="text-cyan-400 font-medium text-sm">{((safeSettings.expectedWinRate ?? 0.20) * 100).toFixed(0)}%</span>
             </div>
             <input
               type="range"
               min="0.1"
               max="0.9"
               step="0.05"
-              value={settings.expectedWinRate}
+              value={safeSettings.expectedWinRate}
               onChange={(e) => updateSetting('expectedWinRate', parseFloat(e.target.value))}
-              disabled={!settings.enabled}
+              disabled={!safeSettings.enabled}
               className="w-full"
             />
             <p className="text-xs text-slate-400 mt-1">10% - 90% (50/50: 50%, GPP top 20%: 20%)</p>
@@ -1492,14 +1677,14 @@ const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSetting
       <Card className="bg-slate-700/40 border-slate-600/50 p-4">
         <h3 className="text-sm font-bold text-cyan-400 uppercase tracking-wider mb-3">Status & Information</h3>
         <div className="space-y-3">
-          <div className={`flex items-center gap-2 ${settings.enabled ? 'text-white' : 'text-slate-500'}`}>
-            {settings.enabled ? '✓' : '○'} 
+          <div className={`flex items-center gap-2 ${safeSettings.enabled ? 'text-white' : 'text-slate-500'}`}>
+            {safeSettings.enabled ? '✓' : '○'} 
             <span className="font-medium">
-              Advanced quantitative optimization {settings.enabled ? 'ENABLED' : 'DISABLED'}
+              Advanced quantitative optimization {safeSettings.enabled ? 'ENABLED' : 'DISABLED'}
             </span>
           </div>
 
-          {settings.enabled && (
+          {safeSettings.enabled && (
             <>
               <div className="border-t border-slate-600 pt-3">
                 <div className="text-sm text-white mb-2">Library Status:</div>
@@ -1919,11 +2104,13 @@ const MyEntriesTab: React.FC<MyEntriesTabProps> = ({ results, sport }) => {
   );
 };
 
+type BuildSport = Sport | null;
+
 // Build state interface for multi-build support
 interface BuildState {
   id: string;
   name: string;
-  sport: Sport;
+  sport: BuildSport;
   activeTab: string;
   playerData: Player[];
   selectedPlayers: string[];
@@ -1931,66 +2118,73 @@ interface BuildState {
   stackSettings: StackType[];
   advancedQuantSettings: any;
   results: any[];
+  minSalary: number | null;
 }
 
-interface DFSOptimizerProps {
-  sport: 'NFL' | 'NBA' | 'MLB';
-}
+const DFSOptimizer = React.memo(() => {
+  const createEmptyTeamSelections = (): Record<number | 'all', string[]> => ({
+    all: [],
+    2: [],
+    3: [],
+    4: [],
+    5: [],
+  });
 
-const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
+  function initializeStackSettings(sport: Sport): StackType[] {
+    const config = SPORT_CONFIGS[sport];
+    return config.stackTypes.map((stackType, index) => ({
+      id: `stack-${index}`,
+      label: stackType,
+      minExp: 0,
+      maxExp: 100,
+      enabled: false
+    }));
+  }
+
+  const createBuildState = (id: string, name: string, sport: BuildSport): BuildState => ({
+    id,
+    name,
+    sport,
+    activeTab: 'team-combos',
+    playerData: [],
+    selectedPlayers: [],
+    teamSelections: createEmptyTeamSelections(),
+    stackSettings: sport ? initializeStackSettings(sport) : [],
+    advancedQuantSettings: { ...DEFAULT_ADVANCED_QUANT_SETTINGS },
+    results: [],
+    minSalary: sport ? SPORT_CONFIGS[sport].defaultMinSalary : null,
+  });
+
   // Build management state
   const [builds, setBuilds] = useState<BuildState[]>([
-    {
-      id: 'build-1',
-      name: 'Build 1',
-      sport: sportProp as Sport,
-      activeTab: 'team-combos',
-      playerData: [],
-      selectedPlayers: [],
-      teamSelections: {
-        all: [],
-        2: [],
-        3: [],
-        4: [],
-        5: [],
-      },
-      stackSettings: [],
-      advancedQuantSettings: {},
-      results: [],
-    }
+    createBuildState('build-1', 'Build 1', null)
   ]);
   const [activeBuildId, setActiveBuildId] = useState<string>('build-1');
 
   // Get current build
   const currentBuild = builds.find(build => build.id === activeBuildId) || builds[0];
   
-  // Use sport prop from Dashboard instead of build's sport
-  const currentSport = sportProp as Sport;
-  const sportConfig = SPORT_CONFIGS[currentSport];
+  const currentSport = currentBuild?.sport ?? null;
+  const sportConfig = currentSport ? SPORT_CONFIGS[currentSport] : undefined;
+  const sportLocked = Boolean(currentSport);
+  const sportStatusLabel = sportLocked
+    ? `Activate Optimizer: ${currentSport}`
+    : 'Activate Optimizer: No Sport Selected';
   
+  const getHighestBuildNumber = (buildList: BuildState[]) =>
+    buildList.reduce((max, build) => {
+      const match = build.id.match(/build-(\d+)/);
+      if (!match) return max;
+      const parsed = parseInt(match[1], 10);
+      return Number.isNaN(parsed) ? max : Math.max(max, parsed);
+    }, 0);
+
   // Build management functions
   const addNewBuild = () => {
     if (builds.length >= 5) return; // Max 5 builds
     
-    const newBuildNumber = builds.length + 1;
-    const newBuild: BuildState = {
-      id: `build-${newBuildNumber}`,
-      name: `Build ${newBuildNumber}`,
-      sport: currentSport,
-      activeTab: 'team-combos',
-      playerData: [],
-      selectedPlayers: [],
-      teamSelections: {
-        all: [],
-        2: [],
-        3: [],
-        4: [],
-        5: [],
-      },
-      stackSettings: initializeStackSettings(currentSport),
-      advancedQuantSettings: {},
-      results: [],
-    };
+    const newBuildNumber = getHighestBuildNumber(builds) + 1;
+    const newBuild = createBuildState(`build-${newBuildNumber}`, `Build ${newBuildNumber}`, null);
     
     setBuilds(prev => [...prev, newBuild]);
     setActiveBuildId(newBuild.id);
@@ -2019,18 +2213,6 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
     ));
   };
 
-  // Initialize stack settings based on sport
-  const initializeStackSettings = (sport: Sport): StackType[] => {
-    const config = SPORT_CONFIGS[sport];
-    return config.stackTypes.map((stackType, index) => ({
-      id: `stack-${index}`,
-      label: stackType,
-      minExp: 0,
-      maxExp: 100,
-      enabled: false
-    }));
-  };
-
   // Get current build data
   const activeTab = currentBuild.activeTab;
   const playerData = currentBuild.playerData;
@@ -2039,24 +2221,15 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
   const stackSettings = currentBuild.stackSettings;
   const advancedQuantSettings = currentBuild.advancedQuantSettings;
   const results = currentBuild.results;
-  
-  // Sync build's sport with prop when it changes
-  useEffect(() => {
-    if (currentBuild.sport !== sportProp) {
-      updateCurrentBuild({ 
-        sport: sportProp as Sport,
-        stackSettings: initializeStackSettings(sportProp as Sport),
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sportProp, activeBuildId]);
 
   // Initialize stack settings for current build if not set
   useEffect(() => {
+    if (!currentSport) return;
     if (stackSettings.length === 0) {
       updateCurrentBuild({ stackSettings: initializeStackSettings(currentSport) });
     }
-  }, [currentSport]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSport, stackSettings.length]);
 
   // Build state setters
   const setActiveTab = (tab: string) => updateCurrentBuild({ activeTab: tab });
@@ -2067,50 +2240,7 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
   const setAdvancedQuantSettings = (settings: any) => updateCurrentBuild({ advancedQuantSettings: settings });
   const setResults = (newResults: any[]) => updateCurrentBuild({ results: newResults });
 
-  const handleSelectedPlayersChange = useCallback((playerIds: string[]) => {
-    setSelectedPlayers(playerIds);
-    const updatedPlayers = (currentBuild.playerData || []).map((player) => ({
-      ...player,
-      selected: playerIds.includes(player.id),
-    }));
-    setPlayerData(updatedPlayers);
-  }, [currentBuild.playerData]);
-
-  // Sport change handler - no longer needed as sport comes from Dashboard prop
-  // Removed to use Dashboard header instead
-  
-  // Optimization Settings
-  const [numLineups, setNumLineups] = useState(100);
-  const [minUnique, setMinUnique] = useState(3);
-  const [minSalary, setMinSalary] = useState(sportConfig.defaultMinSalary);
-  const [disableKelly, setDisableKelly] = useState(false);
-  
-  // Sorting
-  const [sortMethod, setSortMethod] = useState('points');
-  
-  // Generated Teams - Now connected to backend
-  const [generatedTeams, setGeneratedTeams] = useState<any[]>([]);
-  
-  // Optimization state
-  const [isOptimizing, setIsOptimizing] = useState(false);
-  const [isRunningCombinations, setIsRunningCombinations] = useState(false);
-  const [dkEntriesLoaded, setDkEntriesLoaded] = useState(false);
-  const workspaceCsvInputRef = useRef<HTMLInputElement | null>(null);
-  const [favorites, setFavorites] = useState<FavoriteLineup[]>([]);
-  const [favoriteRunCounter, setFavoriteRunCounter] = useState(1);
-
-  // Keep backend sport mode in sync with current selection
-  useEffect(() => {
-    let isMounted = true;
-    dfsApi.setSport(currentSport).catch((error) => {
-      if (!isMounted) return;
-      console.error('Failed to set sport on backend', error);
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, [currentSport]);
-
+  // Define syncSelectionsWithBackend before handleSelectedPlayersChange
   const syncSelectionsWithBackend = useCallback(async (selectedIds: string[]) => {
     try {
       await dfsApi.bulkUpdatePlayers({ action: 'deselect', filters: {} });
@@ -2127,6 +2257,64 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
       throw error;
     }
   }, []);
+
+  const handleSelectedPlayersChange = useCallback(async (playerIds: string[]) => {
+    setSelectedPlayers(playerIds);
+    const updatedPlayers = (currentBuild.playerData || []).map((player) => ({
+      ...player,
+      selected: playerIds.includes(player.id),
+    }));
+    setPlayerData(updatedPlayers);
+    
+    // Sync with backend
+    try {
+      await syncSelectionsWithBackend(playerIds);
+    } catch (error) {
+      console.error('Failed to sync player selections with backend:', error);
+      // Don't show toast here as individual toggles will handle their own errors
+    }
+  }, [currentBuild.playerData, syncSelectionsWithBackend]);
+
+  // Optimization Settings
+  const [numLineups, setNumLineups] = useState(100);
+  const [minUnique, setMinUnique] = useState(3);
+  const minSalary = currentBuild.minSalary ?? (sportConfig?.defaultMinSalary ?? 0);
+  const setMinSalary = (value: number) => {
+    if (!sportConfig) return;
+    const { maxSalary, defaultMinSalary } = sportConfig;
+    const parsed = Number.isFinite(value) ? value : defaultMinSalary;
+    const clamped = Math.max(0, Math.min(parsed, maxSalary));
+    updateCurrentBuild({ minSalary: clamped });
+  };
+  const [disableKelly, setDisableKelly] = useState(false);
+  
+  // Sorting
+  const [sortMethod, setSortMethod] = useState('points');
+  
+  // Generated Teams - Now connected to backend
+  const [generatedTeams, setGeneratedTeams] = useState<any[]>([]);
+  
+  // Optimization state
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [isRunningCombinations, setIsRunningCombinations] = useState(false);
+  const [dkEntriesLoaded, setDkEntriesLoaded] = useState(false);
+  const workspaceCsvInputRef = useRef<HTMLInputElement | null>(null);
+  const projCsvInputRef = useRef<HTMLInputElement | null>(null);
+  const [favorites, setFavorites] = useState<FavoriteLineup[]>([]);
+  const [favoriteRunCounter, setFavoriteRunCounter] = useState(1);
+
+  // Keep backend sport mode in sync with current selection
+  useEffect(() => {
+    if (!currentSport) return;
+    let isMounted = true;
+    dfsApi.setSport(currentSport).catch((error) => {
+      if (!isMounted) return;
+      console.error('Failed to set sport on backend', error);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [currentSport]);
   
   // Lineups state management
   const [lineups, setLineups] = useState<Array<{
@@ -2154,8 +2342,37 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
   }>>([]);
   const [isLoadingLineups, setIsLoadingLineups] = useState(false);
   
+  const handleBuildSportChange = (sport: Sport) => {
+    if (!currentBuild || currentBuild.sport) {
+      return;
+    }
+
+    updateCurrentBuild({
+      sport,
+      activeTab: 'team-combos',
+      playerData: [],
+      selectedPlayers: [],
+      teamSelections: createEmptyTeamSelections(),
+      stackSettings: initializeStackSettings(sport),
+      advancedQuantSettings: { ...DEFAULT_ADVANCED_QUANT_SETTINGS },
+      results: [],
+      minSalary: SPORT_CONFIGS[sport].defaultMinSalary,
+    });
+
+    setGeneratedTeams([]);
+    setLineups([]);
+    setFavorites([]);
+    setFavoriteRunCounter(1);
+    setDkEntriesLoaded(false);
+  };
+  
   // Function to fetch lineups from backend
   const fetchLineups = async () => {
+    if (!currentSport) {
+      setLineups([]);
+      setIsLoadingLineups(false);
+      return;
+    }
     setIsLoadingLineups(true);
     try {
       // First try to get lineups from local results state
@@ -2223,6 +2440,11 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    if (!currentSport || !sportConfig) {
+      alert('Select a sport before uploading player data.');
+      return;
+    }
+
     try {
       const uploadResult = await dfsApi.uploadPlayers(file);
 
@@ -2256,6 +2478,7 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
           5: [],
         });
         setStackSettings(initializeStackSettings(currentSport));
+        setActiveTab('players');
         alert(`✅ Loaded ${transformedPlayers.length} players successfully!`);
       } else {
         alert(`❌ Upload failed: ${uploadResult?.error || 'Unknown error'}`);
@@ -2268,6 +2491,11 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
 
   const handleRunOptimization = async () => {
     // Validate inputs
+    if (!currentSport || !sportConfig) {
+      alert('Select a sport before running the optimizer.');
+      return;
+    }
+
     if (playerData.length === 0) {
       alert('❌ Please load player data first');
       return;
@@ -2351,6 +2579,10 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
         exposureSettings: exposureSettingsPayload,
         contestMode: 'gpp',
         monteCarloIterations: 100,
+        advancedQuantSettings: {
+          ...DEFAULT_ADVANCED_QUANT_SETTINGS,
+          ...advancedQuantSettings,
+        },
       });
 
       if (optimizationResponse.success) {
@@ -2389,6 +2621,11 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
   };
 
   const handleRunCombinations = async () => {
+    if (!currentSport || !sportConfig) {
+      alert('Select a sport before running combinations.');
+      return;
+    }
+
     if (generatedTeams.length === 0) {
       alert('No teams available to run combinations. Generate teams first.');
       return;
@@ -2412,6 +2649,10 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
       };
 
       const comboResponse = await dfsApi.optimizeLineups({
+        advancedQuantSettings: {
+          ...DEFAULT_ADVANCED_QUANT_SETTINGS,
+          ...advancedQuantSettings,
+        },
         sport: currentSport,
         numLineups: 5,
         minSalary,
@@ -2696,25 +2937,53 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
             </div>
           </div>
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col h-full min-h-0">
-            <div className="bg-slate-800 border-b border-slate-700 px-4 py-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-semibold text-cyan-300">Optimizer Build Workspace</h3>
-                <p className="text-xs text-slate-300 mt-1 max-w-xl">
-                  Configure players, stacks, exposures, and entries for the active optimizer build. Use the tabs
-                  below to switch between each configuration view.
-                </p>
+          <div className="bg-slate-800 border-b border-slate-700 px-4 py-4 flex flex-wrap items-center justify-between gap-6">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-3 bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2">
+                <span className="uppercase tracking-wide text-[11px] text-slate-400">Build / Select Sport</span>
+                <div className="flex gap-2">
+                  {(['NFL', 'NBA', 'MLB'] as Sport[]).map((sportOption) => (
+                    <button
+                      key={sportOption}
+                      onClick={() => handleBuildSportChange(sportOption)}
+                      disabled={sportLocked}
+                      className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all disabled:cursor-not-allowed disabled:opacity-95 ${
+                        currentSport === sportOption
+                          ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30 border-2 border-cyan-400'
+                          : 'bg-slate-700/40 text-slate-300 border-2 border-slate-600/30 hover:bg-slate-700 hover:border-cyan-500/50 hover:text-white'
+                      }`}
+                      title={
+                        sportLocked && currentSport !== sportOption
+                          ? 'Sport selection is locked for this build'
+                          : undefined
+                      }
+                    >
+                      {sportOption === 'NFL' && '🏈 NFL'}
+                      {sportOption === 'NBA' && '🏀 NBA'}
+                      {sportOption === 'MLB' && '⚾ MLB'}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-col items-start sm:items-end text-xs text-slate-300">
-                <span className="uppercase tracking-wide font-medium text-slate-400">Active Build</span>
-                <span className="text-base font-semibold text-white mt-1">
-                  {currentBuild?.name ?? 'Build'}
-                </span>
-                <span className="mt-1 text-[11px] text-slate-400">
-                  {builds.length} {builds.length === 1 ? 'build' : 'builds'} available
-                </span>
+              <div className="flex items-center gap-3 bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2">
+                <span className="uppercase tracking-wide text-[11px] text-slate-400">Active Build</span>
+                <span className="text-sm font-semibold text-white">{currentBuild?.name ?? 'Build'}</span>
               </div>
             </div>
+            <div className="flex flex-col items-end gap-1 text-right">
+              <span className="uppercase tracking-wide text-[11px] text-slate-400">Build Status</span>
+              <span className="text-sm font-semibold text-white">{sportStatusLabel}</span>
+              <span className="text-[11px] text-slate-400">
+                {sportLocked ? 'Sport selection locked for this build' : 'Select a sport to unlock optimizer tools'}
+              </span>
+              <span className="text-[11px] text-slate-500">
+                {builds.length} {builds.length === 1 ? 'build' : 'builds'} available
+              </span>
+            </div>
+          </div>
+
+          {currentSport && sportConfig ? (
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col h-full min-h-0">
             <div className="bg-slate-900/70 border-b border-slate-800 px-3 py-2">
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300">
                 <div className="flex items-center gap-1.5 bg-slate-900/60 border border-slate-700 rounded px-2 py-1">
@@ -2726,7 +2995,7 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
                       onClick={() => workspaceCsvInputRef.current?.click()}
                     >
                       <Upload className="w-3.5 h-3.5 mr-1" />
-                      CSV
+                      Upload CSV
                     </Button>
                     <input
                       ref={workspaceCsvInputRef}
@@ -2739,10 +3008,18 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
                       size="sm"
                       variant="ghost"
                       className="h-7 px-2 text-[11px] font-medium text-slate-300 hover:text-white hover:bg-slate-800"
+                      onClick={() => projCsvInputRef.current?.click()}
                     >
                       <FileText className="w-3.5 h-3.5 mr-1" />
-                      Proj
+                      Load Draftkings Predictions
                     </Button>
+                    <input
+                      ref={projCsvInputRef}
+                      type="file"
+                      accept=".csv"
+                      className="hidden"
+                      onChange={handleFileUpload}
+                    />
                     <Button
                       size="sm"
                       variant="ghost"
@@ -2750,7 +3027,7 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
                       onClick={handleLoadEntries}
                     >
                       <Download className="w-3.5 h-3.5 mr-1" />
-                      Entries
+                      Load Entries CSV
                     </Button>
                   </div>
                 </div>
@@ -2783,13 +3060,13 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
                   <Input
                     type="number"
                     min={0}
-                    max={sportConfig.maxSalary}
+                    max={sportConfig!.maxSalary}
                     step={500}
                     value={minSalary}
-                    onChange={(e) => setMinSalary(parseInt(e.target.value, 10) || sportConfig.defaultMinSalary)}
+                    onChange={(e) => setMinSalary(parseInt(e.target.value, 10))}
                     className="h-7 w-20 bg-slate-950 border border-slate-700 text-xs text-slate-100"
                   />
-                  <span className="text-slate-500">/ {sportConfig.maxSalary}</span>
+                  <span className="text-slate-500">/ {sportConfig!.maxSalary}</span>
                 </div>
 
                 <div className="flex items-center gap-1.5 bg-slate-900/60 border border-slate-700 rounded px-2 py-1">
@@ -2895,7 +3172,14 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
                   <TabsTrigger
                     key={tab.id}
                     value={tab.id}
-                    className="data-[state=active]:bg-slate-700 data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-blue-500 flex items-center gap-1.5 px-3 py-2 text-sm whitespace-nowrap flex-shrink-0 text-white hover:text-white hover:bg-slate-700/50 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-2 text-sm whitespace-nowrap flex-shrink-0 text-white hover:text-white hover:bg-slate-700/50 transition-colors"
+                    style={{
+                      ...(activeTab === tab.id && {
+                        backgroundColor: 'rgba(56, 189, 248, 0.4)',
+                        color: '#e0f2fe',
+                        borderBottom: '2px solid rgb(56, 189, 248)'
+                      })
+                    }}
                   >
                     <Icon className="w-3.5 h-3.5" />
                     <span className="font-normal">{tab.label}</span>
@@ -2986,7 +3270,20 @@ const DFSOptimizer = React.memo(({ sport: sportProp }: DFSOptimizerProps) => {
                 <MyEntriesTab results={results} sport={currentSport} />
               </TabsContent>
             </div>
-          </Tabs>
+            </Tabs>
+          ) : (
+            <div className="flex-1 flex items-center justify-center px-6 py-10 text-center text-slate-300">
+              <div className="max-w-md space-y-3">
+                <h3 className="text-xl font-semibold text-white">No Sport Selected</h3>
+                <p className="text-sm text-slate-400">
+                  Choose NFL, NBA, or MLB on the left to activate this optimizer build. Once selected, the sport is locked for this build.
+                </p>
+                <p className="text-sm text-slate-500">
+                  Each build maintains its own sport and state so you can manage multiple slates at once.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

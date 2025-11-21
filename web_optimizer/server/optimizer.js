@@ -25,8 +25,20 @@ class MLBOptimizer {
       exposureSettings = {},
       riskTolerance = 'medium',
       bankroll = 1000,
+      advancedQuantSettings = {},
       onProgress 
     } = config;
+
+    // Log quant settings if enabled
+    if (advancedQuantSettings && advancedQuantSettings.enabled) {
+      console.log('📊 Advanced Quant Settings enabled:', {
+        strategy: advancedQuantSettings.strategy,
+        riskTolerance: advancedQuantSettings.riskTolerance,
+        varConfidence: advancedQuantSettings.varConfidence,
+        targetVolatility: advancedQuantSettings.targetVolatility,
+        monteCarloSims: advancedQuantSettings.monteCarloSims,
+      });
+    }
 
     const results = [];
     
