@@ -1,0 +1,408 @@
+🚀 DFS Optimizer Server running on port 5001
+📊 WebSocket server running on port 8080
+🌐 Access the app at http://localhost:5001
+Available CSV columns: [
+  'Name',
+  'DK_ID',
+  'Position',
+  'Roster_Position',
+  'Team',
+  'Salary',
+  'Predicted_DK_Points',
+  'Opponent',
+  'Minutes',
+  'Started',
+  'InjuryStatus',
+  'GameID',
+  'HomeOrAway',
+  'DateTime',
+  'Day',
+  'TeamID',
+  'OpponentID',
+  'Points',
+  'Rebounds',
+  'Assists',
+  'Steals',
+  'BlockedShots',
+  'Turnovers',
+  'ThreePointersMade',
+  'FantasyPoints',
+  'FantasyPointsDraftKings',
+  'player_id',
+  'player_name_proj',
+  'team_proj',
+  'position_proj',
+  'projected_points',
+  'projected_dk_points'
+]
+Player 1 processed: {
+  name: 'Tyus Jones',
+  position: 'PG',
+  salary: 3600,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+Raw CSV data sample (first 5 fields): {
+  Name: 'Tyus Jones',
+  Pos: undefined,
+  Team: 'ORL',
+  Salary: '3600',
+  My_Proj: undefined
+}
+Player 2 processed: {
+  name: 'Jonathan Isaac',
+  position: 'PF',
+  salary: 3000,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+Player 3 processed: {
+  name: 'Wendell Carter Jr.',
+  position: 'C',
+  salary: 5300,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+
+=== PROJECTION PARSING SUMMARY ===
+Total players processed: 135
+Players with projections > 0: 0
+Players with zero projections: 135
+=====================================
+
+Available CSV columns: [
+  'Name',
+  'DK_ID',
+  'Position',
+  'Roster_Position',
+  'Team',
+  'Salary',
+  'Predicted_DK_Points',
+  'Opponent',
+  'Minutes',
+  'Started',
+  'InjuryStatus',
+  'GameID',
+  'HomeOrAway',
+  'DateTime',
+  'Day',
+  'TeamID',
+  'OpponentID',
+  'Points',
+  'Rebounds',
+  'Assists',
+  'Steals',
+  'BlockedShots',
+  'Turnovers',
+  'ThreePointersMade',
+  'FantasyPoints',
+  'FantasyPointsDraftKings',
+  'player_id',
+  'player_name_proj',
+  'team_proj',
+  'position_proj',
+  'projected_points',
+  'projected_dk_points'
+]
+Player 1 processed: {
+  name: 'Tyus Jones',
+  position: 'PG',
+  salary: 3600,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+Raw CSV data sample (first 5 fields): {
+  Name: 'Tyus Jones',
+  Pos: undefined,
+  Team: 'ORL',
+  Salary: '3600',
+  My_Proj: undefined
+}
+Player 2 processed: {
+  name: 'Jonathan Isaac',
+  position: 'PF',
+  salary: 3000,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+Player 3 processed: {
+  name: 'Wendell Carter Jr.',
+  position: 'C',
+  salary: 5300,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+
+=== PROJECTION PARSING SUMMARY ===
+Total players processed: 135
+Players with projections > 0: 0
+Players with zero projections: 135
+=====================================
+
+Available CSV columns: [
+  'Name',
+  'DK_ID',
+  'Position',
+  'Roster_Position',
+  'Team',
+  'Salary',
+  'Predicted_DK_Points',
+  'Opponent',
+  'Minutes',
+  'Started',
+  'InjuryStatus',
+  'GameID',
+  'HomeOrAway',
+  'DateTime',
+  'Day',
+  'TeamID',
+  'OpponentID',
+  'Points',
+  'Rebounds',
+  'Assists',
+  'Steals',
+  'BlockedShots',
+  'Turnovers',
+  'ThreePointersMade',
+  'FantasyPoints',
+  'FantasyPointsDraftKings',
+  'player_id',
+  'player_name_proj',
+  'team_proj',
+  'position_proj',
+  'projected_points',
+  'projected_dk_points'
+]
+Player 1 processed: {
+  name: 'Tyus Jones',
+  position: 'PG',
+  salary: 3600,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+Raw CSV data sample (first 5 fields): {
+  Name: 'Tyus Jones',
+  Pos: undefined,
+  Team: 'ORL',
+  Salary: '3600',
+  My_Proj: undefined
+}
+Player 2 processed: {
+  name: 'Jonathan Isaac',
+  position: 'PF',
+  salary: 3000,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+Player 3 processed: {
+  name: 'Wendell Carter Jr.',
+  position: 'C',
+  salary: 5300,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+
+=== PROJECTION PARSING SUMMARY ===
+Total players processed: 135
+Players with projections > 0: 0
+Players with zero projections: 135
+=====================================
+
+Available CSV columns: [
+  'Name',
+  'DK_ID',
+  'Position',
+  'Roster_Position',
+  'Team',
+  'Salary',
+  'Predicted_DK_Points',
+  'Opponent',
+  'Minutes',
+  'Started',
+  'InjuryStatus',
+  'GameID',
+  'HomeOrAway',
+  'DateTime',
+  'Day',
+  'TeamID',
+  'OpponentID',
+  'Points',
+  'Rebounds',
+  'Assists',
+  'Steals',
+  'BlockedShots',
+  'Turnovers',
+  'ThreePointersMade',
+  'FantasyPoints',
+  'FantasyPointsDraftKings',
+  'player_id',
+  'player_name_proj',
+  'team_proj',
+  'position_proj',
+  'projected_points',
+  'projected_dk_points'
+]
+Player 1 processed: {
+  name: 'Tyus Jones',
+  position: 'PG',
+  salary: 3600,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+Raw CSV data sample (first 5 fields): {
+  Name: 'Tyus Jones',
+  Pos: undefined,
+  Team: 'ORL',
+  Salary: '3600',
+  My_Proj: undefined
+}
+Player 2 processed: {
+  name: 'Jonathan Isaac',
+  position: 'PF',
+  salary: 3000,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+Player 3 processed: {
+  name: 'Wendell Carter Jr.',
+  position: 'C',
+  salary: 5300,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+
+=== PROJECTION PARSING SUMMARY ===
+Total players processed: 135
+Players with projections > 0: 0
+Players with zero projections: 135
+=====================================
+
+Available CSV columns: [
+  'Name',
+  'DK_ID',
+  'Position',
+  'Roster_Position',
+  'Team',
+  'Salary',
+  'Predicted_DK_Points',
+  'Opponent',
+  'Minutes',
+  'Started',
+  'InjuryStatus',
+  'GameID',
+  'HomeOrAway',
+  'DateTime',
+  'Day',
+  'TeamID',
+  'OpponentID',
+  'Points',
+  'Rebounds',
+  'Assists',
+  'Steals',
+  'BlockedShots',
+  'Turnovers',
+  'ThreePointersMade',
+  'FantasyPoints',
+  'FantasyPointsDraftKings',
+  'player_id',
+  'player_name_proj',
+  'team_proj',
+  'position_proj',
+  'projected_points',
+  'projected_dk_points'
+]
+Player 1 processed: {
+  name: 'Tyus Jones',
+  position: 'PG',
+  salary: 3600,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+Raw CSV data sample (first 5 fields): {
+  Name: 'Tyus Jones',
+  Pos: undefined,
+  Team: 'ORL',
+  Salary: '3600',
+  My_Proj: undefined
+}
+Player 2 processed: {
+  name: 'Jonathan Isaac',
+  position: 'PF',
+  salary: 3000,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+Player 3 processed: {
+  name: 'Wendell Carter Jr.',
+  position: 'C',
+  salary: 5300,
+  projection: 0,
+  projectionSource: 'none',
+  value: 0,
+  rawMyProj: undefined,
+  rawPPGProjection: undefined,
+  projectionType: 'number'
+}
+
+=== PROJECTION PARSING SUMMARY ===
+Total players processed: 135
+Players with projections > 0: 0
+Players with zero projections: 135
+=====================================
+

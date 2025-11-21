@@ -78,39 +78,30 @@ bool printNextLine(char *buffer, char *ptr, int bufferFillLength, int *lineNumbe
         }
         
         for (p = lineStart; p < lineEnd; p++) {
-            // Check if character is printable text
             unsigned char ch = (unsigned char)*p;
             if (ch >= 32 && ch <= 127) {
-                // Printable ASCII characters (32-127)
                 printf("%c", ch);
             } else if (ch == 9 || ch == 10) {
-                // Tab (9) and Line Feed (10) are allowed
                 printf("%c", ch);
             } else {
-                // Non-text characters - print comma instead
                 printf(",");
             }
         }
         
         return true; // Need to read more from file
     } else {
-        // We found a complete line
         if (!startedLineAlready) {
             printf("%d \"", *lineNumber);
             (*lineNumber)++;
         }
         
         for (p = lineStart; p < lineEnd; p++) {
-            // Check if character is printable text
             unsigned char ch = (unsigned char)*p;
             if (ch >= 32 && ch <= 127) {
-                // Printable ASCII characters (32-127)
                 printf("%c", ch);
             } else if (ch == 9 || ch == 10) {
-                // Tab (9) and Line Feed (10) are allowed
                 printf("%c", ch);
             } else {
-                // Non-text characters - print comma instead
                 printf(",");
             }
         }
@@ -119,3 +110,13 @@ bool printNextLine(char *buffer, char *ptr, int bufferFillLength, int *lineNumbe
         return false; // Line is complete
     }
 }
+
+
+
+
+
+
+
+
+
+

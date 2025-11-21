@@ -31,6 +31,9 @@ import {
   SelectAll,
   ClearAll
 } from '@mui/icons-material';
+import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
+import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import IndeterminateCheckBoxIcon from '@mui/icons-material/IndeterminateCheckBox';
 
 interface Player {
   id: string;
@@ -138,6 +141,14 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ players = [], onPlayersUpdate }
     return filtered;
   };
 
+  const setFilteredSelection = (position: string, checked: boolean) => {
+    const filteredIds = new Set(getFilteredPlayers(position).map(p => p.id));
+    const updated = localPlayers.map(p =>
+      filteredIds.has(p.id) ? { ...p, selected: checked } : p
+    );
+    handlePlayerUpdate(updated);
+  };
+
   const getSelectedCount = () => {
     return localPlayers.filter(p => p.selected).length;
   };
@@ -158,7 +169,23 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ players = [], onPlayersUpdate }
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>Select</TableCell>
+              <TableCell>
+                <Checkbox
+                  size="small"
+                  icon={<CheckBoxOutlineBlankIcon fontSize="small" sx={{ color: '#90caf9' }} />}
+                  checkedIcon={<CheckBoxIcon fontSize="small" sx={{ color: '#90caf9' }} />}
+                  indeterminateIcon={<IndeterminateCheckBoxIcon fontSize="small" sx={{ color: '#90caf9' }} />}
+                  indeterminate={
+                    getFilteredPlayers(position).some(p => p.selected) &&
+                    !getFilteredPlayers(position).every(p => p.selected)
+                  }
+                  checked={
+                    getFilteredPlayers(position).length > 0 &&
+                    getFilteredPlayers(position).every(p => p.selected)
+                  }
+                  onChange={(e) => setFilteredSelection(position, e.target.checked)}
+                />
+              </TableCell>
               <TableCell>Name</TableCell>
               <TableCell>Team</TableCell>
               <TableCell>Position</TableCell>
@@ -175,6 +202,9 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ players = [], onPlayersUpdate }
               <TableRow key={player.id}>
                 <TableCell>
                   <Checkbox
+                    size="small"
+                    icon={<CheckBoxOutlineBlankIcon fontSize="small" sx={{ color: '#90caf9' }} />}
+                    checkedIcon={<CheckBoxIcon fontSize="small" sx={{ color: '#90caf9' }} />}
                     checked={player.selected || false}
                     onChange={(e) => handlePlayerSelection(player.id, e.target.checked)}
                   />

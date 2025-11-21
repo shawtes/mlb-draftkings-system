@@ -20,15 +20,12 @@ int main(int argc, char *argv[])
     
     printf("%s can be opened\n", argv[1]);
     
-    // Read file line by line using fgets
     while (fgets(line, sizeof(line), fp) != NULL) {
-        // Remove newline character if present
         int len = strlen(line);
         if (len > 0 && line[len-1] == '\n') {
             line[len-1] = '\0';
         }
         
-        // Print line number, space, and line content in double quotes
         printf("%d \"%s\"\n", line_number, line);
         line_number++;
     }

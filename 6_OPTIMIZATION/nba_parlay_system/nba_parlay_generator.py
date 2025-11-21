@@ -12,6 +12,17 @@ import os
 from typing import List, Dict, Any
 from dataclasses import dataclass
 from scipy import stats
+import sys
+
+# Allow importing shared optimization modules
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+try:
+    from nba_markov_probabilities import apply_markov_adjustments
+    _MARKOV_AVAILABLE = True
+    print("✅ Markov probabilities available for NBA Parlay Generator")
+except Exception as _e:
+    _MARKOV_AVAILABLE = False
+    print(f"⚠️ Markov probabilities not available: {_e}")
 
 @dataclass
 class NBAParlayLeg:
@@ -209,7 +220,8 @@ class NBAAdvancedParlayGenerator:
     
     def _calculate_hit_rate_improved(self, player: pd.Series, prop_type: str, line: float, projection: float) -> float:
         """Calculate hit rate with improved variance estimates (1.5x multiplier) for NBA"""
-        mean = projection
+        # Prefer Markov expected value if available
+        mean = player.get('MC_Expected', projection)
         
         # Get historical std with multiplier for NBA stats
         std_map = {
@@ -254,11 +266,35 @@ class NBAAdvancedParlayGenerator:
             cv = self._get_default_cv_improved(player.get('position_proj', ''), prop_type)
             std = projection * cv
         
-        # Calculate probability using normal distribution
-        if std > 0:
-            hit_rate = 1 - stats.norm.cdf(line, loc=mean, scale=std)
-        else:
-            hit_rate = player.get(f'{prop_type}_hit_mean', 0.5)
+        # Use Markov chain probability for nearby standard thresholds when available
+        mc_cols = [c for c in player.index if isinstance(c, str) and c.startswith('MC_Prob_Over_')]
+        hit_rate = None
+        if mc_cols:
+            try:
+                # Find closest available threshold among MC_Prob_Over_*
+                thresholds = []
+                for c in mc_cols:
+                    try:
+                        t = float(str(c).split('_')[-1])
+                        thresholds.append((t, c))
+                    except Exception:
+                        continue
+                if thresholds:
+                    closest_t, closest_col = min(thresholds, key=lambda x: abs(x[0] - float(line)))
+                    # If line is within 0.6 of a precomputed threshold, use it
+                    if abs(float(closest_t) - float(line)) <= 0.6:
+                        val = player.get(closest_col, np.nan)
+                        if pd.notna(val) and 0.0 <= float(val) <= 1.0:
+                            hit_rate = float(val)
+            except Exception:
+                hit_rate = None
+        
+        # Fallback: Calculate probability using normal distribution
+        if hit_rate is None:
+            if std > 0:
+                hit_rate = 1 - stats.norm.cdf(line, loc=mean, scale=std)
+            else:
+                hit_rate = player.get(f'{prop_type}_hit_mean', 0.5)
         
         # Reasonable bounds
         return max(0.35, min(0.80, hit_rate))
@@ -331,6 +367,37 @@ def main():
     
     data = pd.read_csv('nba_training_data.csv')
     print(f"✅ Loaded data: {len(data)} records")
+    
+    # Apply Markov chain adjustments using last 3 years cache if available
+    try:
+        if _MARKOV_AVAILABLE and not data.empty:
+            cache_dir = "/Users/sineshawmesfintesfaye/mlb-draftkings-system/nba_historical_cache"
+            before_cols = set(data.columns)
+            # Map to expected projection column for blending
+            if 'Predicted_DK_Points' not in data.columns:
+                if 'projected_dk_points' in data.columns:
+                    data['Predicted_DK_Points'] = data['projected_dk_points']
+                elif 'projected_points' in data.columns:
+                    data['Predicted_DK_Points'] = data['projected_points']
+            data = apply_markov_adjustments(
+                df_players=data,
+                history_df=None,
+                cache_dir=cache_dir,
+                blend_alpha=0.20,
+                min_games=30,
+                player_thresholds=(20.0, 25.0, 30.0),
+            )
+            # Propagate blended projection back to expected parlay columns
+            if 'Predicted_DK_Points' in data.columns:
+                data['projected_points'] = data['Predicted_DK_Points']
+                data['projected_dk_points'] = data['Predicted_DK_Points']
+            added = sorted(list(set(data.columns) - before_cols))
+            if any(c.startswith('MC_') for c in added):
+                print(f"✅ Markov applied for parlay data. Added: {added}")
+            else:
+                print("ℹ️ Markov attempted but no historical cache found; using base projections.")
+    except Exception as e:
+        print(f"⚠️ Skipped Markov adjustments in parlay generator due to error: {e}")
     
     generator = NBAAdvancedParlayGenerator(data)
     

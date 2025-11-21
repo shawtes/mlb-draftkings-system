@@ -4,14 +4,7 @@ from typing import Any, Dict, Iterable, List, Set, Union
 GraphType = Union[Dict[Any, Iterable[Any]], List[List[Any]]]
 
 def extractCycle(graph: GraphType, start: Any) -> List[Any]:
-    """
-    Given a directed graph as an adjacency list (dict or list) and a start node,
-    return a cycle that includes `start` as a list of nodes ending with `start`.
-    Return [] if no such cycle exists.
-
-    - Dict form: {u: [v1, v2, ...]}
-    - List form: graph[u] = [v1, v2, ...] with nodes 0..len(graph)-1
-    """
+    
     def get_neighbors(node: Any) -> Iterable[Any]:
         if isinstance(graph, dict):
             return graph.get(node, [])

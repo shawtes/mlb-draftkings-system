@@ -138,6 +138,14 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ players = [], onPlayersUpdate }
     return filtered;
   };
 
+  const setFilteredSelection = (position: string, checked: boolean) => {
+    const filteredIds = new Set(getFilteredPlayers(position).map(p => p.id));
+    const updated = localPlayers.map(p =>
+      filteredIds.has(p.id) ? { ...p, selected: checked } : p
+    );
+    handlePlayerUpdate(updated);
+  };
+
   const getSelectedCount = () => {
     return localPlayers.filter(p => p.selected).length;
   };
@@ -158,7 +166,20 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ players = [], onPlayersUpdate }
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>Select</TableCell>
+              <TableCell>
+                <Checkbox
+                  color="success"
+                  indeterminate={
+                    getFilteredPlayers(position).some(p => p.selected) &&
+                    !getFilteredPlayers(position).every(p => p.selected)
+                  }
+                  checked={
+                    getFilteredPlayers(position).length > 0 &&
+                    getFilteredPlayers(position).every(p => p.selected)
+                  }
+                  onChange={(e) => setFilteredSelection(position, e.target.checked)}
+                />
+              </TableCell>
               <TableCell>Name</TableCell>
               <TableCell>Team</TableCell>
               <TableCell>Position</TableCell>
@@ -175,6 +196,7 @@ const PlayersTab: React.FC<PlayersTabProps> = ({ players = [], onPlayersUpdate }
               <TableRow key={player.id}>
                 <TableCell>
                   <Checkbox
+                    color="success"
                     checked={player.selected || false}
                     onChange={(e) => handlePlayerSelection(player.id, e.target.checked)}
                   />

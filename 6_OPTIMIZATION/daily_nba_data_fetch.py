@@ -21,15 +21,18 @@ API_KEY = "d62d0ae315504e53a232ff7d1c3bea33"
 # Fantasy API base (per your plan/docs)
 BASE_URL = "https://api.sportsdata.io/api/nba/fantasy/json"
 
+# Historical cache location for Markov probabilities
+HIST_CACHE_DIR = "/Users/sineshawmesfintesfaye/mlb-draftkings-system/nba_historical_cache"
+
 # Output file
-OUTPUT_FILE = "nba_NOV4_READY.csv"
+OUTPUT_FILE = "nba_NOV15_READY_1.csv"
 
 # Date - change this daily or use datetime.now()
-GAME_DATE = "2025-NOV-4"  # Format: YYYY-MMM-DD
+GAME_DATE = "2025-NOV-15"  # Format: YYYY-MMM-DD
 
 # Hard-coded DK Entries CSV path (dynamic player extraction)
 # NOTE: If DK entries don't match the date, set to "" to skip filtering
-DK_ENTRIES_DEFAULT = "/Users/sineshawmesfintesfaye/Downloads/DKEntries-14.csv"  # Set to "" to get ALL projections without DK filtering
+DK_ENTRIES_DEFAULT = "/Users/sineshawmesfintesfaye/Downloads/DKEntries-18.csv"  # Set to "" to get ALL projections without DK filtering
 # DK_ENTRIES_DEFAULT = "/Users/sineshawmesfintesfaye/Downloads/DKEntries-8.csv"  # Oct 29 only
 
 # ============================================================================
@@ -424,6 +427,164 @@ def process_api_projections(api_df):
     return processed
 
 
+def _compute_dk_points_from_stats(df: pd.DataFrame) -> pd.Series:
+    """Vectorized DraftKings NBA scoring from box score columns."""
+    pts = pd.Series(0.0, index=df.index)
+    if 'Points' in df.columns:
+        pts = pts.add(df['Points'].fillna(0) * 1.0)
+    if 'ThreePointersMade' in df.columns:
+        pts = pts.add(df['ThreePointersMade'].fillna(0) * 0.5)
+    if 'Rebounds' in df.columns:
+        pts = pts.add(df['Rebounds'].fillna(0) * 1.25)
+    if 'Assists' in df.columns:
+        pts = pts.add(df['Assists'].fillna(0) * 1.5)
+    if 'Steals' in df.columns:
+        pts = pts.add(df['Steals'].fillna(0) * 2.0)
+    if 'BlockedShots' in df.columns:
+        pts = pts.add(df['BlockedShots'].fillna(0) * 2.0)
+    if 'Turnovers' in df.columns:
+        pts = pts.sub(df['Turnovers'].fillna(0) * 0.5)
+    # Double-double and triple-double bonuses if present
+    if 'DoubleDouble' in df.columns:
+        pts = pts.add((df['DoubleDouble'].fillna(0) > 0).astype(float) * 1.5)
+    if 'TripleDouble' in df.columns:
+        pts = pts.add((df['TripleDouble'].fillna(0) > 0).astype(float) * 3.0)
+    return pts.round(2)
+
+
+def fetch_player_game_stats_by_date(date: str) -> pd.DataFrame:
+    """Fetch player game stats by date from SportsData.io."""
+    endpoint = f"/PlayerGameStatsByDate/{date}"
+    url_header = f"{BASE_URL}{endpoint}"
+    url_query = f"{BASE_URL}{endpoint}?key={API_KEY}"
+    headers = {"Ocp-Apim-Subscription-Key": API_KEY}
+    attempts = [
+        {"verify": True, "label": "standard"},
+        {"verify": True, "label": "retry"},
+        {"verify": False, "label": "ssl_fallback"},
+    ]
+    last_error = None
+    for attempt in attempts:
+        try:
+            resp = requests.get(url_header, headers=headers, timeout=30, verify=attempt["verify"]) 
+            if resp.status_code == 200:
+                return pd.DataFrame(resp.json())
+            resp2 = requests.get(url_query, timeout=30, verify=attempt["verify"]) 
+            if resp2.status_code == 200:
+                return pd.DataFrame(resp2.json())
+        except Exception as e:
+            last_error = e
+            continue
+    if last_error:
+        print(f"❌ Historical request failed for {date}: {last_error}")
+    return pd.DataFrame()
+
+
+def _normalize_history_day(df_day: pd.DataFrame, date_str: str) -> pd.DataFrame:
+    """Normalize one day of history to required columns for Markov cache."""
+    if df_day is None or df_day.empty:
+        return pd.DataFrame()
+    out = pd.DataFrame()
+    # Name
+    if 'Name' in df_day.columns:
+        out['Name'] = df_day['Name']
+    elif 'PlayerName' in df_day.columns:
+        out['Name'] = df_day['PlayerName']
+    else:
+        out['Name'] = ''
+    # Team
+    if 'Team' in df_day.columns:
+        out['Team'] = df_day['Team']
+    elif 'TeamAbbr' in df_day.columns:
+        out['Team'] = df_day['TeamAbbr']
+    else:
+        out['Team'] = ''
+    # ID
+    for c in ['ID', 'PlayerID', 'DK_ID', 'GlobalPlayerID']:
+        if c in df_day.columns:
+            out[c] = df_day[c]
+            break
+    # Date
+    out['Date'] = date_str
+    # Fantasy points
+    if 'FantasyPointsDraftKings' in df_day.columns:
+        out['FantasyPointsDraftKings'] = pd.to_numeric(df_day['FantasyPointsDraftKings'], errors='coerce')
+    elif 'FantasyPoints' in df_day.columns:
+        out['FantasyPointsDraftKings'] = pd.to_numeric(df_day['FantasyPoints'], errors='coerce')
+    else:
+        out['FantasyPointsDraftKings'] = _compute_dk_points_from_stats(df_day)
+    return out
+
+
+def ensure_historical_cache(days: int = 1095, end_date: str = None) -> Optional[str]:
+    """Build a 3-year (default) historical cache if missing. Returns cache path."""
+    os.makedirs(HIST_CACHE_DIR, exist_ok=True)
+    pkl_path = os.path.join(HIST_CACHE_DIR, 'historical_3years.pkl')
+    csv_path = os.path.join(HIST_CACHE_DIR, 'historical_3years.csv')
+    if os.path.exists(pkl_path) or os.path.exists(csv_path):
+        print(f"🗂  Historical cache already exists at {HIST_CACHE_DIR}")
+        return pkl_path if os.path.exists(pkl_path) else csv_path
+
+    # Determine date range
+    if end_date is None:
+        end_dt = datetime.now()
+    else:
+        try:
+            end_dt = datetime.strptime(end_date.replace('-', ' '), '%Y %b %d')
+        except Exception:
+            end_dt = datetime.now()
+    dates = [(end_dt - pd.Timedelta(days=i)).strftime('%Y-%b-%d').upper() for i in range(days)]
+
+    print_header("📚 BUILDING 3-YEAR HISTORICAL CACHE (DK Fantasy Points)")
+    print(f"Total dates to fetch: {len(dates)} (this may take a while, API-rate limited)")
+
+    all_days = []
+    fetched = 0
+    for i, d in enumerate(dates):
+        try:
+            day_df = fetch_player_game_stats_by_date(d)
+            if not day_df.empty:
+                norm = _normalize_history_day(day_df, d)
+                if not norm.empty:
+                    all_days.append(norm)
+            fetched += 1
+            if fetched % 25 == 0:
+                print(f"   Progress: {fetched}/{len(dates)} days...")
+        except Exception as e:
+            print(f"⚠️  Error fetching {d}: {e}")
+        # Be kind to API
+        try:
+            import time
+            time.sleep(0.12)
+        except Exception:
+            pass
+
+    if not all_days:
+        print("❌ No historical data fetched. Cache not created.")
+        return None
+
+    hist_df = pd.concat(all_days, ignore_index=True)
+    try:
+        hist_df.to_pickle(pkl_path)
+        hist_df.to_csv(csv_path, index=False)
+        # Save basic metadata
+        meta = {
+            'games_analyzed': int(len(hist_df)),
+            'players': int(hist_df['Name'].nunique() if 'Name' in hist_df.columns else 0),
+            'dates': int(hist_df['Date'].nunique() if 'Date' in hist_df.columns else 0),
+            'generated_at': datetime.now().isoformat(timespec='seconds')
+        }
+        with open(os.path.join(HIST_CACHE_DIR, 'config.json'), 'w') as f:
+            import json as _json
+            _json.dump(meta, f, indent=2)
+        print(f"✅ Historical cache saved: {pkl_path} and {csv_path}")
+        print(f"   Summary: {meta}")
+        return pkl_path
+    except Exception as e:
+        print(f"⚠️  Failed to save historical cache: {e}")
+        return None
+
+
 def fetch_injuries() -> pd.DataFrame:
     """Fetch current NBA injuries from SportsDataIO and return as DataFrame."""
     print_header("🩺 FETCHING INJURIES FROM API")
@@ -609,6 +770,9 @@ def main():
     parser.add_argument('--out', default=OUTPUT_FILE, help='Output CSV file')
     parser.add_argument('--dk-entries', default=DK_ENTRIES_DEFAULT, help='Path to DK Entries CSV to parse players from')
     parser.add_argument('--dk-player-pool', help='Path to DK Player Pool CSV for Name/ID/Position/Salary')
+    parser.add_argument('--build-history', action='store_true', default=False, help='Force build/update historical 3-year cache now')
+    parser.add_argument('--history-days', type=int, default=1095, help='How many days back to fetch when building history')
+    parser.add_argument('--history-end-date', default=None, help='End date for history (defaults to today)')
     args = parser.parse_args()
 
     print(f"\n🏀 DAILY NBA DATA FETCHER")
@@ -691,6 +855,21 @@ def main():
         final_df = merge_injuries(final_df, injuries_df)
         save_output(final_df, args.out)
         print(f"✅ DFS optimizer file: {args.out} ({len(final_df)} players)")
+
+    # Step 7: Ensure 3-year historical cache for Markov probabilities
+    try:
+        need_build = args.build_history
+        os.makedirs(HIST_CACHE_DIR, exist_ok=True)
+        pkl_path = os.path.join(HIST_CACHE_DIR, 'historical_3years.pkl')
+        csv_path = os.path.join(HIST_CACHE_DIR, 'historical_3years.csv')
+        if not os.path.exists(pkl_path) and not os.path.exists(csv_path):
+            need_build = True
+        if need_build:
+            ensure_historical_cache(days=max(1, int(args.history_days)), end_date=args.history_end_date or None)
+        else:
+            print(f"🗂  Historical cache already present; skipping build")
+    except Exception as e:
+        print(f"⚠️  Skipped building historical cache: {e}")
     
     print(f"\n{'='*70}")
     print(f"✅ SUCCESS! Data ready for optimization")
