@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
-import { Users, Link2, BarChart3, Target, Cpu, Star, Upload, Play, Save, FileText, Download, Plus, CheckSquare, XSquare, Trophy, RefreshCcw } from 'lucide-react';
+import { Users, Link2, BarChart3, Target, Cpu, Star, Upload, Play, Save, FileText, Download, Plus, CheckSquare, XSquare, Trophy, RefreshCcw, Check, X } from 'lucide-react';
 import { Sport, SPORT_CONFIGS, getPositionFilters, filterPlayersByPosition, getPositionCount, getStackDescription } from './sport-config';
 import LineupsTab from './LineupsTab';
 import { dfsApi } from '../services/dfs-api';
@@ -1083,6 +1083,23 @@ const TeamCombinationsTab: React.FC<TeamCombinationsTabProps> = ({ playerData })
     return Array.from(teamSet).sort();
   }, [playerData]);
 
+  // Auto-select all teams when playerData is loaded (e.g., after CSV upload)
+  const prevTeamsRef = useRef<string[]>([]);
+  useEffect(() => {
+    if (teams.length > 0) {
+      // Check if teams have changed (new CSV uploaded)
+      const teamsChanged = teams.length !== prevTeamsRef.current.length || 
+        teams.some(team => !prevTeamsRef.current.includes(team));
+      
+      if (teamsChanged) {
+        setSelectedTeams([...teams]);
+        prevTeamsRef.current = [...teams];
+      }
+    } else {
+      prevTeamsRef.current = [];
+    }
+  }, [teams]);
+
   // Toggle team selection
   const toggleTeam = (team: string) => {
     setSelectedTeams(prev =>
@@ -1184,72 +1201,73 @@ const TeamCombinationsTab: React.FC<TeamCombinationsTabProps> = ({ playerData })
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
-          <div className="mb-4">
-            <div className="w-16 h-16 mx-auto bg-slate-700 rounded-full flex items-center justify-center">
-              <Target className="w-8 h-8 text-slate-400" />
-            </div>
+          <div className="mb-3">
+            <Target className="w-10 h-10 mx-auto text-slate-500" />
           </div>
-          <h3 className="text-xl font-semibold text-white mb-2">No Team Data</h3>
-          <p className="text-white mb-4">Load players first to generate team combinations</p>
+          <h3 className="text-sm font-medium text-slate-300 mb-1">No Team Data</h3>
+          <p className="text-xs text-slate-400">Load players first to generate team combinations</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full space-y-6 p-6">
-      {/* Header - Enterprise Style */}
-      <div className="border-b-2 border-slate-700 pb-4">
-        <h2 className="text-2xl font-bold text-white">
-          Team Combination Generator
+    <div className="flex flex-col h-full space-y-8 p-8">
+      {/* Header - Minimalistic */}
+      <div className="pb-2">
+        <h2 className="text-xl font-medium text-white mb-1">
+          Team Combinations
         </h2>
-        <p className="text-base text-slate-300 mt-2">
-          Select teams and stack type to generate all possible combinations
-        </p>
-        <p className="text-sm text-green-400 mt-2 font-medium">
-          Loaded {playerData.length} players across {teams.length} teams
+        <p className="text-sm text-slate-400">
+          {playerData.length} players · {teams.length} teams
         </p>
       </div>
 
-      {/* Controls Section - Clean Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Controls Section - Modern Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Left: Team Selection */}
-        <div className="border-2 border-slate-700 bg-slate-800/50 p-6 rounded-xl">
-          <h3 className="text-xl font-bold text-white mb-5 border-b border-slate-700 pb-3">
-            Select Teams
-          </h3>
-          
-          {/* Select All/Deselect All - Large Enterprise Buttons in Container */}
-          <div className="bg-slate-700/30 border border-slate-600 rounded-lg p-3 mb-5">
-            <div className="flex gap-3">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-slate-300">
+              Select Teams
+            </h3>
+            <div className="flex gap-2">
               <Button
-                variant="outline"
+                variant="ghost"
+                size="sm"
                 onClick={selectAllTeams}
-                className="flex-1 h-12 border-2 border-green-400/50 bg-green-400/25 text-white text-base font-bold shadow-sm transition-none"
+                className="h-8 px-3 text-xs text-slate-400 hover:text-white hover:bg-slate-800"
               >
-                ✅ Select All Teams
+                <Check className="w-3 h-3 mr-1.5" />
+                All
               </Button>
               <Button
-                variant="outline"
+                variant="ghost"
+                size="sm"
                 onClick={deselectAllTeams}
-                className="flex-1 h-12 border-2 border-red-500/40 bg-red-500/10 text-white text-base font-bold shadow-sm transition-none"
+                className="h-8 px-3 text-xs text-slate-400 hover:text-white hover:bg-slate-800"
               >
-                ❌ Deselect All
+                <X className="w-3 h-3 mr-1.5" />
+                None
               </Button>
             </div>
           </div>
 
-          {/* Team Checkboxes - Professional Grid */}
-          <div className="max-h-80 overflow-auto mb-4 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
-            <div className="grid grid-cols-3 gap-3">
+          {/* Team Checkboxes - Clean Grid */}
+          <div className="max-h-80 overflow-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+            <div className="grid grid-cols-3 gap-2">
               {teams.map(team => (
-                <div key={team} className="flex items-center gap-3 p-4 bg-slate-700/50 border-2 border-slate-600 rounded-lg">
+                <div 
+                  key={team} 
+                  className="flex items-center gap-2 p-2.5 rounded-md hover:bg-slate-800/50 transition-colors cursor-pointer"
+                  onClick={() => toggleTeam(team)}
+                >
                   <Checkbox
                     checked={selectedTeams.includes(team)}
                     onCheckedChange={() => toggleTeam(team)}
-                    className="h-5 w-5 border-2 border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
+                    className="h-4 w-4 border-slate-600 data-[state=checked]:bg-slate-700 data-[state=checked]:border-slate-500"
                   />
-                  <Label className="text-white cursor-pointer text-base font-semibold" onClick={() => toggleTeam(team)}>
+                  <Label className="text-sm text-slate-300 cursor-pointer font-normal">
                     {team}
                   </Label>
                 </div>
@@ -1258,127 +1276,115 @@ const TeamCombinationsTab: React.FC<TeamCombinationsTabProps> = ({ playerData })
           </div>
 
           {/* Selection Counter */}
-          <div className="text-base text-slate-200 bg-slate-700/50 border-2 border-slate-600 p-4 rounded-lg font-medium mt-4">
-            <span className="font-bold text-green-400 text-lg">{selectedTeams.length}</span> of <span className="font-bold text-lg">{teams.length}</span> teams selected
+          <div className="text-xs text-slate-400 pt-2">
+            <span className="text-slate-300">{selectedTeams.length}</span> of <span className="text-slate-300">{teams.length}</span> selected
           </div>
         </div>
 
-        {/* Right: Stack Settings - Enterprise Style */}
-        <div className="border-2 border-slate-700 bg-slate-800/50 p-6 rounded-xl">
-          <h3 className="text-xl font-bold text-white mb-5 border-b border-slate-700 pb-3">
+        {/* Right: Stack Settings - Minimalistic */}
+        <div className="space-y-5">
+          <h3 className="text-sm font-medium text-slate-300">
             Stack Settings
           </h3>
 
-          <div className="space-y-5">
+          <div className="space-y-4">
             <div>
-              <Label className="text-base text-white block mb-3 font-semibold">Stack Pattern</Label>
+              <Label className="text-xs text-slate-400 block mb-2">Stack Pattern</Label>
               <Select value={stackPattern} onValueChange={setStackPattern}>
-                <SelectTrigger className="w-full bg-slate-700 border-2 border-slate-600 text-white text-base h-12 font-semibold">
+                <SelectTrigger className="w-full bg-slate-800/50 border border-slate-700 text-white text-sm h-10">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-800 border-slate-700">
-                  <SelectItem value="5" className="text-base">5</SelectItem>
-                  <SelectItem value="4" className="text-base">4</SelectItem>
-                  <SelectItem value="3" className="text-base">3</SelectItem>
-                  <SelectItem value="No Stacks" className="text-base">No Stacks</SelectItem>
-                  <SelectItem value="5|2" className="text-base">5|2</SelectItem>
-                  <SelectItem value="4|2" className="text-base">4|2</SelectItem>
-                  <SelectItem value="4|2|2" className="text-base">4|2|2</SelectItem>
-                  <SelectItem value="3|3|2" className="text-base">3|3|2</SelectItem>
-                  <SelectItem value="3|2|2" className="text-base">3|2|2</SelectItem>
-                  <SelectItem value="2|2|2" className="text-base">2|2|2</SelectItem>
-                  <SelectItem value="5|3" className="text-base">5|3</SelectItem>
+                  <SelectItem value="5" className="text-sm">5</SelectItem>
+                  <SelectItem value="4" className="text-sm">4</SelectItem>
+                  <SelectItem value="3" className="text-sm">3</SelectItem>
+                  <SelectItem value="No Stacks" className="text-sm">No Stacks</SelectItem>
+                  <SelectItem value="5|2" className="text-sm">5|2</SelectItem>
+                  <SelectItem value="4|2" className="text-sm">4|2</SelectItem>
+                  <SelectItem value="4|2|2" className="text-sm">4|2|2</SelectItem>
+                  <SelectItem value="3|3|2" className="text-sm">3|3|2</SelectItem>
+                  <SelectItem value="3|2|2" className="text-sm">3|2|2</SelectItem>
+                  <SelectItem value="2|2|2" className="text-sm">2|2|2</SelectItem>
+                  <SelectItem value="5|3" className="text-sm">5|3</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div>
-              <Label className="text-base text-white block mb-3 font-semibold">Lineups per Combination</Label>
-              <input
+              <Label className="text-xs text-slate-400 block mb-2">Lineups per Combination</Label>
+              <Input
                 type="number"
                 min="1"
                 max="50"
                 value={defaultLineupsPerCombo}
                 onChange={(e) => setDefaultLineupsPerCombo(parseInt(e.target.value) || 5)}
-                className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg px-4 py-3 text-white text-base font-semibold"
-                placeholder="e.g., 5"
+                className="w-full bg-slate-800/50 border border-slate-700 text-white text-sm h-10"
+                placeholder="5"
               />
             </div>
 
             <Button
               onClick={generateCombinations}
-              className="w-full bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-700 hover:to-orange-600 text-white text-lg h-14 font-bold rounded-lg shadow-lg transition-none"
+              className="w-full bg-slate-700 hover:bg-slate-600 text-white text-sm h-10 font-medium"
             >
-              Generate Team Combinations
+              Generate Combinations
             </Button>
           </div>
         </div>
       </div>
 
-      {/* Combinations Table - Enterprise Style */}
+      {/* Combinations List - Card-based Modern Layout */}
       {combinations.length > 0 && (
-        <div className="border-2 border-slate-700 bg-slate-800/50 p-6 rounded-xl">
-          <div className="flex items-center justify-between mb-6 border-b border-slate-700 pb-4">
-            <h3 className="text-2xl font-bold text-white">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-slate-300">
               Generated Combinations
             </h3>
-            <div className="text-lg text-slate-200 font-medium">
-              Total Lineups: <span className="font-bold text-orange-400 text-xl">{totalLineups}</span>
+            <div className="text-xs text-slate-400">
+              Total: <span className="text-slate-300 font-medium">{totalLineups}</span> lineups
             </div>
           </div>
 
-          <div className="overflow-auto max-h-96 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
-            <table className="w-full text-base">
-              <thead>
-                <tr className="border-b-2 border-slate-700">
-                  <th className="text-left py-4 px-5 text-slate-300 font-bold">Select</th>
-                  <th className="text-left py-4 px-5 text-slate-300 font-bold">Team Combination</th>
-                  <th className="text-left py-4 px-5 text-slate-300 font-bold">Lineups per Combo</th>
-                  <th className="text-left py-4 px-5 text-slate-300 font-bold">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {combinations.map(combo => (
-                  <tr key={combo.id} className="border-b border-slate-700/50">
-                    <td className="py-4 px-5">
-                      <Checkbox
-                        checked={combo.enabled}
-                        onCheckedChange={() => toggleCombination(combo.id)}
-                        className="h-6 w-6 border-2 border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
-                      />
-                    </td>
-                    <td className="py-4 px-5 text-white font-semibold text-base">{combo.display}</td>
-                    <td className="py-4 px-5">
-                      <input
-                        type="number"
-                        min="1"
-                        max="100"
-                        value={combo.lineupsPerCombo}
-                        onChange={(e) => updateLineupsPerCombo(combo.id, parseInt(e.target.value) || 5)}
-                        className="w-24 h-11 bg-slate-700 border-2 border-slate-600 rounded-lg px-4 py-2 text-white text-base font-semibold"
-                      />
-                    </td>
-                    <td className="py-4 px-5">
-                      <Button
-                        variant="outline"
-                        className="px-5 py-2 h-11 text-base border-2 border-slate-600 bg-slate-700 text-white font-semibold transition-none"
-                        onClick={() => toggleCombination(combo.id)}
-                      >
-                        {combo.enabled ? 'Disable' : 'Enable'}
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="overflow-auto max-h-96 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent space-y-2">
+            {combinations.map(combo => (
+              <div 
+                key={combo.id} 
+                className="flex items-center gap-4 p-4 bg-slate-800/30 border border-slate-700/50 rounded-lg hover:bg-slate-800/50 transition-colors"
+              >
+                <Checkbox
+                  checked={combo.enabled}
+                  onCheckedChange={() => toggleCombination(combo.id)}
+                  className="h-4 w-4 border-slate-600 data-[state=checked]:bg-slate-700 data-[state=checked]:border-slate-500"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-white font-medium truncate">
+                    {combo.display}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs text-slate-400">Lineups:</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={combo.lineupsPerCombo}
+                      onChange={(e) => updateLineupsPerCombo(combo.id, parseInt(e.target.value) || 5)}
+                      className="w-16 h-8 bg-slate-800/50 border border-slate-700 text-white text-xs text-center"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
 
-          <div className="mt-6 flex justify-end">
+          <div className="flex justify-end pt-2">
             <Button
-              className="bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white text-lg h-14 px-8 font-bold rounded-lg shadow-lg transition-none"
+              className="bg-slate-700 hover:bg-slate-600 text-white text-sm h-10 px-6 font-medium"
               disabled={totalLineups === 0}
             >
-              Generate All Combination Lineups ({totalLineups})
+              Generate Lineups ({totalLineups})
             </Button>
           </div>
         </div>
@@ -2545,17 +2551,22 @@ const DFSOptimizer = React.memo(() => {
         }));
 
         setPlayerData(transformedPlayers);
+        // Select all players by default
         setSelectedPlayers(
-          transformedPlayers.filter((player) => player.selected).map((player) => player.id)
+          transformedPlayers.map((player) => player.id)
         );
+        // Extract all unique teams and populate all stack sizes
+        const uniqueTeams = [...new Set(transformedPlayers.map(p => p.team))].filter(Boolean);
         setTeamSelections({
-          all: [],
-          2: [],
-          3: [],
-          4: [],
-          5: [],
+          all: uniqueTeams,
+          2: uniqueTeams,
+          3: uniqueTeams,
+          4: uniqueTeams,
+          5: uniqueTeams,
         });
-        setStackSettings(initializeStackSettings(currentSport));
+        // Initialize stack settings and enable all stacks by default
+        const initialStackSettings = initializeStackSettings(currentSport);
+        setStackSettings(initialStackSettings.map(s => ({ ...s, enabled: true })));
         setActiveTab('players');
         alert(`✅ Loaded ${transformedPlayers.length} players successfully!`);
       } else {
