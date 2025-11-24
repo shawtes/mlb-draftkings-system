@@ -9,6 +9,7 @@ const WebSocket = require('ws');
 const { v4: uuidv4 } = require('uuid');
 const MLBOptimizer = require('./optimizer');
 const NFLOptimizer = require('./nfl-optimizer');
+const NBAOptimizer = require('./nba-optimizer');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -300,23 +301,7 @@ app.get('/api/players', (req, res) => {
   });
 });
 
-// Update player settings
-app.put('/api/players/:id', (req, res) => {
-  const { id } = req.params;
-  const updates = req.body;
-  
-  const playerIndex = playersData.findIndex(p => p.id === id);
-  if (playerIndex === -1) {
-    return res.status(404).json({ error: 'Player not found' });
-  }
-  
-  // Update player with provided fields
-  playersData[playerIndex] = { ...playersData[playerIndex], ...updates };
-  
-  res.json({ success: true, player: playersData[playerIndex] });
-});
-
-// Bulk update players
+// Bulk update players (MUST come before :id route to avoid matching "bulk" as an id)
 app.put('/api/players/bulk', (req, res) => {
   const { action, filters, settings } = req.body;
   
@@ -326,16 +311,16 @@ app.put('/api/players/bulk', (req, res) => {
     let shouldUpdate = true;
     
     // Apply filters
-    if (filters.position && filters.position !== 'ALL') {
+    if (filters && filters.position && filters.position !== 'ALL') {
       shouldUpdate = shouldUpdate && player.position.includes(filters.position);
     }
-    if (filters.team && filters.team !== 'ALL') {
+    if (filters && filters.team && filters.team !== 'ALL') {
       shouldUpdate = shouldUpdate && player.team === filters.team;
     }
-    if (filters.salaryMin) {
+    if (filters && filters.salaryMin) {
       shouldUpdate = shouldUpdate && player.salary >= filters.salaryMin;
     }
-    if (filters.salaryMax) {
+    if (filters && filters.salaryMax) {
       shouldUpdate = shouldUpdate && player.salary <= filters.salaryMax;
     }
     
@@ -357,6 +342,22 @@ app.put('/api/players/bulk', (req, res) => {
   });
   
   res.json({ success: true, updatedCount });
+});
+
+// Update player settings
+app.put('/api/players/:id', (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
+  
+  const playerIndex = playersData.findIndex(p => p.id === id);
+  if (playerIndex === -1) {
+    return res.status(404).json({ error: 'Player not found' });
+  }
+  
+  // Update player with provided fields
+  playersData[playerIndex] = { ...playersData[playerIndex], ...updates };
+  
+  res.json({ success: true, player: playersData[playerIndex] });
 });
 
 // Set sport mode
@@ -466,8 +467,7 @@ app.post('/api/optimize', async (req, res) => {
       if (advancedQuantSettings && Object.keys(advancedQuantSettings).length > 0) {
         console.log('📊 Advanced Quant Settings:', JSON.stringify(advancedQuantSettings, null, 2));
       }
-      // For now, use MLB optimizer for NBA (can be replaced with dedicated NBA optimizer later)
-      optimizer = new MLBOptimizer();
+      optimizer = new NBAOptimizer();
       results = await optimizer.optimize({
         players: selectedPlayers,
         numLineups,

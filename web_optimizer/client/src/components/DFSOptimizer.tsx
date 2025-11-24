@@ -2374,6 +2374,10 @@ const DFSOptimizer = React.memo(() => {
   
   // Sorting
   const [sortMethod, setSortMethod] = useState('points');
+
+  // Right sidebar tab state
+  const [rightSidebarTab, setRightSidebarTab] = useState<'lineups' | 'favorites' | 'results'>('lineups');
+  const [selectedLineups, setSelectedLineups] = useState<Set<number>>(new Set());
   
   // Generated Teams - Now connected to backend
   const [generatedTeams, setGeneratedTeams] = useState<any[]>([]);
@@ -3072,7 +3076,8 @@ const DFSOptimizer = React.memo(() => {
           </div>
 
           {currentSport && sportConfig ? (
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col h-full min-h-0">
+            <div className="flex-1 flex h-full min-h-0">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col h-full min-h-0">
             <div className="bg-slate-900/70 border-b border-slate-800 px-3 py-2">
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300">
                 <div className="flex items-center gap-1.5 bg-slate-900/60 border border-slate-700 rounded px-2 py-1">
@@ -3360,6 +3365,340 @@ const DFSOptimizer = React.memo(() => {
               </TabsContent>
             </div>
             </Tabs>
+
+            {/* Right Sidebar - Lineups/Favorites/Results */}
+            <div className="w-80 flex-shrink-0 border-l border-slate-700 bg-slate-800 flex flex-col h-full overflow-hidden">
+              {/* Tabs Header */}
+              <div className="flex border-b border-slate-700 flex-shrink-0">
+                <button
+                  className={`flex-1 px-3 py-3 text-sm font-medium transition-colors ${
+                    rightSidebarTab === 'lineups'
+                      ? 'bg-slate-900 text-cyan-400 border-b-2 border-cyan-400'
+                      : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700'
+                  }`}
+                  onClick={() => setRightSidebarTab('lineups')}
+                >
+                  Lineups
+                </button>
+                <button
+                  className={`flex-1 px-3 py-3 text-sm font-medium transition-colors ${
+                    rightSidebarTab === 'favorites'
+                      ? 'bg-slate-900 text-cyan-400 border-b-2 border-cyan-400'
+                      : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700'
+                  }`}
+                  onClick={() => setRightSidebarTab('favorites')}
+                >
+                  Favorites
+                </button>
+                <button
+                  className={`flex-1 px-3 py-3 text-sm font-medium transition-colors ${
+                    rightSidebarTab === 'results'
+                      ? 'bg-slate-900 text-cyan-400 border-b-2 border-cyan-400'
+                      : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700'
+                  }`}
+                  onClick={() => setRightSidebarTab('results')}
+                >
+                  Results
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 flex flex-col overflow-hidden">
+                {rightSidebarTab === 'lineups' && (
+                  <>
+                    {/* Header Section */}
+                    <div className="flex items-center justify-between mb-4 px-4 pt-4 flex-shrink-0">
+                      <div>
+                        <h3 className="text-xs uppercase tracking-wide text-slate-400 mb-1">LINEUPS</h3>
+                        <div className="text-3xl font-bold text-white">{results.length}</div>
+                        <div className="text-xs text-slate-400 mt-1">
+                          Avg {results.length > 0 ? (results.reduce((sum, r) => sum + r.totalPoints, 0) / results.length).toFixed(1) : '0.0'} pts : ${results.length > 0 ? (results.reduce((sum, r) => sum + r.totalSalary, 0) / results.length).toFixed(0) : '0'}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="bg-cyan-600 hover:bg-cyan-500 text-white font-medium"
+                        disabled={results.length === 0}
+                        onClick={() => {
+                          setActiveTab('lineups');
+                          toast.success('Switched to Generated Lineups tab');
+                        }}
+                      >
+                        View
+                      </Button>
+                    </div>
+
+                    {/* Select All */}
+                    <div className="flex items-center justify-between py-2 border-b border-slate-700 mb-4 px-4 flex-shrink-0">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={selectedLineups.size > 0 && selectedLineups.size === Math.min(numLineups, results.length)}
+                          onCheckedChange={(checked: boolean) => {
+                            if (checked) {
+                              const allIndices = new Set(Array.from({ length: Math.min(numLineups, results.length) }, (_, i) => i));
+                              setSelectedLineups(allIndices);
+                            } else {
+                              setSelectedLineups(new Set());
+                            }
+                          }}
+                        />
+                        <span className="text-sm text-slate-300">Select All</span>
+                      </div>
+                      <span className="text-sm text-slate-400">{selectedLineups.size} selected</span>
+                    </div>
+
+                    {/* Count Input */}
+                    <div className="mb-4 px-4 flex-shrink-0">
+                      <Label className="text-xs uppercase tracking-wide text-slate-400 mb-2 block">COUNT</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={500}
+                        value={numLineups}
+                        onChange={(e) => setNumLineups(parseInt(e.target.value, 10) || 1)}
+                        className="bg-slate-900 border-slate-700 text-white"
+                      />
+                    </div>
+
+                    {/* Add Favorites Toggle */}
+                    <div className="flex items-center justify-between py-3 border-t border-slate-700 px-4 flex-shrink-0">
+                      <span className="text-sm text-slate-300">Add Favorites</span>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" className="sr-only peer" />
+                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+                      </label>
+                    </div>
+
+                    {/* Message or Lineups List */}
+                    {results.length === 0 ? (
+                      <div className="flex-1 flex items-center justify-center px-4">
+                        <p className="text-sm text-slate-400 text-center">
+                          Run optimizer to see lineups.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800 hover:scrollbar-thumb-slate-500">
+                        <div className="space-y-2">
+                          {results.slice(0, numLineups).map((result, idx) => (
+                            <div
+                              key={result.id || idx}
+                              className={`bg-slate-900 border rounded-lg p-3 transition-colors ${
+                                selectedLineups.has(idx) 
+                                  ? 'border-cyan-500 bg-cyan-900/10' 
+                                  : 'border-slate-700 hover:border-cyan-500'
+                              }`}
+                            >
+                              {/* Lineup Header */}
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <Checkbox
+                                    checked={selectedLineups.has(idx)}
+                                    onCheckedChange={(checked: boolean) => {
+                                      const newSelected = new Set(selectedLineups);
+                                      if (checked) {
+                                        newSelected.add(idx);
+                                      } else {
+                                        newSelected.delete(idx);
+                                      }
+                                      setSelectedLineups(newSelected);
+                                    }}
+                                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                                  />
+                                  <span className="text-xs font-semibold text-slate-400">
+                                    Lineup {idx + 1}
+                                  </span>
+                                </div>
+                                <div className="flex gap-2 items-center">
+                                  <span className="text-xs font-bold text-cyan-400">
+                                    {result.totalPoints?.toFixed(1) || result.points?.toFixed(1) || '0.0'} pts
+                                  </span>
+                                  <span className="text-xs text-slate-500">
+                                    ${result.totalSalary || result.salary || 0}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Players List */}
+                              <div className="space-y-1">
+                                {(result.players || []).map((player: any, pidx: number) => (
+                                  <div
+                                    key={pidx}
+                                    className="flex items-center justify-between text-xs"
+                                  >
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      <span className="text-cyan-400 font-mono w-8 flex-shrink-0">
+                                        {player.position || player.pos || 'NA'}
+                                      </span>
+                                      <span className="text-slate-300 truncate">
+                                        {player.name || player.player || 'Unknown'}
+                                      </span>
+                                    </div>
+                                    <span className="text-slate-500 text-[10px] ml-2 flex-shrink-0">
+                                      {player.projectedPoints?.toFixed(1) || player.points?.toFixed(1) || '0.0'}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Lineup Footer */}
+                              <div className="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between">
+                                <span className="text-[10px] text-slate-500">
+                                  {result.players?.length || 0} players
+                                </span>
+                                <button
+                                  className="text-[10px] text-cyan-400 hover:text-cyan-300 font-medium"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      const lineupText = `Lineup ${idx + 1} - ${result.totalPoints?.toFixed(1) || result.points?.toFixed(1) || '0.0'} pts\n` +
+                                        `Salary: $${result.totalSalary || result.salary || 0}\n\n` +
+                                        (result.players || []).map((p: any) => 
+                                          `${p.position || p.pos || 'NA'}: ${p.name || p.player || 'Unknown'} (${p.projectedPoints?.toFixed(1) || p.points?.toFixed(1) || '0.0'} pts)`
+                                        ).join('\n');
+                                      navigator.clipboard.writeText(lineupText);
+                                      toast.success('Lineup copied to clipboard!');
+                                    } catch (error) {
+                                      toast.error('Failed to copy lineup');
+                                    }
+                                  }}
+                                >
+                                  Copy
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {rightSidebarTab === 'favorites' && (
+                  <div className="flex-1 flex items-center justify-center">
+                    <p className="text-sm text-slate-400 text-center">
+                      No favorites yet. Add lineups from your optimizations.
+                    </p>
+                  </div>
+                )}
+
+                {rightSidebarTab === 'results' && (
+                  <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800 hover:scrollbar-thumb-slate-500">
+                    {/* Header Section */}
+                    <div className="mb-4">
+                      <h3 className="text-xs uppercase tracking-wide text-slate-400 mb-2">OPTIMIZATION RESULTS</h3>
+                      <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-slate-400">Total Lineups</span>
+                          <span className="text-lg font-bold text-white">{results.length}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-slate-400">Avg Points</span>
+                          <span className="text-lg font-bold text-cyan-400">
+                            {results.length > 0 ? (results.reduce((sum, r) => sum + r.totalPoints, 0) / results.length).toFixed(1) : '0.0'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-slate-400">Avg Salary</span>
+                          <span className="text-lg font-bold text-emerald-400">
+                            ${results.length > 0 ? (results.reduce((sum, r) => sum + r.totalSalary, 0) / results.length).toFixed(0) : '0'}
+                          </span>
+                        </div>
+                        {results.length > 0 && (
+                          <>
+                            <div className="pt-3 border-t border-slate-800">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-slate-400">Best Lineup</span>
+                                <span className="text-sm font-bold text-cyan-400">
+                                  {Math.max(...results.map(r => r.totalPoints)).toFixed(1)} pts
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-slate-400">Worst Lineup</span>
+                              <span className="text-sm font-bold text-slate-400">
+                                {Math.min(...results.map(r => r.totalPoints)).toFixed(1)} pts
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-slate-400">Points Range</span>
+                              <span className="text-sm font-bold text-yellow-400">
+                                {(Math.max(...results.map(r => r.totalPoints)) - Math.min(...results.map(r => r.totalPoints))).toFixed(1)} pts
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Player Usage Stats */}
+                    {results.length > 0 && (
+                      <div className="mb-4">
+                        <h3 className="text-xs uppercase tracking-wide text-slate-400 mb-2">TOP USED PLAYERS</h3>
+                        <div className="bg-slate-900 border border-slate-700 rounded-lg overflow-hidden">
+                          <div className="max-h-64 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-slate-900 hover:scrollbar-thumb-slate-600">
+                            {(() => {
+                              // Calculate player usage
+                              const playerUsage = new Map<string, { count: number, avgPoints: number, totalPoints: number }>();
+                              results.forEach(result => {
+                                (result.players || []).forEach((player: any) => {
+                                  const name = player.name || player.player || 'Unknown';
+                                  const points = player.projectedPoints || player.points || 0;
+                                  const existing = playerUsage.get(name) || { count: 0, avgPoints: 0, totalPoints: 0 };
+                                  playerUsage.set(name, {
+                                    count: existing.count + 1,
+                                    totalPoints: existing.totalPoints + points,
+                                    avgPoints: (existing.totalPoints + points) / (existing.count + 1)
+                                  });
+                                });
+                              });
+                              
+                              // Sort by usage count
+                              const sortedPlayers = Array.from(playerUsage.entries())
+                                .sort((a, b) => b[1].count - a[1].count)
+                                .slice(0, 10);
+
+                              return sortedPlayers.map(([name, stats], idx) => (
+                                <div 
+                                  key={name}
+                                  className={`flex items-center justify-between p-3 ${
+                                    idx < sortedPlayers.length - 1 ? 'border-b border-slate-800' : ''
+                                  }`}
+                                >
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium text-slate-200 truncate">{name}</div>
+                                    <div className="text-xs text-slate-500">
+                                      {stats.avgPoints.toFixed(1)} pts avg
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-3 ml-2">
+                                    <div className="text-right">
+                                      <div className="text-sm font-bold text-cyan-400">{stats.count}</div>
+                                      <div className="text-xs text-slate-500">
+                                        {((stats.count / results.length) * 100).toFixed(0)}%
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ));
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Empty State */}
+                    {results.length === 0 && (
+                      <div className="flex-1 flex items-center justify-center">
+                        <p className="text-sm text-slate-400 text-center">
+                          Run the optimizer to see detailed results and statistics.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            </div>
           ) : (
             <div className="flex-1 flex items-center justify-center px-6 py-10 text-center text-slate-300">
               <div className="max-w-md space-y-3">
