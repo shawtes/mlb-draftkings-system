@@ -253,5 +253,42 @@ html {
   .scrollbar-track-slate-900 {
     scrollbar-color: rgb(51 65 85) rgb(15 23 42);
   }
+  
+  /* Lineup scrollbar container - Force visible scrollbar */
+  div[style*="overflow-y: scroll"]::-webkit-scrollbar,
+  div[style*="overflowY"]::-webkit-scrollbar {
+    width: 16px !important;
+    height: 16px !important;
+  }
+  
+  div[style*="overflow-y: scroll"]::-webkit-scrollbar-track,
+  div[style*="overflowY"]::-webkit-scrollbar-track {
+    background: #1e293b !important;
+    border-radius: 0;
+  }
+  
+  div[style*="overflow-y: scroll"]::-webkit-scrollbar-thumb,
+  div[style*="overflowY"]::-webkit-scrollbar-thumb {
+    background: #3b82f6 !important;
+    border-radius: 8px;
+    border: 3px solid #1e293b;
+  }
+  
+  div[style*="overflow-y: scroll"]::-webkit-scrollbar-thumb:hover,
+  div[style*="overflowY"]::-webkit-scrollbar-thumb:hover {
+    background: #2563eb !important;
+  }
+  
+  div[style*="overflow-y: scroll"]::-webkit-scrollbar-thumb:active,
+  div[style*="overflowY"]::-webkit-scrollbar-thumb:active {
+    background: #1d4ed8 !important;
+  }
+  
+  /* For Firefox */
+  div[style*="overflow-y: scroll"],
+  div[style*="overflowY"] {
+    scrollbar-width: auto !important;
+    scrollbar-color: #3b82f6 #1e293b !important;
+  }
 }
 

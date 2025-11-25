@@ -7,6 +7,7 @@ const path = require('path');
 const { Parser } = require('json2csv');
 const WebSocket = require('ws');
 const { v4: uuidv4 } = require('uuid');
+const { spawn } = require('child_process');
 const MLBOptimizer = require('./optimizer');
 const NFLOptimizer = require('./nfl-optimizer');
 const NBAOptimizer = require('./nba-optimizer');
@@ -68,6 +69,69 @@ function broadcast(message) {
         activeConnections.delete(ws);
       }
     }
+  });
+}
+
+// Call Python Markov Chain Optimizer
+async function callPythonOptimizer(config) {
+  return new Promise((resolve, reject) => {
+    const { onProgress, ...pythonConfig } = config;
+    
+    const pythonScript = path.join(__dirname, 'makrov_cli_adapter.py');
+    const inputData = JSON.stringify(pythonConfig);
+    
+    console.log('🐍 Launching makrovchain_optimizer.py (EXACT desktop logic) with', pythonConfig.numLineups, 'lineups');
+    
+    const pythonProcess = spawn('python3', [pythonScript, inputData]);
+    
+    let outputData = '';
+    let errorData = '';
+    
+    pythonProcess.stdout.on('data', (data) => {
+      outputData += data.toString();
+    });
+    
+    pythonProcess.stderr.on('data', (data) => {
+      errorData += data.toString();
+      console.error('Python stderr:', data.toString());
+    });
+    
+    pythonProcess.on('close', (code) => {
+      if (code !== 0) {
+        console.error('Python optimizer failed:', errorData);
+        reject(new Error(errorData || 'Python optimizer failed'));
+        return;
+      }
+      
+      try {
+        const result = JSON.parse(outputData);
+        
+        if (result.error) {
+          reject(new Error(result.error));
+          return;
+        }
+        
+        console.log(`✅ Python optimizer generated ${result.lineups.length} lineups`);
+        console.log(`   Avg projection: ${result.summary.avgProjection}`);
+        
+        // Add IDs and timestamps to lineups
+        const lineups = result.lineups.map(lineup => ({
+          id: uuidv4(),
+          ...lineup,
+          timestamp: new Date().toISOString()
+        }));
+        
+        resolve(lineups);
+      } catch (error) {
+        console.error('Failed to parse Python output:', outputData);
+        reject(new Error('Failed to parse optimizer output: ' + error.message));
+      }
+    });
+    
+    pythonProcess.on('error', (error) => {
+      console.error('Failed to start Python process:', error);
+      reject(new Error('Failed to start Python optimizer: ' + error.message));
+    });
   });
 }
 
@@ -463,29 +527,20 @@ app.post('/api/optimize', async (req, res) => {
         }
       });
     } else if (sport === 'NBA') {
-      console.log('🏀 Using NBA Optimizer');
+      console.log('🏀 Using Python Markov Chain NBA Optimizer');
       if (advancedQuantSettings && Object.keys(advancedQuantSettings).length > 0) {
         console.log('📊 Advanced Quant Settings:', JSON.stringify(advancedQuantSettings, null, 2));
       }
-      optimizer = new NBAOptimizer();
-      results = await optimizer.optimize({
+      
+      // Call Python optimizer
+      results = await callPythonOptimizer({
         players: selectedPlayers,
         numLineups,
-        minSalary: minSalary || 48000, // NBA default
+        minSalary: minSalary || 48000,
         maxSalary,
         stackSettings,
         uniquePlayers,
         maxExposure,
-        monteCarloIterations,
-        sortingMethod,
-        minUniquePlayersBetweenLineups,
-        enableRiskManagement,
-        disableKellySizing,
-        stackTypes,
-        exposureSettings,
-        riskTolerance,
-        bankroll,
-        advancedQuantSettings,
         onProgress: (progress) => {
           broadcast({
             type: 'OPTIMIZATION_PROGRESS',

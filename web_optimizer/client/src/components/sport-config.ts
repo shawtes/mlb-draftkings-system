@@ -161,9 +161,28 @@ export function filterPlayersByPosition(players: any[], position: string, sport:
     return players;
   }
   
+  // NBA flex positions
+  if (sport === 'NBA') {
+    if (position === 'G') {
+      // Guard flex: any PG or SG
+      return players.filter(p => p.position.includes('PG') || p.position.includes('SG'));
+    }
+    if (position === 'F') {
+      // Forward flex: any SF or PF
+      return players.filter(p => p.position.includes('SF') || p.position.includes('PF'));
+    }
+    if (position === 'UTIL') {
+      // Utility: any position
+      return players;
+    }
+  }
+  
   return players.filter(p => {
     if (sport === 'MLB') {
       // MLB positions can have multi-position eligibility (e.g., "1B/OF")
+      return p.position.includes(position);
+    } else if (sport === 'NBA') {
+      // NBA positions can have multi-position eligibility (e.g., "PG/SG")
       return p.position.includes(position);
     } else {
       // NFL positions are single (e.g., "QB")

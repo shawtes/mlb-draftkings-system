@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Checkbox } from './ui/checkbox';
 import { 
   Trophy, 
   Download, 
@@ -71,6 +72,12 @@ const LineupsTab: React.FC<LineupsTabProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedLineups, setExpandedLineups] = useState<Set<string>>(new Set());
   const [selectedLineups, setSelectedLineups] = useState<Set<string>>(new Set());
+  const [maxLineupsToShow, setMaxLineupsToShow] = useState<number>(lineups.length);
+
+  // Update maxLineupsToShow when lineups change
+  useEffect(() => {
+    setMaxLineupsToShow(lineups.length);
+  }, [lineups.length]);
 
   // Toggle lineup expansion
   const toggleLineupExpansion = (lineupId: string) => {
@@ -94,14 +101,49 @@ const LineupsTab: React.FC<LineupsTabProps> = ({
     setSelectedLineups(newSelected);
   };
 
-  // Select all lineups
-  const selectAllLineups = () => {
-    setSelectedLineups(new Set(lineups.map(l => l.id)));
-  };
-
   // Deselect all lineups
   const deselectAllLineups = () => {
     setSelectedLineups(new Set());
+  };
+
+  // Add selected lineups to favorites
+  const handleAddSelectedToFavorites = async () => {
+    if (selectedLineups.size === 0) {
+      alert('Please select at least one lineup to add to favorites.');
+      return;
+    }
+
+    const selectedLineupObjects = filteredLineups.filter(l => selectedLineups.has(l.id));
+    
+    try {
+      let successCount = 0;
+      let failCount = 0;
+      
+      // Add all selected lineups to favorites
+      for (const lineup of selectedLineupObjects) {
+        try {
+          await onSaveFavorite(lineup);
+          successCount++;
+        } catch (error) {
+          console.error('Failed to add lineup to favorites:', error);
+          failCount++;
+        }
+      }
+      
+      // Show success message
+      if (successCount > 0) {
+        const message = failCount > 0 
+          ? `✅ Added ${successCount} lineup${successCount > 1 ? 's' : ''} to favorites\n⚠️ ${failCount} failed`
+          : `✅ Successfully added ${successCount} lineup${successCount > 1 ? 's' : ''} to favorites!`;
+        alert(message);
+        setSelectedLineups(new Set()); // Clear selection after adding
+      } else {
+        alert(`❌ Failed to add lineups to favorites. Please try again.`);
+      }
+    } catch (error) {
+      console.error('Error adding lineups to favorites:', error);
+      alert('❌ Error adding lineups to favorites. Please try again.');
+    }
   };
 
   // Filter and sort lineups
@@ -134,7 +176,14 @@ const LineupsTab: React.FC<LineupsTabProps> = ({
         default:
           return 0;
       }
-    });
+    })
+    .slice(0, maxLineupsToShow); // Limit displayed lineups
+
+  // Select all visible lineups
+  const selectAllLineups = () => {
+    const visibleLineupIds = filteredLineups.map(l => l.id);
+    setSelectedLineups(new Set(visibleLineupIds));
+  };
 
   // Get position requirements for sport
   const getPositionRequirements = () => {
@@ -245,6 +294,22 @@ const LineupsTab: React.FC<LineupsTabProps> = ({
               className="w-48 bg-slate-700 border-slate-600 text-white text-sm h-9"
             />
           </div>
+
+          <div className="flex items-center gap-2">
+            <Label className="text-sm text-white">Show:</Label>
+            <Input
+              type="number"
+              min="1"
+              max={lineups.length}
+              value={maxLineupsToShow}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || lineups.length;
+                setMaxLineupsToShow(Math.min(Math.max(1, val), lineups.length));
+              }}
+              className="w-20 bg-slate-700 border-slate-600 text-white text-sm h-9 text-center"
+            />
+            <span className="text-sm text-slate-400">of {lineups.length}</span>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -263,6 +328,16 @@ const LineupsTab: React.FC<LineupsTabProps> = ({
             className="border-red-500/30 bg-red-500/5 text-white"
           >
             Deselect All
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleAddSelectedToFavorites}
+            disabled={selectedLineups.size === 0}
+            className="border-yellow-500/30 bg-yellow-500/5 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Star className="w-4 h-4 mr-2" />
+            Add Selected ({selectedLineups.size})
           </Button>
           <Button
             variant="outline"
@@ -305,6 +380,20 @@ const LineupsTab: React.FC<LineupsTabProps> = ({
                   {/* Lineup Header */}
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedLineups(new Set([...selectedLineups, lineup.id]));
+                          } else {
+                            const newSelected = new Set(selectedLineups);
+                            newSelected.delete(lineup.id);
+                            setSelectedLineups(newSelected);
+                          }
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="border-slate-500 data-[state=checked]:bg-cyan-500 data-[state=checked]:border-cyan-500"
+                      />
                       <Badge variant="outline" className="bg-slate-700 text-white border-slate-600">
                         #{index + 1}
                       </Badge>

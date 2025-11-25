@@ -6,7 +6,8 @@ const { v4: uuidv4 } = require('uuid');
  */
 class NBAOptimizer {
   constructor() {
-    this.strategies = ['greedy', 'balanced', 'value', 'projection'];
+    // Prioritize strategies that focus on projections
+    this.strategies = ['greedy', 'projection', 'balanced', 'value'];
   }
 
   async optimize(config) {
@@ -133,7 +134,16 @@ class NBAOptimizer {
   }
 
   groupPlayersByPosition(players) {
-    const grouped = {};
+    const grouped = {
+      'PG': [],
+      'SG': [],
+      'SF': [],
+      'PF': [],
+      'C': [],
+      'G': [],   // Guard flex (PG or SG)
+      'F': [],   // Forward flex (SF or PF)
+      'UTIL': [] // Utility (any position)
+    };
     
     players.forEach(player => {
       if (!player.position) return;
@@ -143,10 +153,25 @@ class NBAOptimizer {
       
       positions.forEach(pos => {
         pos = pos.trim().toUpperCase();
+        
+        // Add to specific position
         if (!grouped[pos]) {
           grouped[pos] = [];
         }
         grouped[pos].push(player);
+        
+        // Also add to flex positions
+        if (pos === 'PG' || pos === 'SG') {
+          grouped['G'].push(player);  // Guards
+        }
+        if (pos === 'SF' || pos === 'PF') {
+          grouped['F'].push(player);  // Forwards
+        }
+        
+        // All players can fill UTIL
+        if (!grouped['UTIL'].some(p => p.id === player.id)) {
+          grouped['UTIL'].push(player);
+        }
       });
     });
 
@@ -260,15 +285,19 @@ class NBAOptimizer {
     const positionsToCheck = eligiblePositions || [rosterPosition];
     
     // Gather all eligible players from the position pools
-    let eligiblePlayers = [];
+    const playerMap = new Map();
     for (const pos of positionsToCheck) {
       if (playersByPosition[pos]) {
-        eligiblePlayers = eligiblePlayers.concat(playersByPosition[pos]);
+        playersByPosition[pos].forEach(player => {
+          if (!playerMap.has(player.id)) {
+            playerMap.set(player.id, player);
+          }
+        });
       }
     }
-
-    // Remove duplicates and already used players
-    eligiblePlayers = eligiblePlayers.filter(p => 
+    
+    // Convert to array and filter out used players
+    let eligiblePlayers = Array.from(playerMap.values()).filter(p => 
       !usedPlayerIds.has(p.id) &&
       (exposureTracker.get(p.id) || 0) < maxExposure
     );
@@ -281,22 +310,28 @@ class NBAOptimizer {
     eligiblePlayers.sort((a, b) => {
       switch (strategy) {
         case 'greedy':
+        case 'projection':
+          // Pure projection-based
           return (b.projection || 0) - (a.projection || 0);
         case 'value':
+          // Value-based (points per $1000)
           const valueA = (a.projection || 0) / a.salary * 1000;
           const valueB = (b.projection || 0) / b.salary * 1000;
           return valueB - valueA;
         case 'balanced':
-          const balanceA = ((a.projection || 0) * 0.6) + (((a.projection || 0) / a.salary * 1000) * 0.4);
-          const balanceB = ((b.projection || 0) * 0.6) + (((b.projection || 0) / b.salary * 1000) * 0.4);
+          // Balanced approach
+          const balanceA = ((a.projection || 0) * 0.7) + (((a.projection || 0) / a.salary * 1000) * 0.3);
+          const balanceB = ((b.projection || 0) * 0.7) + (((b.projection || 0) / b.salary * 1000) * 0.3);
           return balanceB - balanceA;
         default:
           return (b.projection || 0) - (a.projection || 0);
       }
     });
 
-    // Add some randomness for diversity
-    const topN = Math.min(5, eligiblePlayers.length);
+    // Use weighted randomness - favor top players but still allow diversity
+    // 70% chance to pick from top 2, 30% chance to pick from top 5
+    const useTop2 = Math.random() < 0.7;
+    const topN = useTop2 ? Math.min(2, eligiblePlayers.length) : Math.min(5, eligiblePlayers.length);
     const randomIndex = Math.floor(Math.random() * topN);
     
     return eligiblePlayers[randomIndex];
