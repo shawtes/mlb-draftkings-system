@@ -92,7 +92,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         <div className="px-8 py-6 border-b border-slate-700/30" style={{ backgroundColor: '#192C57' }}>
           <div className="flex flex-wrap items-center justify-between gap-6">
             <div className="flex items-center gap-3">
-              <span className="text-slate-300 text-lg font-semibold">Welcome to the Optimizer Suite</span>
+              <span className="text-slate-300 text-lg font-semibold">UrSim</span>
             </div>
 
             <div className="flex items-center gap-8">
