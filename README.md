@@ -1,6 +1,6 @@
-# MLB DraftKings Optimization System
+# NFL/NBA/MLB Fanduel/DraftKings Optimization System
 
-A production-grade daily fantasy sports optimization platform combining advanced mathematical optimization, machine learning, and quantitative finance techniques to generate optimal MLB DraftKings lineups.
+Daily fantasy sports optimization platform combining advanced mathematical optimization, machine learning, and quantitative finance techniques to generate optimal NFL/NBA/MLB Fanduel/DraftKings lineups.
 
 ## Overview
 
