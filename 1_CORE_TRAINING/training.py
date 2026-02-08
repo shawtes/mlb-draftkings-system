@@ -142,6 +142,11 @@ def impute_missing_values(X, strategy='mean'):
 
 class LinearRegressionNumPy:
     """Linear regression with optional L2 (Ridge) regularization"""
+    
+    # Gradient clipping thresholds to prevent numerical instability
+    GRADIENT_CLIP_MIN = -10.0
+    GRADIENT_CLIP_MAX = 10.0
+    
     def __init__(self, alpha=1.0, max_iter=1000, learning_rate=0.01):
         self.alpha = alpha  # L2 regularization strength
         self.max_iter = max_iter
@@ -190,8 +195,8 @@ class LinearRegressionNumPy:
             db = (1 / n_samples) * np.sum(y_pred - y)
             
             # Clip gradients to prevent exploding gradients
-            dw = np.clip(dw, -10, 10)
-            db = np.clip(db, -10, 10)
+            dw = np.clip(dw, self.GRADIENT_CLIP_MIN, self.GRADIENT_CLIP_MAX)
+            db = np.clip(db, self.GRADIENT_CLIP_MIN, self.GRADIENT_CLIP_MAX)
             
             # Update parameters
             self.weights -= lr * dw
@@ -458,6 +463,8 @@ class EnhancedMLBFinancialStyleEngine:
         else:
             self.stat_cols = stat_cols
         if rolling_windows is None:
+            # Rolling windows for momentum and volatility features
+            # Removed 45-day window to reduce computation time while maintaining key short/medium term patterns
             self.rolling_windows = [3, 7, 14, 28]
         else:
             self.rolling_windows = rolling_windows
@@ -771,17 +778,22 @@ def predict_with_ensemble(ensemble, X):
     return final_pred
 
 
-def calculate_probability_predictions(y_pred, thresholds=[5, 10, 15, 20, 25, 30]):
+def calculate_probability_predictions(y_pred, thresholds=[5, 10, 15, 20, 25, 30], default_std=5.0):
     """
     Calculate probability of exceeding thresholds
     Uses a simple heuristic based on predicted values
+    
+    Args:
+        y_pred: Predicted values
+        thresholds: List of thresholds to calculate probabilities for
+        default_std: Default standard deviation if prediction std is 0 (typical fantasy points variability)
     """
     probabilities = {}
     
     # Estimate standard deviation from predictions
     pred_std = np.std(y_pred)
     if pred_std == 0:
-        pred_std = 5.0  # Default
+        pred_std = default_std  # Use default for fantasy points when no variance
     
     for threshold in thresholds:
         # Simple probability model: higher predicted value = higher probability
@@ -813,8 +825,9 @@ if __name__ == "__main__":
     print("Ground-up NumPy Implementation")
     print("="*80 + "\n")
     
-    # Data path (update this to match your environment)
-    data_path = 'C:/Users/smtes/FangraphsData/merged_fangraphs_data.csv'
+    # Data path - Update this to match your environment or pass as command line argument
+    # Default path for Windows environment, will search for alternatives if not found
+    data_path = os.environ.get('MLB_DATA_PATH', 'C:/Users/smtes/FangraphsData/merged_fangraphs_data.csv')
     
     # Check if file exists, otherwise look for alternatives
     if not os.path.exists(data_path):

@@ -18,7 +18,7 @@ This directory contains a complete rewrite of the MLB DraftKings fantasy points 
 - **Models**: All implemented from scratch using NumPy
 - **Preprocessing**: Custom implementations using NumPy
 - **Features**: Simplified but effective feature engineering
-- **Size**: ~900 lines of core implementation
+- **Size**: 980 lines
 
 ## Custom Implementations
 

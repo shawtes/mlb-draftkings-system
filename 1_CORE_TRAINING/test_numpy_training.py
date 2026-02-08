@@ -7,6 +7,11 @@ import numpy as np
 import sys
 import os
 
+# Test thresholds for model performance validation
+MSE_THRESHOLD_LINEAR = 1.0  # Linear models should achieve MSE < 1.0 on simple linear data
+MSE_THRESHOLD_TREE = 5.0  # Tree models may have higher variance
+MSE_THRESHOLD_ENSEMBLE = 2.0  # Ensemble models should perform better
+
 # Add the current directory to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -98,7 +103,7 @@ def test_linear_regression():
     y_pred = model.predict(X)
     mse = np.mean((y - y_pred) ** 2)
     
-    assert mse < 1.0, f"MSE should be small, got {mse}"
+    assert mse < MSE_THRESHOLD_LINEAR, f"MSE should be < {MSE_THRESHOLD_LINEAR}, got {mse}"
     
     print(f"  ✓ LinearRegressionNumPy passed (MSE: {mse:.4f})")
 
@@ -119,7 +124,7 @@ def test_decision_tree():
     y_pred = model.predict(X)
     mse = np.mean((y - y_pred) ** 2)
     
-    assert mse < 5.0, f"MSE should be reasonable, got {mse}"
+    assert mse < MSE_THRESHOLD_TREE, f"MSE should be < {MSE_THRESHOLD_TREE}, got {mse}"
     
     print(f"  ✓ DecisionTreeRegressorNumPy passed (MSE: {mse:.4f})")
 
@@ -145,7 +150,7 @@ def test_gradient_boosting():
     y_pred = model.predict(X)
     mse = np.mean((y - y_pred) ** 2)
     
-    assert mse < 5.0, f"MSE should be reasonable, got {mse}"
+    assert mse < MSE_THRESHOLD_TREE, f"MSE should be < {MSE_THRESHOLD_TREE}, got {mse}"
     
     print(f"  ✓ GradientBoostingRegressorNumPy passed (MSE: {mse:.4f})")
 
@@ -172,7 +177,7 @@ def test_voting_regressor():
     y_pred = ensemble.predict(X)
     mse = np.mean((y - y_pred) ** 2)
     
-    assert mse < 2.0, f"MSE should be reasonable, got {mse}"
+    assert mse < MSE_THRESHOLD_ENSEMBLE, f"MSE should be < {MSE_THRESHOLD_ENSEMBLE}, got {mse}"
     
     print(f"  ✓ VotingRegressorNumPy passed (MSE: {mse:.4f})")
 
@@ -200,7 +205,7 @@ def test_stacking_regressor():
     y_pred = ensemble.predict(X)
     mse = np.mean((y - y_pred) ** 2)
     
-    assert mse < 2.0, f"MSE should be reasonable, got {mse}"
+    assert mse < MSE_THRESHOLD_ENSEMBLE, f"MSE should be < {MSE_THRESHOLD_ENSEMBLE}, got {mse}"
     
     print(f"  ✓ StackingRegressorNumPy passed (MSE: {mse:.4f})")
 
