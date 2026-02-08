@@ -150,7 +150,7 @@ class LinearRegressionNumPy:
         self.bias = None
         
     def fit(self, X, y):
-        """Fit the model using gradient descent"""
+        """Fit the model using gradient descent with adaptive learning rate"""
         X = np.array(X, dtype=float)
         y = np.array(y, dtype=float)
         
@@ -160,18 +160,49 @@ class LinearRegressionNumPy:
         self.weights = np.zeros(n_features)
         self.bias = 0
         
-        # Gradient descent
-        for _ in range(self.max_iter):
+        # Adaptive learning rate
+        lr = self.learning_rate
+        prev_loss = float('inf')
+        
+        # Gradient descent with early stopping
+        for iteration in range(self.max_iter):
             # Predictions
             y_pred = X @ self.weights + self.bias
+            
+            # Calculate loss
+            loss = np.mean((y_pred - y) ** 2) + (self.alpha / (2 * n_samples)) * np.sum(self.weights ** 2)
+            
+            # Check for convergence
+            if abs(prev_loss - loss) < 1e-6:
+                break
+            
+            # Adapt learning rate
+            if loss > prev_loss:
+                lr *= 0.5  # Reduce learning rate if loss increased
+            else:
+                lr *= 1.01  # Slightly increase if improving
+                
+            lr = min(lr, self.learning_rate)  # Cap at initial learning rate
+            prev_loss = loss
             
             # Compute gradients
             dw = (1 / n_samples) * (X.T @ (y_pred - y)) + (self.alpha / n_samples) * self.weights
             db = (1 / n_samples) * np.sum(y_pred - y)
             
+            # Clip gradients to prevent exploding gradients
+            dw = np.clip(dw, -10, 10)
+            db = np.clip(db, -10, 10)
+            
             # Update parameters
-            self.weights -= self.learning_rate * dw
-            self.bias -= self.learning_rate * db
+            self.weights -= lr * dw
+            self.bias -= lr * db
+            
+            # Check for NaN
+            if np.any(np.isnan(self.weights)) or np.isnan(self.bias):
+                # Reset to safe values
+                self.weights = np.zeros(n_features)
+                self.bias = 0
+                break
             
         return self
     
