@@ -863,36 +863,97 @@ app.post('/api/optimize', async (req, res) => {
         }
       });
     } else if (sport === 'NBA') {
-      console.log('🏀 Using Python Markov Chain NBA Optimizer');
+      console.log('🏀 Using NBA Optimizer');
       if (advancedQuantSettings && Object.keys(advancedQuantSettings).length > 0) {
         console.log('📊 Advanced Quant Settings:', JSON.stringify(advancedQuantSettings, null, 2));
       }
       
-      // Debug: Log what we're sending to Python
+      // Debug: Log what we're sending
       console.log('🔍 DEBUG - Stack Settings:', JSON.stringify(stackSettings, null, 2));
       console.log('🔍 DEBUG - Team Selections:', JSON.stringify(teamSelections, null, 2));
       console.log('🔍 DEBUG - Team Exposures:', JSON.stringify(teamExposures, null, 2));
 
-      // Call Python optimizer
-      const pythonResult = await callPythonOptimizer({
-        players: selectedPlayers,
-        numLineups,
-        minSalary: minSalary || 48000,
-        maxSalary,
-        stackSettings,
-        teamSelections,
-        teamExposures,
-        uniquePlayers,
-        maxExposure,
-        onProgress: (progress) => {
-          broadcast({
-            type: 'OPTIMIZATION_PROGRESS',
-            data: { id: optimizationId, progress, timestamp: new Date().toISOString() }
+      // When quant settings are enabled, use the JS NBAOptimizer with quant engine
+      // Otherwise try Python Markov optimizer first, with JS fallback
+      const quantActive = advancedQuantSettings && advancedQuantSettings.enabled;
+      
+      if (quantActive) {
+        console.log('📊 Quant mode active — using JS NBAOptimizer with QuantEngine');
+        optimizer = new NBAOptimizer();
+        results = await optimizer.optimize({
+          players: selectedPlayers,
+          numLineups,
+          minSalary: minSalary || 48000,
+          maxSalary,
+          stackSettings,
+          uniquePlayers,
+          maxExposure,
+          stackTypes,
+          exposureSettings,
+          riskTolerance,
+          contestMode,
+          bankroll,
+          advancedQuantSettings,
+          onProgress: (progress) => {
+            broadcast({
+              type: 'OPTIMIZATION_PROGRESS',
+              data: { id: optimizationId, progress, timestamp: new Date().toISOString() }
+            });
+          }
+        });
+        
+        // Extract portfolio metrics if available
+        var portfolioMetrics = results.portfolioMetrics || null;
+        var optimizerWarnings = [];
+      } else {
+        // Default: try Python Markov optimizer, fallback to JS
+        try {
+          const pythonResult = await callPythonOptimizer({
+            players: selectedPlayers,
+            numLineups,
+            minSalary: minSalary || 48000,
+            maxSalary,
+            stackSettings,
+            teamSelections,
+            teamExposures,
+            uniquePlayers,
+            maxExposure,
+            onProgress: (progress) => {
+              broadcast({
+                type: 'OPTIMIZATION_PROGRESS',
+                data: { id: optimizationId, progress, timestamp: new Date().toISOString() }
+              });
+            }
           });
+          results = pythonResult.lineups;
+          var optimizerWarnings = pythonResult.warnings || [];
+        } catch (pythonError) {
+          console.warn('⚠️ Python optimizer failed, falling back to JS NBAOptimizer:', pythonError.message);
+          optimizer = new NBAOptimizer();
+          results = await optimizer.optimize({
+            players: selectedPlayers,
+            numLineups,
+            minSalary: minSalary || 48000,
+            maxSalary,
+            stackSettings,
+            uniquePlayers,
+            maxExposure,
+            stackTypes,
+            exposureSettings,
+            riskTolerance,
+            contestMode,
+            bankroll,
+            advancedQuantSettings,
+            onProgress: (progress) => {
+              broadcast({
+                type: 'OPTIMIZATION_PROGRESS',
+                data: { id: optimizationId, progress, timestamp: new Date().toISOString() }
+              });
+            }
+          });
+          var optimizerWarnings = ['Python optimizer unavailable, used JavaScript fallback'];
         }
-      });
-      results = pythonResult.lineups;
-      var optimizerWarnings = pythonResult.warnings || [];
+      }
     } else {
       console.log('⚾ Using MLB Optimizer');
       if (advancedQuantSettings && Object.keys(advancedQuantSettings).length > 0) {
@@ -949,7 +1010,8 @@ app.post('/api/optimize', async (req, res) => {
         avgProjection: results.reduce((sum, l) => sum + l.totalProjection, 0) / results.length,
         avgSalary: results.reduce((sum, l) => sum + l.totalSalary, 0) / results.length,
         topProjection: results.length > 0 ? results[0].totalProjection : 0,
-        strategies: [...new Set(results.map(l => l.strategy))]
+        strategies: [...new Set(results.map(l => l.strategy))],
+        portfolioMetrics: (typeof portfolioMetrics !== 'undefined' ? portfolioMetrics : null) || results.portfolioMetrics || null
       }
     });
     

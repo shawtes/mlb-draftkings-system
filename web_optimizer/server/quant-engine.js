@@ -70,12 +70,12 @@ class QuantEngine {
       let quantScore;
       switch (this.strategy) {
         case 'kelly':
-          // Kelly-weighted: emphasize edge/variance ratio
-          quantScore = (projection * 0.4) + (kellyExposure * 2) + (playerSharpe * 0.3);
+          // Kelly-weighted: emphasize edge/variance ratio, salary-adjusted
+          quantScore = (playerSharpe * 0.4) + (kellyExposure * 3) + (projection / salary * 1000 * 0.3);
           break;
         case 'mean_variance':
-          // Mean-variance: high projection, low variance, scaled by risk tolerance
-          quantScore = projection - (this.riskTolerance * stdDev) + (playerSharpe * 0.5);
+          // Mean-variance: high value, low variance per dollar, scaled by risk tolerance
+          quantScore = (projection / salary * 1000) - (this.riskTolerance * stdDev * 0.5) + (playerSharpe * 0.5);
           break;
         case 'risk_parity':
           // Risk parity: normalize by volatility so each player contributes equal risk
@@ -87,13 +87,13 @@ class QuantEngine {
           break;
         case 'combined':
         default:
-          // Combined: blend all signals
+          // Combined: blend all signals with salary-awareness
           if (contestMode === 'cash') {
-            // Cash: prioritize floor, consistency, Sharpe
-            quantScore = (projection * 0.3) + (floor * 0.3) + (playerSharpe * 0.3) - (stdDev * 0.1 * this.riskTolerance);
+            // Cash: prioritize floor, consistency, Sharpe (per-dollar value)
+            quantScore = (playerSharpe * 0.4) + (floor / salary * 1000 * 0.3) + (projection / salary * 1000 * 0.2) - (stdDev * 0.1 * this.riskTolerance);
           } else {
-            // GPP: prioritize ceiling, leverage, upside
-            quantScore = (projection * 0.2) + (ceiling * 0.2) + (leverage * 0.3) + (ceilingProb * 50) + (playerSharpe * 0.1);
+            // GPP: prioritize ceiling leverage, upside per dollar, ownership fade
+            quantScore = (leverage * 0.35) + (playerSharpe * 0.25) + (ceilingProb * 100 * 0.2) + (ceiling / salary * 1000 * 0.2);
           }
           break;
       }

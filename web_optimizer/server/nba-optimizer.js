@@ -1,8 +1,10 @@
 const { v4: uuidv4 } = require('uuid');
+const QuantEngine = require('./quant-engine');
 
 /**
  * NBA DraftKings Optimizer
  * Generates optimized NBA lineups with DraftKings position requirements
+ * and institutional-grade quantitative optimization
  */
 class NBAOptimizer {
   constructor() {
@@ -29,19 +31,31 @@ class NBAOptimizer {
       riskTolerance = 'medium',
       bankroll = 1000,
       advancedQuantSettings = {},
+      contestMode = 'gpp',
       onProgress 
     } = config;
 
-    // Log quant settings if enabled
-    if (advancedQuantSettings && advancedQuantSettings.enabled) {
-      console.log('📊 Advanced Quant Settings enabled:', {
+    // Initialize quant engine
+    const quantEnabled = advancedQuantSettings && advancedQuantSettings.enabled;
+    const quant = quantEnabled ? new QuantEngine(advancedQuantSettings) : null;
+
+    if (quantEnabled) {
+      console.log('📊 NBA Quant Engine ACTIVE:', {
         strategy: advancedQuantSettings.strategy,
         riskTolerance: advancedQuantSettings.riskTolerance,
         varConfidence: advancedQuantSettings.varConfidence,
-        targetVolatility: advancedQuantSettings.targetVolatility,
         monteCarloSims: advancedQuantSettings.monteCarloSims,
+        maxKellyFraction: advancedQuantSettings.maxKellyFraction,
       });
     }
+
+    // Pre-compute quant scores for all players when quant is enabled
+    const quantScores = quantEnabled ? quant.scorePlayersQuant(players, contestMode) : null;
+    
+    // Compute Kelly-optimal exposure limits when enabled
+    const kellyLimits = (quantEnabled && advancedQuantSettings.strategy !== 'equal_weight')
+      ? quant.kellyExposureLimits(players, maxExposure)
+      : null;
 
     const results = [];
     
@@ -97,7 +111,11 @@ class NBAOptimizer {
           lineupPool,
           exposureTracker,
           maxExposure,
-          minUniquePlayersBetweenLineups
+          minUniquePlayersBetweenLineups,
+          quantEnabled,
+          quant,
+          quantScores,
+          kellyLimits
         );
         attempts++;
       } while (
@@ -113,7 +131,8 @@ class NBAOptimizer {
           exposureTracker.set(player.id, (exposureTracker.get(player.id) || 0) + 1);
         });
 
-        results.push({
+        // Build result object
+        const result = {
           id: uuidv4(),
           players: lineup.players,
           totalSalary: lineup.totalSalary,
@@ -121,15 +140,51 @@ class NBAOptimizer {
           totalPoints: lineup.totalProjection, // Alias for compatibility
           strategy: lineup.strategy,
           timestamp: new Date().toISOString()
-        });
+        };
+
+        // Run Monte Carlo simulation and add quant metrics when enabled
+        if (quantEnabled && quant) {
+          const mcResult = quant.monteCarloLineup(lineup.players);
+          result.quantMetrics = {
+            simMean: mcResult.mean,
+            simStdDev: mcResult.stdDev,
+            sharpeRatio: mcResult.sharpeRatio,
+            valueAtRisk: mcResult.valueAtRisk,
+            conditionalVaR: mcResult.conditionalVaR,
+            ceilingProbability: mcResult.ceilingProbability,
+            percentiles: mcResult.percentiles,
+            simulations: mcResult.simulations
+          };
+        }
+
+        results.push(result);
       }
+    }
+
+    // Sort by quant-adjusted score when enabled, otherwise by projection
+    if (quantEnabled) {
+      results.sort((a, b) => {
+        const aScore = a.quantMetrics ? a.quantMetrics.sharpeRatio : 0;
+        const bScore = b.quantMetrics ? b.quantMetrics.sharpeRatio : 0;
+        return bScore - aScore;
+      });
+    }
+
+    // Compute portfolio-level metrics when quant is enabled
+    let portfolioMetrics = null;
+    if (quantEnabled && quant && results.length > 0) {
+      portfolioMetrics = quant.analyzePortfolio(results);
+      console.log('📈 NBA Portfolio Metrics:', portfolioMetrics);
     }
 
     if (onProgress) {
       onProgress(100);
     }
 
-    console.log(`✅ Generated ${results.length} NBA lineups`);
+    console.log(`✅ Generated ${results.length} NBA lineups${quantEnabled ? ' (quant-optimized)' : ''}`);
+    
+    // Attach portfolio metrics to the results array for the API response
+    results.portfolioMetrics = portfolioMetrics;
     return results;
   }
 
@@ -178,7 +233,7 @@ class NBAOptimizer {
     return grouped;
   }
 
-  generateAdvancedLineup(playersByPosition, positionReqs, minSalary, maxSalary, strategy, stackSettings, stackTypes, exposureSettings, lineupPool, exposureTracker, maxExposure, minUniquePlayersBetweenLineups) {
+  generateAdvancedLineup(playersByPosition, positionReqs, minSalary, maxSalary, strategy, stackSettings, stackTypes, exposureSettings, lineupPool, exposureTracker, maxExposure, minUniquePlayersBetweenLineups, quantEnabled, quant, quantScores, kellyLimits) {
     const lineup = [];
     let totalSalary = 0;
     let totalProjection = 0;
@@ -194,7 +249,12 @@ class NBAOptimizer {
         usedPlayerIds,
         strategy,
         exposureTracker,
-        maxExposure
+        maxExposure,
+        null,
+        quantEnabled,
+        quant,
+        quantScores,
+        kellyLimits
       );
 
       if (!player) {
@@ -215,7 +275,11 @@ class NBAOptimizer {
       strategy,
       exposureTracker,
       maxExposure,
-      ['PG', 'SG']
+      ['PG', 'SG'],
+      quantEnabled,
+      quant,
+      quantScores,
+      kellyLimits
     );
 
     if (!guardPlayer) {
@@ -235,7 +299,11 @@ class NBAOptimizer {
       strategy,
       exposureTracker,
       maxExposure,
-      ['SF', 'PF']
+      ['SF', 'PF'],
+      quantEnabled,
+      quant,
+      quantScores,
+      kellyLimits
     );
 
     if (!forwardPlayer) {
@@ -255,7 +323,11 @@ class NBAOptimizer {
       strategy,
       exposureTracker,
       maxExposure,
-      ['PG', 'SG', 'SF', 'PF', 'C']
+      ['PG', 'SG', 'SF', 'PF', 'C'],
+      quantEnabled,
+      quant,
+      quantScores,
+      kellyLimits
     );
 
     if (!utilPlayer) {
@@ -280,7 +352,7 @@ class NBAOptimizer {
     };
   }
 
-  selectPlayerForPosition(rosterPosition, playersByPosition, usedPlayerIds, strategy, exposureTracker, maxExposure, eligiblePositions = null) {
+  selectPlayerForPosition(rosterPosition, playersByPosition, usedPlayerIds, strategy, exposureTracker, maxExposure, eligiblePositions = null, quantEnabled = false, quant = null, quantScores = null, kellyLimits = null) {
     // Determine which position pools to look at
     const positionsToCheck = eligiblePositions || [rosterPosition];
     
@@ -296,33 +368,47 @@ class NBAOptimizer {
       }
     }
     
-    // Convert to array and filter out used players
-    let eligiblePlayers = Array.from(playerMap.values()).filter(p => 
-      !usedPlayerIds.has(p.id) &&
-      (exposureTracker.get(p.id) || 0) < maxExposure
-    );
+    // Convert to array and filter out used players + exposure limits
+    let eligiblePlayers = Array.from(playerMap.values()).filter(p => {
+      if (usedPlayerIds.has(p.id)) return false;
+      
+      // Check exposure limit (use Kelly limit if available, otherwise default)
+      const playerMaxExposure = (kellyLimits && kellyLimits.has(p.id)) 
+        ? kellyLimits.get(p.id)
+        : maxExposure;
+      if ((exposureTracker.get(p.id) || 0) >= playerMaxExposure) return false;
+      
+      return true;
+    });
 
     if (eligiblePlayers.length === 0) {
       return null;
     }
 
-    // Sort by strategy
+    // When quant is enabled, use quant-scored selection
+    if (quantEnabled && quant && quantScores) {
+      return quant.selectPlayerQuant(eligiblePlayers, quantScores, strategy);
+    }
+
+    // Fallback: original strategy-based selection
     eligiblePlayers.sort((a, b) => {
       switch (strategy) {
         case 'greedy':
         case 'projection':
           // Pure projection-based
           return (b.projection || 0) - (a.projection || 0);
-        case 'value':
+        case 'value': {
           // Value-based (points per $1000)
           const valueA = (a.projection || 0) / a.salary * 1000;
           const valueB = (b.projection || 0) / b.salary * 1000;
           return valueB - valueA;
-        case 'balanced':
+        }
+        case 'balanced': {
           // Balanced approach
           const balanceA = ((a.projection || 0) * 0.7) + (((a.projection || 0) / a.salary * 1000) * 0.3);
           const balanceB = ((b.projection || 0) * 0.7) + (((b.projection || 0) / b.salary * 1000) * 0.3);
           return balanceB - balanceA;
+        }
         default:
           return (b.projection || 0) - (a.projection || 0);
       }
