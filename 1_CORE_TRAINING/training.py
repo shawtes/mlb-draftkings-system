@@ -59,6 +59,26 @@ except ImportError:
     STATSMODELS_AVAILABLE = False
     print("Warning: statsmodels not available. Some advanced features will be simplified.")
 
+try:
+    from sklearn.model_selection import TimeSeriesSplit
+    TIMESERIES_SPLIT_AVAILABLE = True
+except ImportError:
+    TIMESERIES_SPLIT_AVAILABLE = False
+
+try:
+    import optuna
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+    print("Warning: optuna not available. Bayesian hyperparameter optimization disabled.")
+
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
+    print("Warning: shap not available. SHAP-based feature importance disabled.")
+
 class EnhancedMLBFinancialStyleEngine:
     def __init__(self, stat_cols=None, rolling_windows=None):
         if stat_cols is None:
@@ -1023,6 +1043,263 @@ class NegativeBinomialXGBRegressor(XGBRegressor):
         if 'nb_alpha' in params:
             self.nb_alpha = params.pop('nb_alpha')
         return super().set_params(**params)
+
+
+# =============================================================================
+# WALK-FORWARD TEMPORAL CROSS-VALIDATION
+# =============================================================================
+# Standard K-Fold CV causes temporal data leakage when rolling/lag features
+# are present.  This walk-forward validator uses an expanding training window
+# with an embargo gap to prevent look-ahead bias.
+# See: Bergmeir, Hyndman & Koo (2018), de Prado (2018) Ch. 7
+# =============================================================================
+
+class WalkForwardValidator:
+    """
+    Expanding-window walk-forward cross-validation with an embargo gap.
+
+    Parameters
+    ----------
+    n_splits : int
+        Number of forward-looking test windows.
+    embargo_pct : float
+        Fraction of test-set size used as a gap between train and test to
+        prevent label leakage from rolling/lag features.
+    min_train_pct : float
+        Minimum fraction of data used for the first training window.
+    """
+
+    def __init__(self, n_splits=5, embargo_pct=0.01, min_train_pct=0.5):
+        self.n_splits = n_splits
+        self.embargo_pct = embargo_pct
+        self.min_train_pct = min_train_pct
+
+    def split(self, X, y=None, groups=None):
+        n = len(X) if hasattr(X, '__len__') else X.shape[0]
+        min_train = int(n * self.min_train_pct)
+        test_size = max(1, (n - min_train) // self.n_splits)
+        embargo_size = max(1, int(test_size * self.embargo_pct))
+
+        for i in range(self.n_splits):
+            train_end = min_train + i * test_size
+            test_start = train_end + embargo_size
+            test_end = min(test_start + test_size, n)
+
+            if test_start >= n:
+                break
+
+            yield list(range(0, train_end)), list(range(test_start, test_end))
+
+    def get_n_splits(self, X=None, y=None, groups=None):
+        return self.n_splits
+
+
+# =============================================================================
+# CONFORMAL PREDICTION FOR CALIBRATED UNCERTAINTY
+# =============================================================================
+# Split conformal prediction produces distribution-free prediction intervals
+# with guaranteed marginal coverage.  For heteroscedastic data like fantasy
+# points, we normalize residuals by predicted magnitude.
+# See: Lei et al. (2018), Romano, Patterson & Candès (2019)
+# =============================================================================
+
+class ConformalPredictor:
+    """
+    Split conformal prediction wrapper for any sklearn-compatible regressor.
+
+    Produces prediction intervals with exact (1 - alpha) marginal coverage
+    by calibrating nonconformity scores on a held-out calibration set.
+
+    Parameters
+    ----------
+    model : estimator
+        Fitted or unfitted sklearn-compatible regressor.
+    alpha : float
+        Miscoverage level.  alpha=0.1 produces 90 % prediction intervals.
+    """
+
+    def __init__(self, model, alpha=0.1):
+        self.model = model
+        self.alpha = alpha
+        self.calibration_scores_ = None
+        self.q_hat_ = None
+
+    def calibrate(self, X_cal, y_cal):
+        """Compute nonconformity scores on a calibration set."""
+        y_cal = np.asarray(y_cal, dtype=np.float64)
+        y_cal_pred = self.model.predict(X_cal)
+
+        # Heteroscedastic normalization: scale by max(|ŷ|, 1)
+        difficulty = np.maximum(np.abs(y_cal_pred), 1.0)
+        self.calibration_scores_ = np.abs(y_cal - y_cal_pred) / difficulty
+
+        # Finite-sample corrected quantile
+        n_cal = len(self.calibration_scores_)
+        level = np.ceil((1 - self.alpha) * (n_cal + 1)) / n_cal
+        level = min(level, 1.0)
+        self.q_hat_ = float(np.quantile(self.calibration_scores_, level))
+        return self
+
+    def predict_interval(self, X):
+        """Return (point, lower, upper) with guaranteed coverage."""
+        if self.q_hat_ is None:
+            raise RuntimeError("Call calibrate() before predict_interval().")
+        y_pred = self.model.predict(X)
+        difficulty = np.maximum(np.abs(y_pred), 1.0)
+        lower = y_pred - self.q_hat_ * difficulty
+        upper = y_pred + self.q_hat_ * difficulty
+        return y_pred, lower, upper
+
+    def predict_exceedance_prob(self, X, thresholds):
+        """
+        Estimate P(Y > threshold) for each threshold using conformal scores.
+
+        Returns a dict mapping 'prob_over_{t}' → array of probabilities.
+        """
+        if self.calibration_scores_ is None:
+            raise RuntimeError("Call calibrate() before predict_exceedance_prob().")
+        y_pred = self.model.predict(X)
+        difficulty = np.maximum(np.abs(y_pred), 1.0)
+
+        probs = {}
+        for t in thresholds:
+            # For each sample, what fraction of calibration scores would
+            # place the threshold *inside* the interval?
+            needed = (t - y_pred) / difficulty
+            prob = np.mean(
+                self.calibration_scores_[:, None] > needed[None, :], axis=0
+            )
+            probs[f'prob_over_{t}'] = prob
+
+        return probs
+
+
+# =============================================================================
+# BAYESIAN HYPERPARAMETER OPTIMIZATION (OPTUNA)
+# =============================================================================
+# Replaces manual tuning with Tree-Parzen Estimator search.
+# Uses walk-forward temporal CV for honest evaluation.
+# See: Bergstra et al. (2011), Akiba et al. (2019)
+# =============================================================================
+
+def optimize_hyperparameters(X, y, n_trials=50, n_splits=3):
+    """
+    Bayesian hyperparameter optimization using Optuna.
+
+    Uses walk-forward temporal CV so performance estimates are not
+    inflated by temporal data leakage.
+
+    Parameters
+    ----------
+    X : array-like of shape (n_samples, n_features)
+    y : array-like of shape (n_samples,)
+    n_trials : int
+        Number of Optuna trials.
+    n_splits : int
+        Number of walk-forward CV splits.
+
+    Returns
+    -------
+    best_params : dict
+        Optimal hyperparameters found by the search.
+    """
+    if not OPTUNA_AVAILABLE:
+        print("Optuna not installed — returning HARDCODED_OPTIMAL_PARAMS.")
+        return HARDCODED_OPTIMAL_PARAMS
+
+    X_arr = np.asarray(X, dtype=np.float32)
+    y_arr = np.asarray(y, dtype=np.float64)
+
+    def objective(trial):
+        params = {
+            'n_estimators': trial.suggest_int('n_estimators', 100, 500),
+            'max_depth': trial.suggest_int('max_depth', 3, 10),
+            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
+            'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
+            'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
+            'gamma': trial.suggest_float('gamma', 0.0, 1.0),
+            'reg_alpha': trial.suggest_float('reg_alpha', 1e-3, 10.0, log=True),
+            'reg_lambda': trial.suggest_float('reg_lambda', 1e-3, 10.0, log=True),
+            'nb_alpha': trial.suggest_float('nb_alpha', 0.1, 5.0),
+        }
+
+        model = NegativeBinomialXGBRegressor(
+            tree_method='hist', device='cpu', n_jobs=-1, random_state=42,
+            **params,
+        )
+
+        tscv = WalkForwardValidator(n_splits=n_splits, min_train_pct=0.5)
+        scores = []
+
+        for train_idx, val_idx in tscv.split(X_arr):
+            model.fit(X_arr[train_idx], y_arr[train_idx])
+            y_pred = model.predict(X_arr[val_idx])
+            scores.append(mean_absolute_error(y_arr[val_idx], y_pred))
+
+        return float(np.mean(scores))
+
+    study = optuna.create_study(direction='minimize',
+                                sampler=optuna.samplers.TPESampler(seed=42))
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+
+    best = study.best_params
+    print(f"Optuna best MAE: {study.best_value:.4f}")
+    print(f"Optuna best params: {best}")
+
+    # Convert to pipeline-prefixed keys for set_params() compatibility
+    pipeline_params = {
+        f'model__final_estimator__{k}': v for k, v in best.items()
+    }
+    return pipeline_params
+
+
+# =============================================================================
+# SHAP-BASED FEATURE IMPORTANCE
+# =============================================================================
+# SHAP captures nonlinear and interaction-based importance, unlike the
+# univariate SelectKBest(f_regression) currently used.
+# See: Lundberg & Lee (2017)
+# =============================================================================
+
+def compute_shap_importance(model, X, feature_names=None, max_samples=5000):
+    """
+    Compute mean |SHAP| importance for a fitted tree-based model.
+
+    Parameters
+    ----------
+    model : tree-based estimator
+        A fitted XGBoost / GBM model.
+    X : array-like
+        Feature matrix.
+    feature_names : list, optional
+        Feature names aligned to X columns.
+    max_samples : int
+        Subsample size to keep SHAP tractable.
+
+    Returns
+    -------
+    importance_df : pd.DataFrame
+        Columns ['Feature', 'SHAP_Importance'], sorted descending.
+    """
+    if not SHAP_AVAILABLE:
+        print("SHAP not available — falling back to gain-based importance.")
+        return None
+
+    X_sub = X[:min(max_samples, len(X))]
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(X_sub)
+    mean_abs_shap = np.abs(shap_values).mean(axis=0)
+
+    if feature_names is None:
+        feature_names = [f"f{i}" for i in range(X_sub.shape[1])]
+
+    importance_df = pd.DataFrame({
+        'Feature': feature_names[:len(mean_abs_shap)],
+        'SHAP_Importance': mean_abs_shap,
+    }).sort_values('SHAP_Importance', ascending=False).reset_index(drop=True)
+
+    return importance_df
 
 
 # Define constants for calculations
