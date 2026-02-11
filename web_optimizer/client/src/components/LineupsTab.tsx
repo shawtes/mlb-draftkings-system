@@ -146,6 +146,78 @@ const LineupsTab: React.FC<LineupsTabProps> = ({
     }
   };
 
+  // Export selected lineups to DraftKings format
+  const handleExportToDK = async () => {
+    const lineupsToExport = selectedLineups.size > 0 
+      ? filteredLineups.filter(l => selectedLineups.has(l.id))
+      : filteredLineups;
+
+    if (lineupsToExport.length === 0) {
+      alert('Please select at least one lineup to export.');
+      return;
+    }
+
+    try {
+      // Check if DK entries file is loaded
+      let contestName, contestId, entryFee;
+      
+      try {
+        const dkInfoResponse = await fetch('/api/dk-entries');
+        if (dkInfoResponse.ok) {
+          const dkInfo = await dkInfoResponse.json();
+          if (dkInfo.loaded && dkInfo.contestInfo) {
+            // Auto-use contest info from DK entries file
+            contestName = dkInfo.contestInfo.contest_name;
+            contestId = dkInfo.contestInfo.contest_id;
+            entryFee = dkInfo.contestInfo.entry_fee;
+            console.log(`✅ Using contest info from DK entries: ${contestName} (ID: ${contestId})`);
+          }
+        }
+      } catch (error) {
+        console.log('DK entries not loaded, will prompt for contest info');
+      }
+      
+      // Only prompt if DK entries not loaded
+      if (!contestName || !contestId || !entryFee) {
+        contestName = prompt('Enter Contest Name:', contestName || 'NBA Main Slate') || contestName || 'NBA Main Slate';
+        contestId = prompt('Enter Contest ID:', contestId || '999999999') || contestId || '999999999';
+        entryFee = prompt('Enter Entry Fee:', entryFee || '$1') || entryFee || '$1';
+      }
+
+      const response = await fetch('/api/export-dk-entries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lineups: lineupsToExport,
+          type: 'lineups',
+          contestName,
+          contestId,
+          entryFee
+        })
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `dk_entries_${Date.now()}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        alert(`✅ Successfully exported ${lineupsToExport.length} lineup${lineupsToExport.length > 1 ? 's' : ''} to DraftKings format!`);
+      } else {
+        const error = await response.json();
+        alert(`❌ Export failed: ${error.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('❌ Error exporting lineups. Please try again.');
+    }
+  };
+
   // Filter and sort lineups
   const filteredLineups = lineups
     .filter(lineup => {
@@ -342,11 +414,13 @@ const LineupsTab: React.FC<LineupsTabProps> = ({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => onExportLineups('draftkings')}
-            className="border-cyan-500/30 bg-cyan-500/5 text-white"
+            onClick={handleExportToDK}
+            disabled={filteredLineups.length === 0}
+            className="border-green-500/30 bg-green-500/5 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Export to DraftKings entries format (CSV)"
           >
             <Download className="w-4 h-4 mr-2" />
-            Export
+            Export DK ({selectedLineups.size > 0 ? selectedLineups.size : filteredLineups.length})
           </Button>
           <Button
             variant="outline"

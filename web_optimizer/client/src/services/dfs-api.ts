@@ -24,6 +24,7 @@ export interface OptimizeRequest {
   stackSettings: {
     enabled: boolean;
     teams: string[];
+    requestedStackSizes?: number[];
     minPlayersPerTeam?: number;
     maxPlayersPerTeam?: number;
   };
@@ -39,6 +40,9 @@ export interface OptimizeRequest {
   bankroll?: number;
   contestMode?: string;
   monteCarloIterations?: number;
+  teamSelections?: Record<number | 'all', string[]>;
+  teamExposures?: Record<string, { min: number; max: number }>;
+  advancedQuantSettings?: Record<string, unknown>;
 }
 
 export interface OptimizeResponse {
@@ -47,6 +51,7 @@ export interface OptimizeResponse {
   optimizationId: string;
   lineups: any[];
   error?: string;
+  warnings?: string[];
   summary: {
     totalLineups: number;
     avgProjection: number;
@@ -178,6 +183,27 @@ const advancedExport = async (lineups: any[], options: {
   return response.data;
 };
 
+// Upload ownership CSV
+const uploadOwnership = async (file: File) => {
+  const formData = new FormData();
+  formData.append('ownershipFile', file);
+  const response = await axios.post(`${API_BASE_URL}/upload-ownership`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+// Upload projection source for blending
+const uploadProjectionSource = async (file: File, sourceName: string) => {
+  const formData = new FormData();
+  formData.append('projectionFile', file);
+  formData.append('sourceName', sourceName);
+  const response = await axios.post(`${API_BASE_URL}/upload-projection-source`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
 // Error handling wrapper
 const handleApiError = (error: unknown) => {
   if (axios.isAxiosError(error)) {
@@ -221,5 +247,7 @@ export const dfsApi = {
   getContestFormats,
   getStackAnalysis,
   getResults,
+  uploadOwnership,
+  uploadProjectionSource,
   handleApiError,
 };

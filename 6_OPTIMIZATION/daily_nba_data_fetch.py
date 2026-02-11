@@ -25,14 +25,14 @@ BASE_URL = "https://api.sportsdata.io/api/nba/fantasy/json"
 HIST_CACHE_DIR = "/Users/sineshawmesfintesfaye/mlb-draftkings-system/nba_historical_cache"
 
 # Output file
-OUTPUT_FILE = "nba_NOV15_READY_1.csv"
+OUTPUT_FILE = "nba_NOV15_READY_2.csv"
 
 # Date - change this daily or use datetime.now()
-GAME_DATE = "2025-NOV-15"  # Format: YYYY-MMM-DD
+GAME_DATE = "2025-NOV-29"  # Format: YYYY-MMM-DD
 
 # Hard-coded DK Entries CSV path (dynamic player extraction)
 # NOTE: If DK entries don't match the date, set to "" to skip filtering
-DK_ENTRIES_DEFAULT = "/Users/sineshawmesfintesfaye/Downloads/DKEntries-18.csv"  # Set to "" to get ALL projections without DK filtering
+DK_ENTRIES_DEFAULT = "/Users/sineshawmesfintesfaye/Downloads/DKEntries-19.csv"  # Set to "" to get ALL projections without DK filtering
 # DK_ENTRIES_DEFAULT = "/Users/sineshawmesfintesfaye/Downloads/DKEntries-8.csv"  # Oct 29 only
 
 # ============================================================================

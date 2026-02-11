@@ -1,5 +1,18 @@
 @custom-variant dark (&:is(.dark *));
 
+/* DFS Color Tokens */
+:root {
+  --dfs-bg-primary: #0B1120;
+  --dfs-bg-secondary: #111827;
+  --dfs-bg-tertiary: #1E293B;
+  --dfs-bg-hover: #283548;
+  --dfs-border: #334155;
+  --dfs-accent: #00D9FF;
+  --dfs-text-primary: #F8FAFC;
+  --dfs-text-secondary: #94A3B8;
+  --dfs-text-muted: #64748B;
+}
+
 :root {
   --font-size: 16px;
   --background: #ffffff;
@@ -126,6 +139,12 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .font-mono,
+  [data-mono] {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
   }
 }
 

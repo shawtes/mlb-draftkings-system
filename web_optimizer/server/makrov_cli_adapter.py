@@ -52,8 +52,8 @@ GUARD_POSITIONS = ['PG', 'SG']
 FORWARD_POSITIONS = ['SF', 'PF']
 
 
-def optimize_using_makrov_logic(df_filtered, num_lineups, min_salary, stack_settings, 
-                                  team_selections, max_exposure):
+def optimize_using_makrov_logic(df_filtered, num_lineups, min_salary, stack_settings,
+                                  team_selections, max_exposure, team_exposures=None):
     """
     This is the EXACT optimization logic from makrovchain_optimizer.py
     Extracted from the OptimizationWorker.optimize_lineups() method
@@ -96,32 +96,112 @@ def optimize_using_makrov_logic(df_filtered, num_lineups, min_salary, stack_sett
     all_lineups = []
     
     # Generate lineups using PuLP for each stack type
+    print(f"🎯 Stack settings: {stack_settings}", file=sys.stderr)
+    print(f"🎯 Team selections: {team_selections}", file=sys.stderr)
+    
     for stack_type, num_solves in stack_settings.items():
         print(f"  Stack type '{stack_type}': generating {lineups_per_stack} candidates", file=sys.stderr)
         
-        for solve_idx in range(lineups_per_stack):
-            try:
-                print(f"    Attempt {solve_idx+1}/{lineups_per_stack}...", file=sys.stderr)
-                lineup = optimize_single_lineup_pulp(
-                    df_filtered,
-                    stack_type=stack_type,
-                    team_selections=team_selections,
-                    min_salary=min_salary,
-                    salary_cap=SALARY_CAP,
-                    position_limits=POSITION_LIMITS
-                )
+        # Check if multiple teams are selected for this stack type
+        teams_for_stack = []
+        # Try multiple key formats
+        if stack_type in team_selections:
+            teams_for_stack = team_selections[stack_type]
+        elif str(stack_type) in team_selections:
+            teams_for_stack = team_selections[str(stack_type)]
+        elif int(stack_type) in team_selections if stack_type.isdigit() else False:
+            teams_for_stack = team_selections[int(stack_type)]
+        elif 'all' in team_selections:
+            teams_for_stack = team_selections['all']
+        
+        print(f"    🔍 Teams found for stack '{stack_type}': {teams_for_stack} (count: {len(teams_for_stack) if teams_for_stack else 0})", file=sys.stderr)
+        
+        # If multiple teams selected, generate lineups for EACH team separately
+        if teams_for_stack and len(teams_for_stack) > 1 and stack_type != 'No Stacks':
+            print(f"    📊 Multiple teams selected ({len(teams_for_stack)}): {teams_for_stack}", file=sys.stderr)
+            print(f"    🎯 Generating lineups for EACH team variation", file=sys.stderr)
+
+            if team_exposures is None:
+                team_exposures = {}
+
+            # Distribute lineups across teams, respecting team exposure caps
+            lineups_per_team = max(1, lineups_per_stack // len(teams_for_stack))
+            remaining_lineups = lineups_per_stack - (lineups_per_team * len(teams_for_stack))
+
+            for team_idx, team in enumerate(teams_for_stack):
+                # Start with even distribution + remainder
+                base_count = lineups_per_team + (1 if team_idx < remaining_lineups else 0)
+
+                # Apply team exposure caps if provided
+                exp = team_exposures.get(team, {})
+                max_exp = exp.get('max', 100)
+                min_exp = exp.get('min', 0)
+                max_lineups_for_team = max(1, int(num_lineups * max_exp / 100))
+                min_lineups_for_team = max(0, int(num_lineups * min_exp / 100))
+                team_lineup_count = min(max_lineups_for_team, max(min_lineups_for_team, base_count))
+
+                if exp:
+                    print(f"    📊 Exposure caps for {team}: min={min_exp}%, max={max_exp}% → lineups: {team_lineup_count} (base was {base_count})", file=sys.stderr)
                 
-                if lineup is not None and not lineup.empty:
-                    all_lineups.append((stack_type, lineup))
-                    print(f"    ✓ Success! Total:{lineup['Predicted_DK_Points'].sum():.1f}", file=sys.stderr)
-                else:
-                    print(f"    ✗ No valid lineup found", file=sys.stderr)
+                print(f"    🏀 Generating {team_lineup_count} lineups for {team} {stack_type}-stack", file=sys.stderr)
+                
+                # Create team-specific selections (single team)
+                # Use both string and int keys to match constraint logic expectations
+                team_specific_selections = {
+                    stack_type: [team],
+                    str(stack_type): [team],
+                    'all': [team]
+                }
+                print(f"      🔍 Team-specific selections for {team}: {team_specific_selections}", file=sys.stderr)
+                
+                for solve_idx in range(team_lineup_count):
+                    try:
+                        print(f"      Attempt {solve_idx+1}/{team_lineup_count} for {team}...", file=sys.stderr)
+                        lineup = optimize_single_lineup_pulp(
+                            df_filtered,
+                            stack_type=stack_type,
+                            team_selections=team_specific_selections,
+                            min_salary=min_salary,
+                            salary_cap=SALARY_CAP,
+                            position_limits=POSITION_LIMITS
+                        )
+                        
+                        if lineup is not None and not lineup.empty:
+                            all_lineups.append((stack_type, lineup))
+                            print(f"      ✓ Success! Total:{lineup['Predicted_DK_Points'].sum():.1f}", file=sys.stderr)
+                        else:
+                            print(f"      ✗ No valid lineup found", file=sys.stderr)
+                            
+                    except Exception as e:
+                        print(f"      ✗ Exception: {e}", file=sys.stderr)
+                        import traceback
+                        traceback.print_exc(file=sys.stderr)
+                        continue
+        else:
+            # Single team or no teams - use original logic
+            for solve_idx in range(lineups_per_stack):
+                try:
+                    print(f"    Attempt {solve_idx+1}/{lineups_per_stack}...", file=sys.stderr)
+                    lineup = optimize_single_lineup_pulp(
+                        df_filtered,
+                        stack_type=stack_type,
+                        team_selections=team_selections,
+                        min_salary=min_salary,
+                        salary_cap=SALARY_CAP,
+                        position_limits=POSITION_LIMITS
+                    )
                     
-            except Exception as e:
-                print(f"    ✗ Exception: {e}", file=sys.stderr)
-                import traceback
-                traceback.print_exc(file=sys.stderr)
-                continue
+                    if lineup is not None and not lineup.empty:
+                        all_lineups.append((stack_type, lineup))
+                        print(f"    ✓ Success! Total:{lineup['Predicted_DK_Points'].sum():.1f}", file=sys.stderr)
+                    else:
+                        print(f"    ✗ No valid lineup found", file=sys.stderr)
+                        
+                except Exception as e:
+                    print(f"    ✗ Exception: {e}", file=sys.stderr)
+                    import traceback
+                    traceback.print_exc(file=sys.stderr)
+                    continue
     
     print(f"✅ Generated {len(all_lineups)} candidate lineups", file=sys.stderr)
     
@@ -191,21 +271,92 @@ def optimize_single_lineup_pulp(df, stack_type, team_selections, min_salary,
             position_limits['SF'] + position_limits['PF'] + position_limits['F']
         )
     
-    # Team stacking constraints (if applicable)
+    # Team stacking constraints (if applicable) - MATCHING DESKTOP LOGIC
+    print(f"    🔍 Stack constraint check: stack_type={stack_type} (type: {type(stack_type)}), team_selections keys={list(team_selections.keys()) if team_selections else 'None'}", file=sys.stderr)
+    if team_selections:
+        print(f"    🔍 Full team_selections: {team_selections}", file=sys.stderr)
+    
     if stack_type != 'No Stacks' and team_selections:
         if stack_type in ['2', '3', '4', '5']:
             stack_size = int(stack_type)
-            teams = team_selections.get(stack_type, team_selections.get('all', []))
+            # Get teams for this stack size
+            teams = team_selections.get(stack_type, team_selections.get(str(stack_size), team_selections.get('all', [])))
+            print(f"    🔍 Found {len(teams) if teams else 0} teams for {stack_size}-stack: {teams[:3] if teams else 'None'}...", file=sys.stderr)
             
             if teams:
-                team_vars = {}
+                # Filter to only teams with enough players (matching desktop logic)
+                valid_teams = []
                 for team in teams:
-                    team_vars[team] = pulp.LpVariable(f"team_{team}", cat='Binary')
-                    team_players = [i for i in range(len(df)) if df.iloc[i]['Team'] == team]
-                    if team_players:
-                        prob += pulp.lpSum([player_vars[i] for i in team_players]) >= stack_size * team_vars[team]
+                    team_players_idx = df[df['Team'] == team].index.tolist()
+                    if len(team_players_idx) >= stack_size:
+                        valid_teams.append(team)
                 
-                prob += pulp.lpSum([team_vars[team] for team in teams]) >= 1
+                if not valid_teams:
+                    # No valid teams, skip stack constraint
+                    print(f"    ⚠️ No valid teams for {stack_size}-stack, skipping constraint", file=sys.stderr)
+                    pass
+                elif len(valid_teams) == 1:
+                    # Single team: enforce directly (EXACT desktop logic)
+                    selected_team = valid_teams[0]
+                    team_players_idx = df[df['Team'] == selected_team].index.tolist()
+                    print(f"    🎯 ENFORCING: At least {stack_size} players from {selected_team} (found {len(team_players_idx)} available)", file=sys.stderr)
+                    print(f"    🎯 Team players indices: {team_players_idx[:5]}... (total: {len(team_players_idx)})", file=sys.stderr)
+                    
+                    # CRITICAL: Use >= to enforce minimum (matching desktop line 984)
+                    constraint = pulp.lpSum([player_vars[idx] for idx in team_players_idx]) >= stack_size
+                    prob += constraint
+                    print(f"    ✅ Added constraint: sum(players from {selected_team}) >= {stack_size}", file=sys.stderr)
+                    
+                    # Limit all other teams to stack_size - 1 (matching desktop logic)
+                    all_teams = df['Team'].unique().tolist()
+                    for other_team in all_teams:
+                        if other_team != selected_team:
+                            other_team_players_idx = df[df['Team'] == other_team].index.tolist()
+                            if len(other_team_players_idx) >= stack_size:
+                                prob += pulp.lpSum([player_vars[idx] for idx in other_team_players_idx]) <= stack_size - 1
+                                print(f"    🚫 LIMITING: {other_team} to max {stack_size - 1} players", file=sys.stderr)
+                else:
+                    # Multiple teams: use binary variables to ensure exactly ONE team gets the stack
+                    # MATCHING DESKTOP LOGIC (lines 1002-1056)
+                    team_binary_vars = {}
+                    for team in valid_teams:
+                        team_binary_vars[team] = pulp.LpVariable(f"use_team_{team}_{stack_size}", cat='Binary')
+                    
+                    print(f"    🎯 Multiple teams selected ({len(valid_teams)}): {valid_teams}", file=sys.stderr)
+                    
+                    # At least one team must be selected
+                    prob += pulp.lpSum([team_binary_vars[team] for team in valid_teams]) >= 1
+                    
+                    # ONLY ONE team can have the stack (prevent multiple 3+ player stacks)
+                    prob += pulp.lpSum([team_binary_vars[team] for team in valid_teams]) <= 1
+                    print(f"    ✅ ENFORCING: Exactly ONE team will have {stack_size}+ players", file=sys.stderr)
+                    
+                    # If a team is selected (binary = 1), enforce at least 'stack_size' players
+                    for team in valid_teams:
+                        team_players_idx = df[df['Team'] == team].index.tolist()
+                        if team_players_idx and len(team_players_idx) >= stack_size:
+                            # If team is selected (binary = 1), enforce at least 'stack_size' players
+                            prob += pulp.lpSum([player_vars[idx] for idx in team_players_idx]) >= stack_size * team_binary_vars[team]
+                            print(f"    ✅ If {team} selected, must have >= {stack_size} players", file=sys.stderr)
+                    
+                    # ADDITIONAL CONSTRAINT: Prevent ALL other teams from having large stacks
+                    # This ensures ONLY ONE team (the stacked team) has stack_size+ players
+                    all_teams = df['Team'].unique().tolist()
+                    for other_team in all_teams:
+                        if other_team in valid_teams:
+                            # For valid teams, they can only have stack_size+ if their binary var is 1
+                            other_team_players_idx = df[df['Team'] == other_team].index.tolist()
+                            if len(other_team_players_idx) >= stack_size:
+                                # If NOT selected (binary = 0), limit to stack_size-1
+                                # If selected (binary = 1), allow stack_size+ (9 is large enough to allow any reasonable stack)
+                                prob += pulp.lpSum([player_vars[idx] for idx in other_team_players_idx]) <= stack_size - 1 + (8 - stack_size + 1) * team_binary_vars[other_team]
+                                print(f"    🚫 LIMITING: {other_team} to max {stack_size-1} unless selected (binary=1, then max 8)", file=sys.stderr)
+                        else:
+                            # For non-valid teams, always limit to stack_size-1
+                            other_team_players_idx = df[df['Team'] == other_team].index.tolist()
+                            if len(other_team_players_idx) >= stack_size:
+                                prob += pulp.lpSum([player_vars[idx] for idx in other_team_players_idx]) <= stack_size - 1
+                                print(f"    🚫 LIMITING: {other_team} (not in valid teams) to max {stack_size-1} players", file=sys.stderr)
     
     # Solve
     prob.solve(pulp.PULP_CBC_CMD(msg=0))
@@ -227,7 +378,24 @@ def optimize_single_lineup_pulp(df, stack_type, team_selections, min_salary,
     if len(selected_indices) != 8:
         return None
     
-    return df.iloc[selected_indices]
+    # Debug: Check team distribution
+    selected_df = df.iloc[selected_indices]
+    if stack_type != 'No Stacks' and team_selections:
+        team_counts = selected_df['Team'].value_counts()
+        print(f"    📊 Team distribution in lineup: {dict(team_counts)}", file=sys.stderr)
+        if stack_type in ['2', '3', '4', '5']:
+            stack_size = int(stack_type)
+            max_team_count = team_counts.max()
+            max_team = team_counts.idxmax()
+            print(f"    📊 Max team: {max_team} with {max_team_count} players (required: {stack_size})", file=sys.stderr)
+            if max_team_count < stack_size:
+                print(f"    ❌ ERROR: Constraint violation! Expected at least {stack_size} players from one team, but max is {max_team_count} from {max_team}", file=sys.stderr)
+                # This should never happen if constraints are working - return None to force retry
+                return None
+            else:
+                print(f"    ✅ Constraint satisfied: {max_team} has {max_team_count} players (>= {stack_size})", file=sys.stderr)
+    
+    return selected_df
 
 
 def select_diverse_lineups(all_lineups, num_lineups, max_exposure):
@@ -280,91 +448,52 @@ def select_diverse_lineups(all_lineups, num_lineups, max_exposure):
     return selected
 
 
+def _map_player_for_frontend(row, roster_position):
+    """Map a DataFrame row to a frontend-compatible player dict."""
+    player = row.to_dict()
+    player = {k: (None if pd.isna(v) else v) for k, v in player.items()}
+    player['name'] = player.get('Name', player.get('name', ''))
+    player['position'] = player.get('Position', player.get('position', ''))
+    player['team'] = player.get('Team', player.get('team', ''))
+    player['salary'] = player.get('Salary', player.get('salary', 0))
+    proj_value = player.get('Predicted_DK_Points', player.get('projection', 0))
+    player['projection'] = proj_value
+    player['projectedPoints'] = proj_value
+    player['rosterPosition'] = roster_position
+    return player
+
+
 def assign_roster_positions(lineup_df):
     """Assign roster positions to lineup"""
     roster = {}
     used_indices = set()
-    
-    # Reset index for clean iteration
+
     lineup_df = lineup_df.reset_index(drop=True)
-    
+
+    def assign_first_match(roster_pos, eligible_positions=None):
+        """Find first unused player matching eligible positions and assign to roster_pos."""
+        for i in range(len(lineup_df)):
+            if i in used_indices:
+                continue
+            if eligible_positions is not None:
+                pos_str = str(lineup_df.iloc[i]['Position'])
+                if not any(p in pos_str for p in eligible_positions):
+                    continue
+            roster[roster_pos] = _map_player_for_frontend(lineup_df.iloc[i], roster_pos)
+            used_indices.add(i)
+            return
+
     # Core positions
     for pos in ['PG', 'SG', 'SF', 'PF', 'C']:
-        for i in range(len(lineup_df)):
-            if i not in used_indices and pos in str(lineup_df.iloc[i]['Position']):
-                player = lineup_df.iloc[i].to_dict()
-                player = {k: (None if pd.isna(v) else v) for k, v in player.items()}
-                # Map field names for frontend (lowercase versions)
-                player['name'] = player.get('Name', player.get('name', ''))
-                player['position'] = player.get('Position', player.get('position', ''))
-                player['team'] = player.get('Team', player.get('team', ''))
-                player['salary'] = player.get('Salary', player.get('salary', 0))
-                # Map projection fields for frontend
-                proj_value = player.get('Predicted_DK_Points', player.get('projection', 0))
-                player['projection'] = proj_value
-                player['projectedPoints'] = proj_value
-                player['rosterPosition'] = pos
-                roster[pos] = player
-                used_indices.add(i)
-                break
-    
-    # G position
-    for i in range(len(lineup_df)):
-        if i not in used_indices and any(g in str(lineup_df.iloc[i]['Position']) for g in ['PG', 'SG']):
-            player = lineup_df.iloc[i].to_dict()
-            player = {k: (None if pd.isna(v) else v) for k, v in player.items()}
-            # Map field names for frontend (lowercase versions)
-            player['name'] = player.get('Name', player.get('name', ''))
-            player['position'] = player.get('Position', player.get('position', ''))
-            player['team'] = player.get('Team', player.get('team', ''))
-            player['salary'] = player.get('Salary', player.get('salary', 0))
-            # Map projection fields for frontend
-            proj_value = player.get('Predicted_DK_Points', player.get('projection', 0))
-            player['projection'] = proj_value
-            player['projectedPoints'] = proj_value
-            player['rosterPosition'] = 'G'
-            roster['G'] = player
-            used_indices.add(i)
-            break
-    
-    # F position
-    for i in range(len(lineup_df)):
-        if i not in used_indices and any(f in str(lineup_df.iloc[i]['Position']) for f in ['SF', 'PF']):
-            player = lineup_df.iloc[i].to_dict()
-            player = {k: (None if pd.isna(v) else v) for k, v in player.items()}
-            # Map field names for frontend (lowercase versions)
-            player['name'] = player.get('Name', player.get('name', ''))
-            player['position'] = player.get('Position', player.get('position', ''))
-            player['team'] = player.get('Team', player.get('team', ''))
-            player['salary'] = player.get('Salary', player.get('salary', 0))
-            # Map projection fields for frontend
-            proj_value = player.get('Predicted_DK_Points', player.get('projection', 0))
-            player['projection'] = proj_value
-            player['projectedPoints'] = proj_value
-            player['rosterPosition'] = 'F'
-            roster['F'] = player
-            used_indices.add(i)
-            break
-    
-    # UTIL position
-    for i in range(len(lineup_df)):
-        if i not in used_indices:
-            player = lineup_df.iloc[i].to_dict()
-            player = {k: (None if pd.isna(v) else v) for k, v in player.items()}
-            # Map field names for frontend (lowercase versions)
-            player['name'] = player.get('Name', player.get('name', ''))
-            player['position'] = player.get('Position', player.get('position', ''))
-            player['team'] = player.get('Team', player.get('team', ''))
-            player['salary'] = player.get('Salary', player.get('salary', 0))
-            # Map projection fields for frontend
-            proj_value = player.get('Predicted_DK_Points', player.get('projection', 0))
-            player['projection'] = proj_value
-            player['projectedPoints'] = proj_value
-            player['rosterPosition'] = 'UTIL'
-            roster['UTIL'] = player
-            used_indices.add(i)
-            break
-    
+        assign_first_match(pos, [pos])
+
+    # G slot (PG or SG)
+    assign_first_match('G', GUARD_POSITIONS)
+    # F slot (SF or PF)
+    assign_first_match('F', FORWARD_POSITIONS)
+    # UTIL slot (any remaining)
+    assign_first_match('UTIL')
+
     return list(roster.values())
 
 
@@ -402,25 +531,157 @@ def main():
         min_salary = input_data.get('minSalary', 48000)
         max_exposure = input_data.get('maxExposure', 100)
         stack_settings_input = input_data.get('stackSettings', {})
-        
+        team_selections_input = input_data.get('teamSelections', {})
+        team_exposures = input_data.get('teamExposures', {})
+
+        print(f"📊 Team exposures received: {team_exposures}", file=sys.stderr)
+
+        # Parse requestedStackSizes if available (explicit contract from frontend)
+        requested_stack_sizes = stack_settings_input.get('requestedStackSizes', [])
+        if requested_stack_sizes:
+            print(f"Using explicit requestedStackSizes: {requested_stack_sizes}", file=sys.stderr)
+
         # Prepare stack settings in makrovchain format
         stack_settings = {'No Stacks': num_lineups}
         team_selections = {}
-        
+        warnings = []
+
         if stack_settings_input.get('enabled'):
-            stack_type = stack_settings_input.get('type', 'No Stacks')
-            if stack_type != 'No Stacks':
-                import re
-                match = re.search(r'(\d+)', stack_type)
-                if match:
-                    stack_num = match.group(1)
+            # FIRST: Check teamSelections directly to find which stack sizes have teams selected
+            # teamSelections format: {2: ['LAL'], 3: ['BOS'], 'all': [...]}
+            selected_stack_sizes = []
+
+            # If requestedStackSizes is provided, use it as the source of truth
+            if requested_stack_sizes:
+                for ss in requested_stack_sizes:
+                    try:
+                        stack_size = int(ss)
+                        if stack_size >= 2:
+                            # Find teams for this stack size from teamSelections
+                            teams = team_selections_input.get(str(stack_size), team_selections_input.get(stack_size, []))
+                            if isinstance(teams, list) and len(teams) > 0:
+                                selected_stack_sizes.append((stack_size, teams))
+                            else:
+                                # Use 'all' teams as fallback
+                                all_teams = team_selections_input.get('all', [])
+                                if all_teams:
+                                    selected_stack_sizes.append((stack_size, all_teams))
+                    except (ValueError, TypeError):
+                        pass
+                print(f"✅ Built stack sizes from requestedStackSizes: {[(s, len(t)) for s, t in selected_stack_sizes]}", file=sys.stderr)
+            else:
+                # Fall back to parsing teamSelections keys
+                for key, teams in team_selections_input.items():
+                    if key != 'all' and isinstance(teams, list) and len(teams) > 0:
+                        try:
+                            stack_size = int(key)
+                            if stack_size >= 2:
+                                selected_stack_sizes.append((stack_size, teams))
+                        except (ValueError, TypeError):
+                            pass
+            
+            # Process ALL stack sizes that have teams selected (not just the largest)
+            if selected_stack_sizes:
+                stack_settings = {}
+                warnings = []
+
+                # Distribute lineups across stack sizes
+                lineups_per_size = max(1, num_lineups // len(selected_stack_sizes))
+                remaining = num_lineups - (lineups_per_size * len(selected_stack_sizes))
+
+                # Sort by stack size descending so larger stacks get remainder
+                selected_stack_sizes.sort(key=lambda x: x[0], reverse=True)
+
+                for idx, (stack_size, selected_teams) in enumerate(selected_stack_sizes):
+                    stack_num = str(stack_size)
+                    count = lineups_per_size + (1 if idx < remaining else 0)
+
+                    # Filter to only teams that have enough players
+                    valid_teams = []
+                    insufficient_teams = []
+                    for team in selected_teams:
+                        team_players = df[df['Team'] == team]
+                        if len(team_players) >= stack_size:
+                            valid_teams.append(team)
+                        else:
+                            insufficient_teams.append((team, len(team_players)))
+
+                    if insufficient_teams:
+                        for team, player_count in insufficient_teams:
+                            warnings.append(f"Team {team} only has {player_count} players, need {stack_size} for {stack_size}-stack")
+
+                    if valid_teams:
+                        stack_settings[stack_num] = count
+                        team_selections[stack_num] = valid_teams
+                        print(f"✅ Using {len(valid_teams)} teams for {stack_size}-stack ({count} lineups): {valid_teams}", file=sys.stderr)
+                    else:
+                        warnings.append(f"No valid teams found for {stack_size}-stack, skipping")
+                        print(f"⚠️ No valid teams found for {stack_size}-stack, skipping", file=sys.stderr)
+
+                # If no stack sizes had valid teams, fall back to No Stacks
+                if not stack_settings:
+                    stack_settings = {'No Stacks': num_lineups}
+                    print(f"⚠️ No valid stack sizes, falling back to No Stacks", file=sys.stderr)
+
+                if warnings:
+                    print(f"⚠️ Warnings: {warnings}", file=sys.stderr)
+            else:
+                # Fallback: Determine stack size from minPlayersPerTeam or maxPlayersPerTeam
+                min_players = stack_settings_input.get('minPlayersPerTeam', 0)
+                max_players = stack_settings_input.get('maxPlayersPerTeam', 0)
+                stack_size = max(min_players, max_players) if (min_players > 0 or max_players > 0) else 0
+                
+                if stack_size >= 2:
+                    stack_num = str(stack_size)
                     stack_settings = {stack_num: num_lineups}
-                    teams = df['Team'].unique().tolist()
-                    team_selections = {stack_num: teams, 'all': teams}
+                    
+                    # Use teams from stackSettings or 'all' key
+                    selected_teams = []
+                    if 'all' in team_selections_input:
+                        selected_teams = team_selections_input['all']
+                    elif stack_settings_input.get('teams'):
+                        selected_teams = stack_settings_input['teams']
+                    else:
+                        selected_teams = df['Team'].unique().tolist()
+                    
+                    # Filter to only teams that have enough players
+                    valid_teams = []
+                    for team in selected_teams:
+                        team_players = df[df['Team'] == team]
+                        if len(team_players) >= stack_size:
+                            valid_teams.append(team)
+                    
+                    if valid_teams:
+                        team_selections = {stack_num: valid_teams, 'all': valid_teams}
+                        print(f"✅ Using {len(valid_teams)} teams for {stack_size}-stack (fallback): {valid_teams[:5]}...", file=sys.stderr)
+                    else:
+                        print(f"⚠️ No valid teams found for {stack_size}-stack, using all teams", file=sys.stderr)
+                        all_teams = df['Team'].unique().tolist()
+                        team_selections = {stack_num: all_teams, 'all': all_teams}
         
+        # Feasibility validation: warn if a team lacks enough players for its stack size
+        for stack_size_key, teams in team_selections.items():
+            if stack_size_key == 'all':
+                continue
+            try:
+                fv_stack_size = int(stack_size_key)
+            except (ValueError, TypeError):
+                continue
+            for team in teams:
+                team_player_count = len(df[df['Team'] == team])
+                if team_player_count < fv_stack_size:
+                    warnings.append(
+                        f"{team} has only {team_player_count} players but needs {fv_stack_size} for {fv_stack_size}-stack"
+                    )
+
+        if warnings:
+            print(f"⚠️ Feasibility warnings: {warnings}", file=sys.stderr)
+
         # Run optimization using EXACT makrovchain logic
+        print(f"🚀 Starting optimization with stack_settings={stack_settings}, team_selections={team_selections}", file=sys.stderr)
         lineups, team_exp, stack_exp = optimize_using_makrov_logic(
-            df, num_lineups, min_salary, stack_settings, team_selections, max_exposure
+            df, num_lineups, min_salary, stack_settings, team_selections, max_exposure,
+            team_exposures=team_exposures
         )
         
         # Format output
@@ -437,11 +698,17 @@ def main():
                 'strategy': f'makrov_{stack_type}'
             })
         
+        # Lineup count validation
+        if len(output_lineups) < num_lineups:
+            warnings.append(f"Only generated {len(output_lineups)} of {num_lineups} requested lineups. Stack constraints may be too restrictive.")
+
         output = {
             "success": True,
             "lineups": output_lineups,
+            "warnings": warnings,
             "summary": {
                 "totalLineups": len(output_lineups),
+                "requestedLineups": num_lineups,
                 "avgProjection": round(np.mean([l['totalProjection'] for l in output_lineups]), 2) if output_lineups else 0,
                 "avgSalary": round(np.mean([l['totalSalary'] for l in output_lineups]), 2) if output_lineups else 0,
                 "topProjection": round(max([l['totalProjection'] for l in output_lineups]), 2) if output_lineups else 0,

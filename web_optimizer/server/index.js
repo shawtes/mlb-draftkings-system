@@ -56,6 +56,242 @@ let playersData = [];
 let optimizationResults = [];
 let activeConnections = new Set();
 let currentSport = 'MLB'; // Track current sport mode (MLB or NFL)
+let favorites = []; // Store favorite lineups
+let dkEntriesData = null; // Store parsed DK entries file data
+let dkEntriesFilePath = null; // Store path to loaded DK entries file
+
+// Favorites file path
+const FAVORITES_FILE = path.join(__dirname, 'data', 'favorites.json');
+
+// Load favorites from file on startup
+function loadFavorites() {
+  try {
+    if (fs.existsSync(FAVORITES_FILE)) {
+      const data = fs.readFileSync(FAVORITES_FILE, 'utf8');
+      const parsed = JSON.parse(data);
+      // Handle both array format and object with favorites property
+      let loadedFavorites = [];
+      if (Array.isArray(parsed)) {
+        loadedFavorites = parsed;
+      } else if (parsed.favorites && Array.isArray(parsed.favorites)) {
+        loadedFavorites = parsed.favorites;
+      } else {
+        loadedFavorites = [];
+      }
+      
+      // Normalize old favorites format to new format
+      favorites = loadedFavorites.map(fav => {
+        // Normalize timestamp field (old format uses createdAt)
+        if (!fav.timestamp && fav.createdAt) {
+          fav.timestamp = fav.createdAt;
+        }
+        // Normalize lineup structure (old format might have players directly)
+        if (!fav.lineup && fav.players) {
+          fav.lineup = {
+            players: fav.players,
+            totalProjection: fav.totalPoints || 0,
+            totalSalary: fav.totalSalary || 0
+          };
+        }
+        return fav;
+      });
+      
+      console.log(`✅ Loaded ${favorites.length} favorites from file`);
+    } else {
+      // Create directory if it doesn't exist
+      const dir = path.dirname(FAVORITES_FILE);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      favorites = [];
+      console.log('📝 No favorites file found, starting with empty favorites');
+    }
+  } catch (error) {
+    console.error('Error loading favorites:', error);
+    favorites = [];
+  }
+}
+
+// Save favorites to file
+function saveFavorites() {
+  try {
+    const dir = path.dirname(FAVORITES_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(FAVORITES_FILE, JSON.stringify(favorites, null, 2), 'utf8');
+    console.log(`💾 Saved ${favorites.length} favorites to file`);
+  } catch (error) {
+    console.error('Error saving favorites:', error);
+  }
+}
+
+// Load favorites on startup
+loadFavorites();
+
+// Parse DK entries file robustly (matching desktop logic)
+function parseDkEntriesRobustly(filePath) {
+  try {
+    const fileContent = fs.readFileSync(filePath, 'utf8');
+    const lines = fileContent.split('\n').map(line => line.trim()).filter(line => line);
+    
+    if (lines.length === 0) {
+      console.warn('DK entries file is empty');
+      return null;
+    }
+
+    // Standard DK header (NBA FORMAT - 12 columns total)
+    const headerLine = ['Entry ID', 'Contest Name', 'Contest ID', 'Entry Fee', 'PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL'];
+    const entryRows = [];
+    
+    // Check if first row is header
+    let startRow = 0;
+    if (lines[0].includes('Entry ID')) {
+      startRow = 1;
+      console.log('📋 Found header in first row');
+    } else {
+      console.log('📋 No header found, processing all rows');
+    }
+    
+    for (let i = startRow; i < lines.length; i++) {
+      const row = lines[i].split(',').map(cell => cell.trim().replace(/^"|"$/g, ''));
+      
+      if (!row || row.length === 0 || row.every(cell => !cell)) {
+        continue;
+      }
+      
+      // Check if this is an entry row (has Entry ID in first column)
+      if (row.length >= 4 && row[0]) {
+        const entryId = row[0].replace(/,/g, '').replace(/"/g, '').trim();
+        
+        // Valid entry ID should be numeric and reasonably long (8+ digits)
+        if (/^\d{8,}$/.test(entryId)) {
+          const contestName = row[1] || '';
+          const contestId = row[2] || '';
+          const entryFee = row[3] || '';
+          
+          // Build the clean row with exactly 12 columns (4 metadata + 8 NBA positions)
+          const cleanRow = [entryId, contestName, contestId, entryFee];
+          
+          // Add the 8 player positions (PG, SG, SF, PF, C, G, F, UTIL)
+          for (let j = 4; j < 12; j++) {
+            if (j < row.length) {
+              cleanRow.push(row[j] || '');
+            } else {
+              cleanRow.push('');
+            }
+          }
+          
+          entryRows.push(cleanRow);
+        }
+      }
+    }
+    
+    console.log(`📊 Found ${entryRows.length} valid entries`);
+    
+    if (entryRows.length === 0) {
+      console.warn('No valid entries found!');
+      return null;
+    }
+    
+    // Create array of objects
+    const entries = entryRows.map(row => {
+      const entry = {};
+      headerLine.forEach((header, index) => {
+        entry[header] = row[index] || '';
+      });
+      return entry;
+    });
+    
+    return entries;
+    
+  } catch (error) {
+    console.error('Error in robust parsing:', error);
+    return null;
+  }
+}
+
+// Extract player ID mapping from DK entries file (matching desktop logic)
+function extractPlayerIdMappingFromDkFile(filePath) {
+  const playerMap = {};
+  
+  if (!filePath || !fs.existsSync(filePath)) {
+    return playerMap;
+  }
+  
+  try {
+    const fileContent = fs.readFileSync(filePath, 'utf8');
+    const lines = fileContent.split('\n');
+    
+    // Look for "Name (ID)" pattern in each line
+    // Pattern: player name followed by (6+ digit number)
+    const nameIdPattern = /([A-Za-z][A-Za-z\s\.\-\']+)\s*\((\d{6,})\)/g;
+    
+    for (const line of lines) {
+      let match;
+      while ((match = nameIdPattern.exec(line)) !== null) {
+        const namePart = match[1].trim();
+        const idPart = match[2].trim();
+        
+        // Additional validation for real player names
+        const isLikelyDst = namePart.split(/\s+/).length === 1 && namePart.length > 3;
+        const isLikelyPlayer = namePart.split(/\s+/).length >= 2;
+        
+        if (namePart.length > 3 && (isLikelyPlayer || isLikelyDst) && idPart.length >= 6) {
+          // Don't overwrite existing mappings (first occurrence wins)
+          if (!playerMap[namePart]) {
+            playerMap[namePart] = idPart;
+            if (Object.keys(playerMap).length <= 15) {
+              console.log(`✅ Found mapping: ${namePart} -> ${idPart}`);
+            }
+          }
+        }
+      }
+    }
+    
+    console.log(`🎯 Successfully extracted ${Object.keys(playerMap).length} player ID mappings from DK entries file`);
+    if (Object.keys(playerMap).length > 0) {
+      const sample = Object.entries(playerMap).slice(0, 3);
+      console.log(`Sample mappings:`, sample);
+    }
+    
+  } catch (error) {
+    console.warn(`Error reading DK entries file for player mappings: ${error.message}`);
+  }
+  
+  return playerMap;
+}
+
+// Extract contest info from DK entries (matching desktop logic)
+function extractContestInfoFromDkEntries(entries) {
+  if (!entries || entries.length === 0) {
+    return null;
+  }
+  
+  const contestInfoList = [];
+  
+  for (const entry of entries) {
+    const contestInfo = {
+      entry_id: entry['Entry ID'] || '1000000001',
+      contest_name: entry['Contest Name'] || 'Generated Lineups',
+      contest_id: entry['Contest ID'] || '999999999',
+      entry_fee: entry['Entry Fee'] || '$1'
+    };
+    contestInfoList.push(contestInfo);
+  }
+  
+  // Log unique contests found
+  const uniqueContests = {};
+  for (const info of contestInfoList) {
+    const contestKey = `${info.contest_name}|${info.contest_id}`;
+    if (!uniqueContests[contestKey]) {
+      uniqueContests[contestKey] = info;
+      console.log(`📋 Found contest: ${info.contest_name} (ID: ${info.contest_id}, Fee: ${info.entry_fee})`);
+    }
+  }
+  
+  return contestInfoList;
+}
 
 // Broadcast to all connected clients
 function broadcast(message) {
@@ -113,15 +349,18 @@ async function callPythonOptimizer(config) {
         
         console.log(`✅ Python optimizer generated ${result.lineups.length} lineups`);
         console.log(`   Avg projection: ${result.summary.avgProjection}`);
-        
+        if (result.warnings && result.warnings.length > 0) {
+          console.log(`   ⚠️ Warnings: ${result.warnings.join(', ')}`);
+        }
+
         // Add IDs and timestamps to lineups
         const lineups = result.lineups.map(lineup => ({
           id: uuidv4(),
           ...lineup,
           timestamp: new Date().toISOString()
         }));
-        
-        resolve(lineups);
+
+        resolve({ lineups, warnings: result.warnings || [] });
       } catch (error) {
         console.error('Failed to parse Python output:', outputData);
         reject(new Error('Failed to parse optimizer output: ' + error.message));
@@ -231,6 +470,10 @@ app.post('/api/upload-players', upload.single('playersFile'), (req, res) => {
           source: data.Source || data.source || '',
           value: 0,
           ownership: parseFloat(data.Ownership || data.ownership || data.Own || data.own) || 0,
+          ceiling: parseFloat(data.Ceiling || data.ceiling || data.Ceil) || undefined,
+          floor: parseFloat(data.Floor || data.floor) || undefined,
+          stdDev: parseFloat(data.StdDev || data.stdDev || data.Std_Dev || data.SD) || undefined,
+          opponent: data.Opponent || data.opponent || data.Opp || data.opp || undefined,
           selected: false,
           locked: false,
           excluded: false,
@@ -328,6 +571,97 @@ app.post('/api/upload-players', upload.single('playersFile'), (req, res) => {
       console.error('CSV parsing error:', error);
       res.status(500).json({ error: 'Error parsing CSV file. Please check that your CSV has proper headers and data format.' });
     });
+});
+
+// Upload and parse DK entries file
+app.post('/api/upload-dk-entries', upload.single('dkEntriesFile'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  const filePath = req.file.path;
+  
+  try {
+    // Parse DK entries file
+    const entries = parseDkEntriesRobustly(filePath);
+    
+    if (!entries || entries.length === 0) {
+      // Clean up uploaded file
+      fs.unlink(filePath, (err) => {
+        if (err) console.error('Error deleting file:', err);
+      });
+      return res.status(400).json({ error: 'No valid entries found in the file. Please ensure the file contains DraftKings entries with Entry ID, Contest Name, Contest ID, Entry Fee, and player positions.' });
+    }
+    
+    // Store parsed data
+    dkEntriesData = entries;
+    dkEntriesFilePath = filePath; // Keep file for player ID extraction
+    
+    // Extract contest info
+    const contestInfoList = extractContestInfoFromDkEntries(entries);
+    
+    // Extract player ID mappings
+    const playerIdMap = extractPlayerIdMappingFromDkFile(filePath);
+    
+    console.log(`✅ DraftKings entries file loaded successfully!`);
+    console.log(`   📁 File: ${req.file.originalname}`);
+    console.log(`   📊 Number of entries: ${entries.length}`);
+    console.log(`   🎯 Player ID mappings: ${Object.keys(playerIdMap).length}`);
+    console.log(`   📋 Contest info entries: ${contestInfoList ? contestInfoList.length : 0}`);
+    
+    // Broadcast update to connected clients
+    broadcast({
+      type: 'DK_ENTRIES_LOADED',
+      data: { 
+        count: entries.length,
+        playerMappings: Object.keys(playerIdMap).length,
+        timestamp: new Date().toISOString() 
+      }
+    });
+    
+    res.json({
+      success: true,
+      message: `Loaded ${entries.length} DraftKings entries`,
+      entriesCount: entries.length,
+      playerMappingsCount: Object.keys(playerIdMap).length,
+      contestInfo: contestInfoList ? contestInfoList[0] : null,
+      uniqueContests: contestInfoList ? [...new Set(contestInfoList.map(c => `${c.contest_name}|${c.contest_id}`))].length : 0
+    });
+    
+  } catch (error) {
+    console.error('Error loading DK entries file:', error);
+    
+    // Clean up uploaded file
+    fs.unlink(filePath, (err) => {
+      if (err) console.error('Error deleting file:', err);
+    });
+    
+    res.status(500).json({ 
+      error: 'Error loading DraftKings entries file: ' + error.message,
+      details: 'Please ensure the file is a valid CSV format with proper DraftKings headers (Entry ID, Contest Name, Contest ID, Entry Fee, PG, SG, SF, PF, C, G, F, UTIL)'
+    });
+  }
+});
+
+// Get loaded DK entries info
+app.get('/api/dk-entries', (req, res) => {
+  if (!dkEntriesData || dkEntriesData.length === 0) {
+    return res.json({
+      loaded: false,
+      message: 'No DK entries file loaded'
+    });
+  }
+  
+  const playerIdMap = dkEntriesFilePath ? extractPlayerIdMappingFromDkFile(dkEntriesFilePath) : {};
+  const contestInfoList = extractContestInfoFromDkEntries(dkEntriesData);
+  
+  res.json({
+    loaded: true,
+    entriesCount: dkEntriesData.length,
+    playerMappingsCount: Object.keys(playerIdMap).length,
+    contestInfo: contestInfoList ? contestInfoList[0] : null,
+    uniqueContests: contestInfoList ? [...new Set(contestInfoList.map(c => `${c.contest_name}|${c.contest_id}`))].length : 0
+  });
 });
 
 // Get players data
@@ -453,6 +787,8 @@ app.post('/api/optimize', async (req, res) => {
       minSalary = 45000,
       maxSalary = 50000,
       stackSettings = {},
+      teamSelections = {},
+      teamExposures = {},
       uniquePlayers = 7,
       maxExposure = 40,
       // Advanced settings from the PyQt5 version
@@ -532,13 +868,20 @@ app.post('/api/optimize', async (req, res) => {
         console.log('📊 Advanced Quant Settings:', JSON.stringify(advancedQuantSettings, null, 2));
       }
       
+      // Debug: Log what we're sending to Python
+      console.log('🔍 DEBUG - Stack Settings:', JSON.stringify(stackSettings, null, 2));
+      console.log('🔍 DEBUG - Team Selections:', JSON.stringify(teamSelections, null, 2));
+      console.log('🔍 DEBUG - Team Exposures:', JSON.stringify(teamExposures, null, 2));
+
       // Call Python optimizer
-      results = await callPythonOptimizer({
+      const pythonResult = await callPythonOptimizer({
         players: selectedPlayers,
         numLineups,
         minSalary: minSalary || 48000,
         maxSalary,
         stackSettings,
+        teamSelections,
+        teamExposures,
         uniquePlayers,
         maxExposure,
         onProgress: (progress) => {
@@ -548,6 +891,8 @@ app.post('/api/optimize', async (req, res) => {
           });
         }
       });
+      results = pythonResult.lineups;
+      var optimizerWarnings = pythonResult.warnings || [];
     } else {
       console.log('⚾ Using MLB Optimizer');
       if (advancedQuantSettings && Object.keys(advancedQuantSettings).length > 0) {
@@ -598,6 +943,7 @@ app.post('/api/optimize', async (req, res) => {
       sport,
       optimizationId,
       lineups: results,
+      warnings: typeof optimizerWarnings !== 'undefined' ? optimizerWarnings : [],
       summary: {
         totalLineups: results.length,
         avgProjection: results.reduce((sum, l) => sum + l.totalProjection, 0) / results.length,
@@ -630,8 +976,8 @@ app.get('/api/lineups/:sport', (req, res) => {
   const { sport } = req.params;
   const { format = 'full' } = req.query;
   
-  if (!['MLB', 'NFL'].includes(sport.toUpperCase())) {
-    return res.status(400).json({ error: 'Invalid sport. Must be MLB or NFL' });
+  if (!['MLB', 'NFL', 'NBA'].includes(sport.toUpperCase())) {
+    return res.status(400).json({ error: 'Invalid sport. Must be MLB, NFL, or NBA' });
   }
   
   // Return optimization results if available
@@ -781,6 +1127,16 @@ app.get('/api/teams', (req, res) => {
   res.json({ teams: teamStats });
 });
 
+// Get all favorites
+app.get('/api/favorites', (req, res) => {
+  try {
+    res.json({ success: true, favorites });
+  } catch (error) {
+    console.error('Get favorites error:', error);
+    res.status(500).json({ error: 'Error fetching favorites' });
+  }
+});
+
 // Save favorites lineup
 app.post('/api/favorites', (req, res) => {
   try {
@@ -797,13 +1153,463 @@ app.post('/api/favorites', (req, res) => {
       timestamp: new Date().toISOString()
     };
 
-    // In a real app, this would be saved to a database
-    // For now, we'll just return success
-    res.json({ success: true, favorite });
+    // Add to favorites array
+    favorites.push(favorite);
+    console.log(`✅ Saved favorite: ${favorite.name} (Total: ${favorites.length})`);
+    
+    // Save to file
+    saveFavorites();
+
+    res.json({ success: true, favorite, totalFavorites: favorites.length });
 
   } catch (error) {
     console.error('Save favorite error:', error);
     res.status(500).json({ error: 'Error saving favorite' });
+  }
+});
+
+// Delete a favorite
+app.delete('/api/favorites/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const index = favorites.findIndex(f => f.id === id);
+    
+    if (index === -1) {
+      return res.status(404).json({ error: 'Favorite not found' });
+    }
+
+    favorites.splice(index, 1);
+    console.log(`✅ Deleted favorite: ${id} (Total: ${favorites.length})`);
+    
+    // Save to file
+    saveFavorites();
+
+    res.json({ success: true, totalFavorites: favorites.length });
+  } catch (error) {
+    console.error('Delete favorite error:', error);
+    res.status(500).json({ error: 'Error deleting favorite' });
+  }
+});
+
+// Export lineups/favorites to DraftKings format
+// Format lineup positions using the EXACT desktop algorithm
+function formatLineupPositionsOnly(players, playerNameToIdMap) {
+  // Sort lineup by projection descending (matching desktop)
+  const sortedPlayers = [...players].sort((a, b) => {
+    const projA = a.projection || a.projectedPoints || a.Predicted_DK_Points || 0;
+    const projB = b.projection || b.projectedPoints || b.Predicted_DK_Points || 0;
+    return projB - projA;
+  });
+
+  // Create position pools (players can be in multiple pools)
+  const positionPlayers = {
+    PG: [], SG: [], SF: [], PF: [], C: [],
+    G: [], F: [], UTIL: []
+  };
+
+  const missingIds = [];
+
+  // Build position eligibility pools
+  sortedPlayers.forEach(player => {
+    const rosterPos = (player.rosterPosition || player.position || '').toUpperCase();
+    const playerName = (player.name || player.Name || '').trim();
+    
+    // Get DK ID with case-insensitive matching
+    let dkId = playerNameToIdMap[playerName];
+    if (!dkId) {
+      const nameLower = playerName.toLowerCase();
+      for (const [name, id] of Object.entries(playerNameToIdMap)) {
+        if (name.toLowerCase() === nameLower) {
+          dkId = id;
+          break;
+        }
+      }
+    }
+
+    if (!dkId) {
+      missingIds.push(playerName);
+      return;
+    }
+
+    // Build position eligibility (matching desktop logic)
+    const posEligible = [];
+    
+    if (rosterPos.includes('PG')) posEligible.push('PG', 'G', 'UTIL');
+    if (rosterPos.includes('SG')) posEligible.push('SG', 'G', 'UTIL');
+    if (rosterPos.includes('SF')) posEligible.push('SF', 'F', 'UTIL');
+    if (rosterPos.includes('PF')) posEligible.push('PF', 'F', 'UTIL');
+    if (rosterPos.includes('C')) posEligible.push('C', 'UTIL');
+    if (rosterPos.includes('G') && !rosterPos.includes('PG') && !rosterPos.includes('SG')) {
+      posEligible.push('G', 'UTIL');
+    }
+    if (rosterPos.includes('F') && !rosterPos.includes('SF') && !rosterPos.includes('PF')) {
+      posEligible.push('F', 'UTIL');
+    }
+
+    // Add player to ALL eligible position pools
+    const uniquePositions = [...new Set(posEligible)];
+    uniquePositions.forEach(pos => {
+      if (positionPlayers[pos]) {
+        positionPlayers[pos].push(dkId);
+      }
+    });
+  });
+
+  if (missingIds.length > 0) {
+    throw new Error(`Missing DraftKings IDs for: ${missingIds.join(', ')}`);
+  }
+
+  // Initialize position assignments array [PG, SG, SF, PF, C, G, F, UTIL]
+  const positionAssignments = ['', '', '', '', '', '', '', ''];
+  const usedPlayerIds = new Set();
+
+  // Helper to assign player to slot
+  function assignPlayer(slotIndex, playerId) {
+    if (playerId && !usedPlayerIds.has(playerId)) {
+      positionAssignments[slotIndex] = playerId;
+      usedPlayerIds.add(playerId);
+      return true;
+    }
+    return false;
+  }
+
+  // Helper to check eligibility
+  function isPlayerEligibleForSlot(playerId, slotIndex) {
+    const slotNames = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL'];
+    const slotName = slotNames[slotIndex];
+    
+    // Find player's position
+    let playerPos = '';
+    for (const player of sortedPlayers) {
+      const name = (player.name || player.Name || '').trim();
+      let checkId = playerNameToIdMap[name];
+      if (!checkId) {
+        const nameLower = name.toLowerCase();
+        for (const [n, id] of Object.entries(playerNameToIdMap)) {
+          if (n.toLowerCase() === nameLower) {
+            checkId = id;
+            break;
+          }
+        }
+      }
+      if (checkId === playerId) {
+        playerPos = (player.rosterPosition || player.position || '').toUpperCase();
+        break;
+      }
+    }
+
+    if (!playerPos) return false;
+
+    // DraftKings eligibility rules
+    if (slotName === 'PG') return playerPos.includes('PG');
+    if (slotName === 'SG') return playerPos.includes('SG');
+    if (slotName === 'SF') return playerPos.includes('SF');
+    if (slotName === 'PF') return playerPos.includes('PF');
+    if (slotName === 'C') return playerPos.includes('C');
+    if (slotName === 'G') return playerPos.includes('PG') || playerPos.includes('SG') || playerPos.includes('G');
+    if (slotName === 'F') return playerPos.includes('SF') || playerPos.includes('PF') || playerPos.includes('F');
+    if (slotName === 'UTIL') return true;
+    
+    return false;
+  }
+
+  // Phase 1: Fill C (slot 4) - most constrained
+  if (positionPlayers.C.length > 0) {
+    for (const playerId of positionPlayers.C) {
+      if (assignPlayer(4, playerId)) break;
+    }
+  }
+
+  // Phase 2: Fill PG (slot 0) - prioritize pure PG, then dual-eligible
+  const pgCandidates = positionPlayers.PG.filter(id => !usedPlayerIds.has(id));
+  const purePGs = pgCandidates.filter(id => !positionPlayers.SG.includes(id));
+  const dualPGs = pgCandidates.filter(id => positionPlayers.SG.includes(id));
+  for (const playerId of [...purePGs, ...dualPGs]) {
+    if (assignPlayer(0, playerId)) break;
+  }
+
+  // Phase 3: Fill SG (slot 1)
+  const sgCandidates = positionPlayers.SG.filter(id => !usedPlayerIds.has(id));
+  const pureSGs = sgCandidates.filter(id => !positionPlayers.PG.includes(id));
+  const dualSGs = sgCandidates.filter(id => positionPlayers.PG.includes(id));
+  for (const playerId of [...pureSGs, ...dualSGs]) {
+    if (assignPlayer(1, playerId)) break;
+  }
+
+  // Phase 4: Fill SF (slot 2)
+  const sfCandidates = positionPlayers.SF.filter(id => !usedPlayerIds.has(id));
+  const pureSFs = sfCandidates.filter(id => !positionPlayers.PF.includes(id));
+  const dualSFs = sfCandidates.filter(id => positionPlayers.PF.includes(id));
+  for (const playerId of [...pureSFs, ...dualSFs]) {
+    if (assignPlayer(2, playerId)) break;
+  }
+
+  // Phase 5: Fill PF (slot 3)
+  const pfCandidates = positionPlayers.PF.filter(id => !usedPlayerIds.has(id));
+  const purePFs = pfCandidates.filter(id => !positionPlayers.SF.includes(id));
+  const dualPFs = pfCandidates.filter(id => positionPlayers.SF.includes(id));
+  for (const playerId of [...purePFs, ...dualPFs]) {
+    if (assignPlayer(3, playerId)) break;
+  }
+
+  // Phase 6: Fill G (slot 5) - any unused guard-eligible player
+  for (const playerId of [...positionPlayers.PG, ...positionPlayers.SG]) {
+    if (!usedPlayerIds.has(playerId)) {
+      if (assignPlayer(5, playerId)) break;
+    }
+  }
+
+  // Phase 7: Fill F (slot 6) - any unused forward-eligible player
+  for (const playerId of [...positionPlayers.SF, ...positionPlayers.PF]) {
+    if (!usedPlayerIds.has(playerId)) {
+      if (assignPlayer(6, playerId)) break;
+    }
+  }
+
+  // Phase 8: Fill UTIL (slot 7) - any remaining player
+  for (const playerId of positionPlayers.UTIL) {
+    if (assignPlayer(7, playerId)) break;
+  }
+
+  // Phase 9: Enhanced backfill - fill empty positions
+  const slotNames = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL'];
+  
+  // Strategy 1: Fill from position-specific pools
+  for (let i = 0; i < 8; i++) {
+    if (!positionAssignments[i]) {
+      const slotName = slotNames[i];
+      if (positionPlayers[slotName]) {
+        for (const playerId of positionPlayers[slotName]) {
+          if (!usedPlayerIds.has(playerId) && assignPlayer(i, playerId)) {
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Strategy 2: Fill from UTIL pool with eligibility checking
+  for (let i = 0; i < 8; i++) {
+    if (!positionAssignments[i]) {
+      for (const playerId of positionPlayers.UTIL) {
+        if (!usedPlayerIds.has(playerId) && isPlayerEligibleForSlot(playerId, i)) {
+          if (assignPlayer(i, playerId)) break;
+        }
+      }
+    }
+  }
+
+  // Strategy 3: Last resort - try any remaining eligible player
+  for (let i = 0; i < 8; i++) {
+    if (!positionAssignments[i]) {
+      for (const player of sortedPlayers) {
+        const name = (player.name || player.Name || '').trim();
+        let playerId = playerNameToIdMap[name];
+        if (!playerId) {
+          const nameLower = name.toLowerCase();
+          for (const [n, id] of Object.entries(playerNameToIdMap)) {
+            if (n.toLowerCase() === nameLower) {
+              playerId = id;
+              break;
+            }
+          }
+        }
+        if (playerId && !usedPlayerIds.has(playerId) && isPlayerEligibleForSlot(playerId, i)) {
+          if (assignPlayer(i, playerId)) break;
+        }
+      }
+    }
+  }
+
+  return positionAssignments;
+}
+
+app.post('/api/export-dk-entries', (req, res) => {
+  try {
+    const { lineups, type = 'lineups', contestName, contestId, entryFee } = req.body;
+    
+    if (!lineups || !Array.isArray(lineups) || lineups.length === 0) {
+      return res.status(400).json({ error: 'No lineups provided for export' });
+    }
+
+    // PRIORITY 1: Extract player ID mapping from DK entries file (matching desktop)
+    let playerNameToIdMap = {};
+    if (dkEntriesFilePath && fs.existsSync(dkEntriesFilePath)) {
+      playerNameToIdMap = extractPlayerIdMappingFromDkFile(dkEntriesFilePath);
+      console.log(`🎯 PRIORITY: Using ${Object.keys(playerNameToIdMap).length} player IDs from DK entries file`);
+    }
+    
+    // PRIORITY 2: Create player name to DK ID mapping from loaded player data
+    if (Object.keys(playerNameToIdMap).length === 0) {
+      playersData.forEach(player => {
+        const name = (player.name || player.Name || '').trim();
+        // Try to find DK ID in various possible fields (matching desktop priority)
+        const dkId = player.dkId || player.DK_ID || player.DraftKingsID || player.operatorPlayerId || 
+                     player.draftkingsId || player.draftKingsId || player.id;
+        if (name && dkId) {
+          const cleanId = String(dkId).replace(/\.0$/, '').trim();
+          if (cleanId && cleanId !== 'undefined' && cleanId !== 'null') {
+            // Don't overwrite if already exists from DK file
+            if (!playerNameToIdMap[name]) {
+              playerNameToIdMap[name] = cleanId;
+            }
+          }
+        }
+      });
+    }
+    
+    // PRIORITY 3: Also extract from lineup player data
+    if (lineups.length > 0) {
+      const firstLineup = lineups[0];
+      const players = firstLineup.players || firstLineup.lineup?.players || [];
+      players.forEach(player => {
+        const name = (player.name || player.Name || '').trim();
+        const dkId = player.dkId || player.DK_ID || player.DraftKingsID || player.id;
+        if (name && dkId && !playerNameToIdMap[name]) {
+          const cleanId = String(dkId).replace(/\.0$/, '').trim();
+          if (cleanId && cleanId !== 'undefined' && cleanId !== 'null') {
+            playerNameToIdMap[name] = cleanId;
+          }
+        }
+      });
+    }
+
+    if (Object.keys(playerNameToIdMap).length === 0) {
+      return res.status(400).json({ 
+        error: 'No DraftKings player IDs found. Please load a DK entries file or ensure player data includes DK_ID or DraftKingsID fields.' 
+      });
+    }
+
+    // PRIORITY 1: Extract contest info from DK entries file (matching desktop)
+    let finalContestName = contestName;
+    let finalContestId = contestId;
+    let finalEntryFee = entryFee;
+    let reservedEntryIds = [];
+    
+    if (dkEntriesData && dkEntriesData.length > 0) {
+      const contestInfoList = extractContestInfoFromDkEntries(dkEntriesData);
+      if (contestInfoList && contestInfoList.length > 0) {
+        const firstContest = contestInfoList[0];
+        // Use contest info from DK file if not provided in request
+        if (!finalContestName) finalContestName = firstContest.contest_name;
+        if (!finalContestId) finalContestId = firstContest.contest_id;
+        if (!finalEntryFee) finalEntryFee = firstContest.entry_fee;
+        
+        // Extract reserved entry IDs from DK entries file
+        dkEntriesData.forEach(entry => {
+          const entryId = entry['Entry ID'];
+          if (entryId && /^\d{8,}$/.test(String(entryId))) {
+            reservedEntryIds.push(String(entryId));
+          }
+        });
+        
+        console.log(`🎯 Using contest info from DK entries file: ${finalContestName} (ID: ${finalContestId})`);
+        console.log(`🎯 Found ${reservedEntryIds.length} reserved entry IDs from DK file`);
+      }
+    }
+    
+    // Fallback to defaults or request values
+    if (!finalContestName) finalContestName = 'NBA Main Slate';
+    if (!finalContestId) finalContestId = '999999999';
+    if (!finalEntryFee) finalEntryFee = '$1';
+
+    // Limit lineups to available reserved entry IDs if using DK file
+    let lineupsToExport = lineups;
+    if (reservedEntryIds.length > 0 && lineups.length > reservedEntryIds.length) {
+      console.log(`⚠️ Limiting export to ${reservedEntryIds.length} lineups (available reserved entry IDs)`);
+      lineupsToExport = lineups.slice(0, reservedEntryIds.length);
+    }
+    
+    console.log(`📊 Exporting ${lineupsToExport.length} ${type} to DraftKings format`);
+    console.log(`   Player ID mappings: ${Object.keys(playerNameToIdMap).length} players`);
+    console.log(`   Contest: ${finalContestName} (ID: ${finalContestId}, Fee: ${finalEntryFee})`);
+
+    // Format lineups for DraftKings using desktop algorithm
+    const dkEntries = [];
+    let baseEntryId = 4763920000; // Default base entry ID
+    
+    // Use reserved entry IDs if available
+    if (reservedEntryIds.length > 0) {
+      console.log(`🎯 Using reserved entry IDs from DK entries file`);
+    }
+
+    lineupsToExport.forEach((lineup, index) => {
+      try {
+        // Get players from lineup (handle both formats)
+        let players = [];
+        if (Array.isArray(lineup.players)) {
+          players = lineup.players;
+        } else if (lineup.lineup && Array.isArray(lineup.lineup.players)) {
+          players = lineup.lineup.players;
+        } else if (Array.isArray(lineup)) {
+          players = lineup;
+        }
+        
+        if (players.length !== 8) {
+          console.warn(`⚠️ Lineup ${index + 1} has ${players.length} players, skipping`);
+          return;
+        }
+
+        // Use desktop algorithm to format positions
+        const positionAssignments = formatLineupPositionsOnly(players, playerNameToIdMap);
+
+        // Validate all positions are filled
+        const allFilled = positionAssignments.every(id => id && id.trim() !== '');
+        if (!allFilled) {
+          console.warn(`⚠️ Lineup ${index + 1} missing positions after formatting, skipping`);
+          return;
+        }
+
+        // Create entry row [Entry ID, Contest Name, Contest ID, Entry Fee, PG, SG, SF, PF, C, G, F, UTIL]
+        // Use reserved entry ID if available, otherwise generate one
+        let entryId;
+        if (reservedEntryIds.length > index) {
+          entryId = reservedEntryIds[index];
+          console.log(`✅ Using reserved entry ID: ${entryId} for lineup ${index + 1}`);
+        } else {
+          entryId = String(baseEntryId + index);
+        }
+        
+        const entry = [
+          entryId,
+          finalContestName,
+          finalContestId,
+          finalEntryFee,
+          positionAssignments[0], // PG
+          positionAssignments[1], // SG
+          positionAssignments[2], // SF
+          positionAssignments[3], // PF
+          positionAssignments[4], // C
+          positionAssignments[5], // G
+          positionAssignments[6], // F
+          positionAssignments[7]  // UTIL
+        ];
+
+        dkEntries.push(entry);
+      } catch (error) {
+        console.error(`❌ Error formatting lineup ${index + 1}:`, error.message);
+        // Continue with other lineups
+      }
+    });
+
+    if (dkEntries.length === 0) {
+      return res.status(400).json({ error: 'No valid lineups could be formatted for export' });
+    }
+
+    // Create CSV (matching desktop format exactly)
+    const headers = ['Entry ID', 'Contest Name', 'Contest ID', 'Entry Fee', 'PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL'];
+    const csvRows = [headers, ...dkEntries.map(entry => entry.map(val => `"${val}"`).join(','))];
+    const csvContent = csvRows.join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="dk_entries_${Date.now()}.csv"`);
+    res.send(csvContent);
+
+    console.log(`✅ Exported ${dkEntries.length} lineups to DraftKings format`);
+
+  } catch (error) {
+    console.error('Export DK entries error:', error);
+    res.status(500).json({ error: 'Error exporting to DraftKings format: ' + error.message });
   }
 });
 
@@ -1019,6 +1825,106 @@ app.get('/api/stack-analysis', (req, res) => {
     console.error('Stack analysis error:', error);
     res.status(500).json({ error: 'Error analyzing stacks' });
   }
+});
+
+// Upload ownership CSV and merge into existing player pool
+app.post('/api/upload-ownership', upload.single('ownershipFile'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  const filePath = req.file.path;
+  const ownershipData = [];
+
+  fs.createReadStream(filePath)
+    .pipe(csv())
+    .on('data', (data) => {
+      const name = data.Name || data.name || data.NAME || data.Player || data.player || '';
+      const ownership = parseFloat(data.Ownership || data.ownership || data.Own || data.own || data['Own%'] || data['own%']) || 0;
+      if (name && ownership > 0) {
+        ownershipData.push({ name: name.trim(), ownership });
+      }
+    })
+    .on('end', () => {
+      let matched = 0;
+      ownershipData.forEach(({ name, ownership }) => {
+        const nameLower = name.toLowerCase();
+        const player = playersData.find(p => p.name.toLowerCase() === nameLower);
+        if (player) {
+          player.ownership = ownership;
+          matched++;
+        }
+      });
+
+      fs.unlink(filePath, (err) => {
+        if (err) console.error('Error deleting file:', err);
+      });
+
+      console.log(`📊 Ownership upload: ${matched}/${ownershipData.length} players matched`);
+      res.json({ success: true, matched, total: ownershipData.length });
+    })
+    .on('error', (error) => {
+      console.error('Ownership CSV parsing error:', error);
+      res.status(500).json({ error: 'Error parsing ownership CSV' });
+    });
+});
+
+// Upload projection source (for blending) - returns parsed data without merging
+app.post('/api/upload-projection-source', upload.single('projectionFile'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  const filePath = req.file.path;
+  const sourceName = req.body.sourceName || req.file.originalname.replace('.csv', '');
+  const players = [];
+
+  fs.createReadStream(filePath)
+    .pipe(csv())
+    .on('data', (data) => {
+      const name = data.Name || data.name || data.NAME || data.Player || data.player || '';
+      let projection = 0;
+      if (data.Predicted_DK_Points) projection = parseFloat(data.Predicted_DK_Points);
+      else if (data.Projection) projection = parseFloat(data.Projection);
+      else if (data.projection) projection = parseFloat(data.projection);
+      else if (data.My_Proj) projection = parseFloat(data.My_Proj);
+      else if (data.AvgPointsPerGame) projection = parseFloat(data.AvgPointsPerGame);
+      else if (data.PPG_Projection) projection = parseFloat(data.PPG_Projection);
+
+      if (name && projection > 0) {
+        players.push({ name: name.trim(), projection });
+      }
+    })
+    .on('end', () => {
+      fs.unlink(filePath, (err) => {
+        if (err) console.error('Error deleting file:', err);
+      });
+
+      console.log(`📊 Projection source "${sourceName}": ${players.length} players parsed`);
+      res.json({ success: true, source: sourceName, players });
+    })
+    .on('error', (error) => {
+      console.error('Projection source CSV parsing error:', error);
+      res.status(500).json({ error: 'Error parsing projection CSV' });
+    });
+});
+
+// Betting / Odds stub endpoints (return empty so client falls back to sample data)
+app.get('/api/odds/games', (req, res) => {
+  res.json([]);
+});
+
+app.get('/api/odds/props', (req, res) => {
+  res.json([]);
+});
+
+app.post('/api/bets/calculate-payout', (req, res) => {
+  // Let client-side fallback handle the calculation
+  res.status(501).json({ error: 'Use client-side calculation' });
+});
+
+app.get('/api/odds/convert', (req, res) => {
+  res.status(501).json({ error: 'Use client-side conversion' });
 });
 
 // Serve React app for all other routes

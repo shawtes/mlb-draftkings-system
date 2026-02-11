@@ -56,7 +56,7 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-[var(--dfs-bg-primary)] text-white">
       <Toaster position="top-right" />
       <Suspense fallback={<SimpleLoader />}>
         {currentView === 'home' && (

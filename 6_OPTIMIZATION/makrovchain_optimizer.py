@@ -626,6 +626,9 @@ def optimize_single_lineup(args):
     # Create a copy to avoid modifying original data
     df = df.copy()
     
+    # Basic sport detection (NBA vs NFL) for stacking rules
+    is_nfl = 'QB' in df.get('Position', pd.Series()).unique()
+    
     # Add SMALL controlled variability for lineup diversity (10-15%)
     # This ensures we get different lineups while still prioritizing top players
     if 'Predicted_DK_Points' in df.columns:
@@ -1016,15 +1019,23 @@ def optimize_single_lineup(args):
                 # If a team is selected, enforce the stack constraint + QB requirement
                 for team in valid_teams:
                     team_offense = df[(df['Team'] == team) & (df['Position'] != 'DST')].index
-                    team_qb = df[(df['Team'] == team) & (df['Position'] == 'QB')].index
                     
-                    if len(team_offense) >= stack_size and len(team_qb) > 0:
+                    if len(team_offense) >= stack_size:
                         # If team is selected (binary = 1), enforce at least 'stack_size' players
                         problem += pulp.lpSum([player_vars[idx] for idx in team_offense]) >= stack_size * team_binary_vars[team]
-                        # AND enforce that the QB from this team is selected
-                        problem += pulp.lpSum([player_vars[idx] for idx in team_qb]) >= team_binary_vars[team]
+                        
+                        # NFL-only: also require QB if this is an NFL slate
+                        if is_nfl:
+                            team_qb = df[(df['Team'] == team) & (df['Position'] == 'QB')].index
+                            if len(team_qb) > 0:
+                                problem += pulp.lpSum([player_vars[idx] for idx in team_qb]) >= team_binary_vars[team]
+                            else:
+                                logging.debug(f"No QB found for team {team}; skipping QB requirement (likely NBA slate)")
                 
-                logging.info(f"✅ ENFORCING: Must have QB + {stack_size-1} others from ONE of: {valid_teams}")
+                if is_nfl:
+                    logging.info(f"✅ ENFORCING: Must have QB + {stack_size-1} others from ONE of: {valid_teams}")
+                else:
+                    logging.info(f"✅ ENFORCING: Must have {stack_size} players from ONE of: {valid_teams}")
             
             # ADDITIONAL CONSTRAINT: Prevent ALL other teams from having large stacks
             # This ensures ONLY ONE team (the stacked team) has stack_size+ players
@@ -1056,7 +1067,10 @@ def optimize_single_lineup(args):
                             logging.debug(f"🚫 LIMITING: Team {team} can have max {stack_size-1} players")
             
             # Log final enforcement summary
-            logging.info(f"📊 STACK CONSTRAINT SUMMARY: QB-based {stack_size}-stack will be enforced using teams: {valid_teams}")
+            if is_nfl:
+                logging.info(f"📊 STACK CONSTRAINT SUMMARY: QB-based {stack_size}-stack will be enforced using teams: {valid_teams}")
+            else:
+                logging.info(f"📊 STACK CONSTRAINT SUMMARY: {stack_size}-player stack will be enforced using teams: {valid_teams}")
             logging.info(f"🚫 OTHER TEAMS: Limited to max {stack_size-1} players each to prevent multiple stacks")
     elif stack_type in ["qb_wr", "qb_2wr", "qb_wr_te", "qb_wr_rb", "qb_2wr_te", "game_stack", "bring_back"] and NFL_STACK_ENGINE_AVAILABLE:
         # Use NFL Stack Engine for named stack types
@@ -2219,7 +2233,27 @@ class OptimizationWorker(QThread):
         
         # Apply exposure constraints (future enhancement)
         # Could add min/max exposure filtering here
-        
+
+        # HARD STOP: ensure the remaining pool can actually fill NBA roster rules
+        if not self._validate_position_coverage_df(df_filtered):
+            pg_count = df_filtered['Position'].str.contains('PG', na=False).sum()
+            sg_count = df_filtered['Position'].str.contains('SG', na=False).sum()
+            sf_count = df_filtered['Position'].str.contains('SF', na=False).sum()
+            pf_count = df_filtered['Position'].str.contains('PF', na=False).sum()
+            c_count = df_filtered['Position'].str.contains('C', na=False).sum()
+            guard_total = df_filtered['Position'].str.contains('PG|SG', na=False).sum()
+            forward_total = df_filtered['Position'].str.contains('SF|PF', na=False).sum()
+
+            msg = (
+                "🚫 Player pool cannot satisfy NBA lineup constraints.\n"
+                f"   PG: {pg_count}, SG: {sg_count}, SF: {sf_count}, PF: {pf_count}, C: {c_count}\n"
+                f"   Guards total: {guard_total} (need >=3), Forwards total: {forward_total} (need >=3)\n"
+                "   Tip: select at least 3 guards, 3 forwards, and 1 center before running."
+            )
+            logging.error(msg)
+            print(msg)
+            return pd.DataFrame()
+
         return df_filtered
 
     def calculate_team_projected_runs(self, df):
@@ -5490,6 +5524,7 @@ class FantasyFootballApp(QMainWindow):
         total_checkboxes = 0
         checked_checkboxes = 0
         position_selected_map = {}
+        per_tab_selected = {}
         
         # IMMEDIATE DEBUG OUTPUT with timestamp to track multiple calls
         import time
@@ -5572,7 +5607,49 @@ class FantasyFootballApp(QMainWindow):
             print(f"     ✅ {position_name}: {position_checked}/{position_total} players selected")
             logging.debug(f"Position {position_name}: {position_checked}/{position_total} players selected")
             position_selected_map[position_name] = position_selected
-        
+            per_tab_selected[position_name] = set(position_selected)
+
+        # If user made any position-specific selections, ignore the All Players tab selections
+        if per_tab_selected.get('All Players'):
+            non_all_tabs = ['PG', 'SG', 'SF', 'PF', 'C', 'Guards', 'Forwards']
+            has_specific = any(per_tab_selected.get(tab) for tab in non_all_tabs)
+            if has_specific:
+                before = len(included_players)
+                # Rebuild included_players without All Players tab
+                specific_sets = [per_tab_selected.get(tab, set()) for tab in non_all_tabs]
+                combined_specific = set().union(*specific_sets)
+                included_players = list(combined_specific)
+                removed = before - len(included_players)
+                if removed > 0:
+                    print(f"   🔒 Ignoring 'All Players' tab picks because you selected players in position tabs ({removed} removed)")
+                    logging.info(f"Ignoring All Players tab selections; {removed} entries removed in favor of position-specific picks")
+
+        # Prefer combined tabs when present (Guards/Forwards augment individual tabs without dropping them)
+        guard_selection = set(per_tab_selected.get('Guards', set()))
+        forward_selection = set(per_tab_selected.get('Forwards', set()))
+        pg_selection = set(per_tab_selected.get('PG', set()))
+        sg_selection = set(per_tab_selected.get('SG', set()))
+        sf_selection = set(per_tab_selected.get('SF', set()))
+        pf_selection = set(per_tab_selected.get('PF', set()))
+
+        if guard_selection:
+            # Merge guard tab picks with PG/SG picks (do not drop explicit PG/SG selections)
+            pg_selection |= guard_selection
+            sg_selection |= guard_selection
+            position_selected_map['PG'] = list(pg_selection)
+            position_selected_map['SG'] = list(sg_selection)
+            included_players = list(dict.fromkeys(included_players + list(guard_selection)))
+
+        if forward_selection:
+            sf_selection |= forward_selection
+            pf_selection |= forward_selection
+            position_selected_map['SF'] = list(sf_selection)
+            position_selected_map['PF'] = list(pf_selection)
+            included_players = list(dict.fromkeys(included_players + list(forward_selection)))
+
+        # Deduplicate while preserving order
+        included_players = list(dict.fromkeys(included_players))
+
         # Apply strict position filters if user made position-specific selections
         filtered_players = self._apply_position_specific_filters(included_players, position_selected_map)
         if filtered_players is not None:
@@ -5639,6 +5716,20 @@ class FantasyFootballApp(QMainWindow):
         if self.df_players is None or self.df_players.empty:
             self.position_specific_selections = position_selected_map
             return included_players
+
+        # If Guards/Forwards tabs were used, merge them with individual PG/SG and SF/PF selections
+        guard_override = set(position_selected_map.get('Guards', []))
+        forward_override = set(position_selected_map.get('Forwards', []))
+        if guard_override:
+            merged_pg = set(position_selected_map.get('PG', [])) | guard_override
+            merged_sg = set(position_selected_map.get('SG', [])) | guard_override
+            position_selected_map['PG'] = list(merged_pg)
+            position_selected_map['SG'] = list(merged_sg)
+        if forward_override:
+            merged_sf = set(position_selected_map.get('SF', [])) | forward_override
+            merged_pf = set(position_selected_map.get('PF', [])) | forward_override
+            position_selected_map['SF'] = list(merged_sf)
+            position_selected_map['PF'] = list(merged_pf)
         
         # Build lookup: player name -> set of eligible positions
         name_position_map = {}
