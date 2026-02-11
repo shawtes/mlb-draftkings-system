@@ -1,5 +1,6 @@
 import React, { useState, Suspense, lazy, useEffect } from 'react';
 import { SimpleLoader } from './components/SkeletonLoader';
+import ErrorBoundary from './components/ErrorBoundary';
 import { useAuth } from './contexts/AuthContext';
 import { Toaster } from 'react-hot-toast';
 
@@ -58,26 +59,28 @@ function App() {
   return (
     <div className="min-h-screen bg-[var(--dfs-bg-primary)] text-white">
       <Toaster position="top-right" />
-      <Suspense fallback={<SimpleLoader />}>
-        {currentView === 'home' && (
-          <Homepage onLogin={handleLogin} onSignUp={handleSignUp} />
-        )}
-        {currentView === 'login' && (
-          <LoginPage 
-            onLogin={handleLoginSuccess} 
-            onSwitchToRegister={handleSwitchToRegister}
-          />
-        )}
-        {currentView === 'register' && (
-          <RegisterPage 
-            onRegister={handleRegisterSuccess} 
-            onSwitchToLogin={handleSwitchToLogin}
-          />
-        )}
-        {currentView === 'dashboard' && (
-          <Dashboard onLogout={handleLogout} />
-        )}
-      </Suspense>
+      <ErrorBoundary>
+        <Suspense fallback={<SimpleLoader />}>
+          {currentView === 'home' && (
+            <Homepage onLogin={handleLogin} onSignUp={handleSignUp} />
+          )}
+          {currentView === 'login' && (
+            <LoginPage 
+              onLogin={handleLoginSuccess} 
+              onSwitchToRegister={handleSwitchToRegister}
+            />
+          )}
+          {currentView === 'register' && (
+            <RegisterPage 
+              onRegister={handleRegisterSuccess} 
+              onSwitchToLogin={handleSwitchToLogin}
+            />
+          )}
+          {currentView === 'dashboard' && (
+            <Dashboard onLogout={handleLogout} />
+          )}
+        </Suspense>
+      </ErrorBoundary>
     </div>
   );
 }

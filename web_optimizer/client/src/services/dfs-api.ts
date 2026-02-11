@@ -63,108 +63,176 @@ export interface OptimizeResponse {
 
 // Player endpoints
 const uploadPlayers = async (file: File) => {
-  const formData = new FormData();
-  formData.append('playersFile', file);
-  const response = await axios.post(`${API_BASE_URL}/upload-players`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
-  return response.data;
+  try {
+    const formData = new FormData();
+    formData.append('playersFile', file);
+    const response = await axios.post(`${API_BASE_URL}/upload-players`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 const getPlayers = async () => {
-  const response = await axios.get(`${API_BASE_URL}/players`);
-  return response.data;
+  try {
+    const response = await axios.get(`${API_BASE_URL}/players`);
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 const updatePlayer = async (playerId: string, updates: Record<string, unknown>) => {
-  const response = await axios.put(`${API_BASE_URL}/players/${playerId}`, updates);
-  return response.data;
+  try {
+    const response = await axios.put(`${API_BASE_URL}/players/${playerId}`, updates);
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 const bulkUpdatePlayers = async (payload: BulkUpdatePlayersPayload) => {
-  const response = await axios.put(`${API_BASE_URL}/players/bulk`, payload);
-  return response.data;
+  try {
+    const response = await axios.put(`${API_BASE_URL}/players/bulk`, payload);
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 const setSport = async (sport: 'MLB' | 'NFL' | 'NBA') => {
-  const response = await axios.post(`${API_BASE_URL}/set-sport`, { sport });
-  return response.data;
+  try {
+    const response = await axios.post(`${API_BASE_URL}/set-sport`, { sport });
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 // Optimization endpoints
 const optimizeLineups = async (settings: OptimizeRequest): Promise<OptimizeResponse> => {
-  const response = await axios.post(`${API_BASE_URL}/optimize`, settings);
-  return response.data;
+  try {
+    const response = await axios.post(`${API_BASE_URL}/optimize`, settings);
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 const getOptimizationStatus = async () => {
-  const response = await axios.get(`${API_BASE_URL}/optimize/status`);
-  return response.data;
+  try {
+    const response = await axios.get(`${API_BASE_URL}/optimize/status`);
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 const cancelOptimization = async () => {
-  const response = await axios.post(`${API_BASE_URL}/optimize/cancel`);
-  return response.data;
+  try {
+    const response = await axios.post(`${API_BASE_URL}/optimize/cancel`);
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 // Export endpoints
 const exportLineups = async (lineups: any[], format: 'csv' | 'draftkings' | 'fanduel') => {
-  const response = await axios.post(`${API_BASE_URL}/export/${format}`, { lineups }, {
-    responseType: 'blob',
-  });
-  return response.data;
+  try {
+    const response = await axios.post(`${API_BASE_URL}/export/${format}`, { lineups }, {
+      responseType: 'blob',
+    });
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 // Projection endpoints
 const getProjections = async (sport: string) => {
-  const response = await axios.get(`${API_BASE_URL}/projections/${sport}`);
-  return response.data;
+  try {
+    const response = await axios.get(`${API_BASE_URL}/projections/${sport}`);
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 const uploadProjections = async (file: File, sport: string) => {
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('sport', sport);
-  const response = await axios.post(`${API_BASE_URL}/projections/upload`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
-  return response.data;
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('sport', sport);
+    const response = await axios.post(`${API_BASE_URL}/projections/upload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 const getTeams = async (): Promise<string[]> => {
-  const response = await axios.get(`${API_BASE_URL}/teams`);
-  return response.data;
+  try {
+    const response = await axios.get(`${API_BASE_URL}/teams`);
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 // Favorites endpoints
 const saveFavorites = async (name: string, playerIds: string[]) => {
-  const response = await axios.post(`${API_BASE_URL}/favorites`, { name, playerIds });
-  return response.data;
+  try {
+    const response = await axios.post(`${API_BASE_URL}/favorites`, { name, playerIds });
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 const getFavorites = async () => {
-  const response = await axios.get(`${API_BASE_URL}/favorites`);
-  return response.data;
+  try {
+    const response = await axios.get(`${API_BASE_URL}/favorites`);
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 // Get contest formats
 const getContestFormats = async () => {
-  const response = await axios.get(`${API_BASE_URL}/contest-formats`);
-  return response.data;
+  try {
+    const response = await axios.get(`${API_BASE_URL}/contest-formats`);
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 // Stack analysis
 const getStackAnalysis = async (teamStacks: any[], players: any[]) => {
-  const response = await axios.get(`${API_BASE_URL}/stack-analysis`, {
-    params: { teamStacks: JSON.stringify(teamStacks), players: JSON.stringify(players) },
-  });
-  return response.data;
+  try {
+    const response = await axios.get(`${API_BASE_URL}/stack-analysis`, {
+      params: { teamStacks: JSON.stringify(teamStacks), players: JSON.stringify(players) },
+    });
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 // Get results
 const getResults = async () => {
-  const response = await axios.get(`${API_BASE_URL}/results`);
-  return response.data;
+  try {
+    const response = await axios.get(`${API_BASE_URL}/results`);
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 // Advanced export with custom settings
@@ -174,34 +242,46 @@ const advancedExport = async (lineups: any[], options: {
   includeOwnership?: boolean;
   customFields?: string[];
 }) => {
-  const response = await axios.post(`${API_BASE_URL}/export-advanced`, {
-    lineups,
-    ...options,
-  }, {
-    responseType: 'blob',
-  });
-  return response.data;
+  try {
+    const response = await axios.post(`${API_BASE_URL}/export-advanced`, {
+      lineups,
+      ...options,
+    }, {
+      responseType: 'blob',
+    });
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 // Upload ownership CSV
 const uploadOwnership = async (file: File) => {
-  const formData = new FormData();
-  formData.append('ownershipFile', file);
-  const response = await axios.post(`${API_BASE_URL}/upload-ownership`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
-  return response.data;
+  try {
+    const formData = new FormData();
+    formData.append('ownershipFile', file);
+    const response = await axios.post(`${API_BASE_URL}/upload-ownership`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 // Upload projection source for blending
 const uploadProjectionSource = async (file: File, sourceName: string) => {
-  const formData = new FormData();
-  formData.append('projectionFile', file);
-  formData.append('sourceName', sourceName);
-  const response = await axios.post(`${API_BASE_URL}/upload-projection-source`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
-  return response.data;
+  try {
+    const formData = new FormData();
+    formData.append('projectionFile', file);
+    formData.append('sourceName', sourceName);
+    const response = await axios.post(`${API_BASE_URL}/upload-projection-source`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error);
+  }
 };
 
 // Error handling wrapper
