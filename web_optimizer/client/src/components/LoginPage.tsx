@@ -38,7 +38,7 @@ export default function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProp
       ) {
         setError('Invalid email or password. Please try again.');
       } else {
-        setError('Failed to login. Please try again.');
+        setError('Failed to login. Please try again or contact support if the issue persists.');
       }
     } finally {
       setIsLoading(false);
