@@ -1,55 +1,46 @@
 # NFL/NBA/MLB Fanduel/DraftKings Optimization System
 
-Daily fantasy sports optimization platform combining advanced mathematical optimization, machine learning, and quantitative finance techniques to generate optimal NFL/NBA/MLB Fanduel/DraftKings lineups.
+> *A multi-sport daily fantasy sports (DFS) optimization platform integrating constrained combinatorial optimization, stochastic ensemble learning, and real-time interactive decision support through a full-stack web application.*
 
-## Overview
+## Abstract
 
-This system solves the complex constrained optimization problem of selecting optimal fantasy sports lineups by integrating:
-
-- **Binary Integer Linear Programming (BILP)** for mathematically optimal solutions
-- **Genetic Algorithms** for diverse multi-lineup generation
-- **Ensemble Machine Learning** for player performance prediction
-- **Quantitative Finance Methods** for risk-adjusted optimization
-- **Real-time Web Application** for interactive lineup generation
-
-The platform processes player projections, applies sophisticated constraints (salary caps, position requirements, stacking strategies), and generates 1-500+ unique lineups optimized for different contest types (cash games vs. tournaments).
+This system addresses the NP-hard constrained combinatorial optimization problem inherent in daily fantasy sports (DFS) roster construction. The platform synthesizes **Binary Integer Linear Programming (BILP)** with **evolutionary metaheuristics** (genetic algorithms) to navigate the exponential solution space defined by salary-cap constraints, positional requirements, and correlation-aware stacking strategies. A **stacking regression ensemble** trained on 500+ engineered features provides player performance projections, while **quantitative finance methods**—including mean-variance optimization, Monte Carlo simulation, GARCH volatility modeling, copula-based dependency structures, and Kelly criterion position sizing—enable risk-adjusted portfolio construction. The interactive **React/Node.js web application** delivers real-time optimization feedback via WebSocket-driven progress streaming, supporting MLB, NFL, and NBA contest formats.
 
 ---
 
-## Mathematical Foundations
+## 1. Mathematical Foundations
 
-### Core Optimization Problem
+### 1.1 Core Optimization: Binary Integer Linear Programming
 
-The system solves a **Binary Integer Linear Programming (BILP)** problem:
+The roster construction problem is formulated as a **Binary Integer Linear Program (BILP)** over a discrete decision space. Let $\mathcal{P} = \{1, 2, \ldots, n\}$ denote the set of $n$ available players, and define the binary decision vector $\mathbf{x} \in \{0,1\}^n$ where $x_i = 1$ if player $i$ is selected.
 
 **Objective Function:**
-```
-Maximize: Σ (player_points[i] × x[i])
-```
 
-**Constraints:**
-```
-Subject to:
-  Σ (player_salary[i] × x[i]) ≤ SALARY_CAP
-  Σ x[i] = LINEUP_SIZE
-  Position constraints (e.g., Σ x[i] for QB = 1)
-  Stacking constraints (if applicable)
-  x[i] ∈ {0, 1}  (binary: player selected or not)
-```
+$$\max_{\mathbf{x} \in \{0,1\}^n} \sum_{i=1}^{n} \hat{y}_i \cdot x_i$$
 
-Where:
-- `x[i]` = binary variable (1 if player i is selected, 0 otherwise)
-- `player_points[i]` = projected fantasy points for player i
-- `player_salary[i]` = salary cost for player i
+where $\hat{y}_i \in \mathbb{R}_{\geq 0}$ is the predicted fantasy point projection for player $i$.
 
-### PuLP Linear Programming Solver
+**Subject to the constraint set $\mathcal{C}$:**
 
-**PuLP** (Python Linear Programming) uses the **Simplex Method** and **Branch-and-Bound** algorithms to find mathematically optimal solutions. The solver handles:
+$$\sum_{i=1}^{n} s_i \cdot x_i \leq S_{\max} \quad \text{(salary cap)}$$
 
-- Binary decision variables for each player
-- Linear objective function (maximize projected points)
-- Linear constraints (salary cap, position requirements, stacking rules)
-- Fast convergence (<1 second per lineup)
+$$\sum_{i=1}^{n} x_i = K \quad \text{(roster size)}$$
+
+$$\sum_{i \in \mathcal{P}_p} x_i = r_p, \quad \forall \, p \in \mathcal{Q} \quad \text{(positional constraints)}$$
+
+$$\sum_{i \in \mathcal{T}_t} x_i \leq u_t, \quad \forall \, t \in \mathcal{G} \quad \text{(stacking/team constraints)}$$
+
+where:
+- $s_i$ — salary cost of player $i$
+- $S_{\max}$ — salary cap (e.g., \$50,000 for NFL/NBA, \$45,000–\$50,000 for MLB)
+- $K$ — required roster size (9 for NFL/MLB, 8 for NBA)
+- $\mathcal{P}_p \subseteq \mathcal{P}$ — subset of players eligible for position $p$
+- $\mathcal{Q}$ — the set of required positions (e.g., $\{\text{QB}, \text{RB}, \text{WR}, \text{TE}, \text{FLEX}, \text{DST}\}$)
+- $r_p$ — required count for position $p$
+- $\mathcal{T}_t \subseteq \mathcal{P}$ — players from team $t$; $\mathcal{G}$ — set of teams
+- $u_t$ — maximum players allowed from team $t$
+
+This BILP is solved via the **CBC (Coin-or Branch and Cut)** solver through the PuLP interface, employing **LP relaxation** with **branch-and-bound** enumeration and **Gomory cutting planes** for integer feasibility.
 
 **Implementation:**
 ```python
@@ -57,560 +48,800 @@ problem = pulp.LpProblem("DFS_Optimizer", pulp.LpMaximize)
 player_vars = {idx: pulp.LpVariable(f"player_{idx}", cat='Binary') 
                for idx in df.index}
 
-# Objective: Maximize points
+# Objective: Maximize projected points
 problem += pulp.lpSum([
     df.at[idx, 'Predicted_DK_Points'] * player_vars[idx] 
     for idx in df.index
 ])
 
-# Constraints
-problem += pulp.lpSum(player_vars.values()) == LINEUP_SIZE
+# Salary cap constraint
 problem += pulp.lpSum([
     df.at[idx, 'Salary'] * player_vars[idx] 
     for idx in df.index
 ]) <= SALARY_CAP
+
+# Roster size constraint
+problem += pulp.lpSum(player_vars.values()) == LINEUP_SIZE
 ```
 
-### Genetic Algorithm Diversity Engine
+### 1.2 Genetic Algorithm for Multi-Lineup Diversity
 
-To generate multiple diverse lineups (required for multi-entry contests), the system employs a **Genetic Algorithm** with:
+Generating $M$ distinct lineups for multi-entry tournaments requires exploring diverse regions of the feasible set $\mathcal{F} \subset \{0,1\}^n$. We employ an **evolutionary algorithm (EA)** operating on a population $\Pi = \{\mathbf{x}^{(1)}, \ldots, \mathbf{x}^{(N_{\text{pop}})}\}$ of feasible lineups.
 
-**Phase 1: Initial Population**
-- Generate 3x candidate lineups using controlled randomness
-- Apply 35-70% lognormal noise to player projections
-- Randomly boost 3-7 players and penalize 2-4 players
-- Each variant produces a different optimal lineup
+**Phase 1 — Stochastic Population Initialization:**
 
-**Phase 2: Evolution (3 Generations)**
-- **Tournament Selection**: Keep top 50% of lineups by projected points
-- **Crossover**: Combine players from two parent lineups (60% parent1, 40% parent2)
-- **Mutation**: Randomly replace 1-2 players (30% mutation rate)
-- **Diversity Enforcement**: Remove lineups with >70% player overlap
+Each candidate $\mathbf{x}^{(k)}$ is generated by solving the BILP with perturbed projections:
 
-**Phase 3: Diverse Subset Selection**
-- Use maximal diversity algorithm to select final lineups
-- Maximize minimum Hamming distance between selected lineups
-- Ensures each lineup differs by at least 3-4 players
+$$\tilde{y}_i^{(k)} = \hat{y}_i \cdot \exp(\epsilon_i^{(k)}), \quad \epsilon_i^{(k)} \sim \mathcal{N}(0, \sigma^2)$$
 
-### Advanced Quantitative Methods
+where $\sigma \in [0.35, 0.70]$ controls exploration breadth, inducing a **lognormal perturbation** of the projection vector. An initial population of $3M$ candidates is generated.
 
-#### Mean-Variance Optimization (Cash Games)
-For double-up and 50/50 contests, the system uses **Sharpe Ratio optimization**:
+**Phase 2 — Evolutionary Operators (iterated over $G = 3$ generations):**
 
-```
-Objective: maximize μ^T x - λ * √(x^T Σ x)
-```
+- **Tournament Selection:** For each generation, retain the top $\lfloor N_{\text{pop}} / 2 \rfloor$ lineups ranked by $f(\mathbf{x}) = \sum_i \hat{y}_i \cdot x_i$.
 
-Where:
-- μ = expected points vector
-- Σ = covariance matrix of player performance
-- λ = risk aversion parameter
-- x = binary selection vector
+- **Crossover:** Given parents $\mathbf{x}^{(a)}$ and $\mathbf{x}^{(b)}$, produce offspring $\mathbf{x}^{(c)}$ by:
+  
+$$x_i^{(c)} = \begin{cases} x_i^{(a)} & \text{with probability } \alpha \\ x_i^{(b)} & \text{with probability } 1 - \alpha \end{cases}$$
 
-#### Monte Carlo Simulation
-Simulates 10,000+ scenarios for robust risk assessment:
-- Samples from player point distributions
-- Calculates Value at Risk (VaR) at 95% confidence
-- Computes Conditional VaR (CVaR) for tail risk
-- Provides probability distributions of lineup outcomes
+  with $\alpha = 0.6$, followed by feasibility repair to satisfy $\mathcal{C}$.
 
-#### GARCH Volatility Estimation
-Models time-varying volatility of player performance:
-- Fits GARCH(1,1) models to historical performance
-- Provides dynamic risk estimates
-- Adjusts projections based on recent volatility
+- **Mutation:** With probability $p_m = 0.30$, randomly replace $1$–$2$ players in the lineup with feasible alternatives.
 
-#### Kelly Criterion Position Sizing
-Optimal bet sizing based on expected win rate:
-```
-Kelly Fraction = (p × b - q) / b
-```
-Where p = win probability, q = 1-p, b = win/loss ratio
+- **Diversity Enforcement:** Remove any $\mathbf{x}^{(j)}$ such that:
 
-#### Copula-Based Dependency Modeling
-Models complex player correlations using Gaussian copulas:
-- Captures non-linear dependencies between players
-- Generates correlated performance scenarios
-- Improves stacking strategy effectiveness
+$$d_H(\mathbf{x}^{(j)}, \mathbf{x}^{(k)}) < \delta_{\min}, \quad \exists \, k < j$$
 
-#### Bayesian Probability Modeling
-- Posterior parameter estimation for player performance
-- Confidence intervals for projections
-- Correlation modeling between teammates
-- Regime-aware adjustments (home/away, weather, matchups)
+  where $d_H$ denotes the **Hamming distance** and $\delta_{\min} = 3$ ensures minimum inter-lineup differentiation.
+
+**Phase 3 — Maximal Diversity Subset Selection:**
+
+From the evolved population, select the final $M$ lineups by solving:
+
+$$\max_{\mathcal{S} \subseteq \Pi, \, |\mathcal{S}| = M} \min_{j \neq k \in \mathcal{S}} d_H(\mathbf{x}^{(j)}, \mathbf{x}^{(k)})$$
+
+This maximin dispersion problem is solved via a greedy farthest-first traversal heuristic.
+
+### 1.3 Ensemble Learning: Stacking Regression
+
+Player projections $\hat{y}_i$ are generated by a **stacking regression ensemble** (Wolpert, 1992). Let $\mathbf{z}_i \in \mathbb{R}^d$ be the $d$-dimensional feature vector for player $i$, constructed from 500+ engineered features.
+
+**Base Learners ($L = 4$):**
+
+$$h_\ell : \mathbb{R}^d \to \mathbb{R}, \quad \ell \in \{1, \ldots, L\}$$
+
+| $\ell$ | Model | Formulation |
+|---------|-------|-------------|
+| 1 | Linear Regression | $h_1(\mathbf{z}) = \mathbf{w}_1^\top \mathbf{z} + b_1$ |
+| 2 | Ridge Regression | $h_2(\mathbf{z}) = \arg\min_{\mathbf{w}} \|\mathbf{y} - \mathbf{Z}\mathbf{w}\|_2^2 + \alpha\|\mathbf{w}\|_2^2$ |
+| 3 | Random Forest | $h_3(\mathbf{z}) = \frac{1}{B}\sum_{b=1}^{B} T_b(\mathbf{z})$ with $B = 100$ trees |
+| 4 | XGBoost | $h_4(\mathbf{z}) = \sum_{m=1}^{M} f_m(\mathbf{z})$ with $M = 100$ boosting rounds |
+
+**Meta-Learner:**
+
+The stacked prediction is:
+
+$$\hat{y}_i = g\bigl(h_1(\mathbf{z}_i), h_2(\mathbf{z}_i), h_3(\mathbf{z}_i), h_4(\mathbf{z}_i)\bigr)$$
+
+where $g$ is a Ridge regression meta-learner ($\alpha_{\text{meta}} = 0.1$) trained on $k$-fold ($k = 3$) cross-validated base predictions to prevent information leakage.
+
+**Feature Engineering Pipeline:**
+
+The feature space $\mathbf{z}_i$ includes:
+
+- **Rolling statistics:** $\bar{y}_{i,w} = \frac{1}{w}\sum_{t=1}^{w} y_{i,t-j}$ for windows $w \in \{5, 7, 49\}$
+- **Lag features:** $y_{i,t-1}, y_{i,t-2}, \ldots$ (previous game performance)
+- **Opponent-adjusted metrics:** $z_{i}^{\text{opp}} = y_{i} - \bar{y}_{\text{opp}}^{\text{allowed}}$
+- **Positional encoding:** One-hot vectors for player, team, and opponent
+- **Feature selection:** SelectKBest with $F$-regression scoring, retaining top $k \in [30, 150]$ features
+
+### 1.4 Quantitative Finance Methods
+
+#### 1.4.1 Mean-Variance Optimization (Markowitz Portfolio Theory)
+
+For cash-game contests (50/50, double-up), we augment the BILP objective with a **risk-adjusted Sharpe-ratio formulation**:
+
+$$\max_{\mathbf{x} \in \{0,1\}^n} \; \boldsymbol{\mu}^\top \mathbf{x} - \lambda \sqrt{\mathbf{x}^\top \boldsymbol{\Sigma} \mathbf{x}}$$
+
+where:
+- $\boldsymbol{\mu} \in \mathbb{R}^n$ — vector of expected fantasy points
+- $\boldsymbol{\Sigma} \in \mathbb{R}^{n \times n}$ — covariance matrix of player performance (estimated from historical data)
+- $\lambda \geq 0$ — risk-aversion parameter (higher $\lambda$ penalizes variance)
+
+This formulation selects high-floor, low-variance lineups suitable for contests requiring consistent performance above a cash line.
+
+#### 1.4.2 Monte Carlo Simulation
+
+Lineup robustness is assessed via **Monte Carlo simulation** with $N_{\text{sim}} = 10{,}000$ trials. For each trial $t$:
+
+$$\mathbf{y}^{(t)} \sim \mathcal{N}(\boldsymbol{\mu}, \boldsymbol{\Sigma})$$
+
+$$S^{(t)}(\mathbf{x}) = \sum_{i=1}^{n} y_i^{(t)} \cdot x_i$$
+
+The resulting empirical distribution $\{S^{(1)}, \ldots, S^{(N_{\text{sim}})}\}$ yields:
+
+- **Value at Risk (VaR)** at confidence level $\alpha = 0.95$:
+
+$$\text{VaR}_\alpha = \inf\{s : \Pr(S \leq s) \geq 1 - \alpha\}$$
+
+- **Conditional Value at Risk (CVaR):**
+
+$$\text{CVaR}_\alpha = \mathbb{E}[S \mid S \leq \text{VaR}_\alpha]$$
+
+#### 1.4.3 GARCH(1,1) Volatility Model
+
+Player performance volatility is modeled as a time-varying process. Let $r_{i,t} = y_{i,t} - \hat{y}_{i,t}$ denote the prediction residual. The conditional variance follows:
+
+$$\sigma_{i,t}^2 = \omega_i + \alpha_i \, r_{i,t-1}^2 + \beta_i \, \sigma_{i,t-1}^2$$
+
+where $\omega_i > 0$, $\alpha_i \geq 0$, $\beta_i \geq 0$, and $\alpha_i + \beta_i < 1$ ensures stationarity. The estimated $\sigma_{i,t}$ dynamically adjusts projection confidence intervals.
+
+#### 1.4.4 Kelly Criterion for Bankroll Management
+
+Optimal contest entry sizing follows the **Kelly criterion**:
+
+$$f^* = \frac{p \cdot b - q}{b}$$
+
+where:
+- $f^*$ — optimal fraction of bankroll to wager
+- $p$ — estimated probability of cashing (from Monte Carlo simulation)
+- $q = 1 - p$ — probability of loss
+- $b$ — net odds (payout ratio minus 1)
+
+**Fractional Kelly** ($\gamma \cdot f^*$ with $\gamma \in [0.25, 0.50]$) is employed to mitigate estimation risk.
+
+#### 1.4.5 Gaussian Copula Dependency Modeling
+
+Player correlations (e.g., quarterback–wide receiver stacks) are modeled via a **Gaussian copula** $C_R$:
+
+$$C_R(u_1, \ldots, u_n) = \Phi_R\bigl(\Phi^{-1}(u_1), \ldots, \Phi^{-1}(u_n)\bigr)$$
+
+where:
+- $\Phi_R$ — joint CDF of the multivariate normal with correlation matrix $R$
+- $\Phi^{-1}$ — inverse standard normal CDF
+- $u_i = F_i(y_i)$ — marginal CDF transform of player $i$'s performance
+
+This captures **non-linear tail dependencies** between correlated players (e.g., teammates in the same game), enabling realistic correlated performance scenario generation for stacking strategies.
+
+#### 1.4.6 Bayesian Posterior Estimation
+
+Player projections incorporate **Bayesian updating** with conjugate priors:
+
+$$p(\theta_i \mid \mathcal{D}_i) \propto p(\mathcal{D}_i \mid \theta_i) \cdot p(\theta_i)$$
+
+For a Normal-Normal conjugate model with known variance $\sigma^2$:
+
+$$\theta_i \mid \mathcal{D}_i \sim \mathcal{N}\!\left(\frac{\frac{\mu_0}{\sigma_0^2} + \frac{n_i \bar{y}_i}{\sigma^2}}{\frac{1}{\sigma_0^2} + \frac{n_i}{\sigma^2}}, \; \left(\frac{1}{\sigma_0^2} + \frac{n_i}{\sigma^2}\right)^{-1}\right)$$
+
+where $\mu_0, \sigma_0^2$ are prior hyperparameters, $\bar{y}_i$ is the sample mean of player $i$'s historical performance, and $n_i$ is the sample size. This yields **shrinkage estimates** that regularize projections for players with limited data toward a population mean—particularly valuable for injury-returning players or rookies.
 
 ---
 
-## Technology Stack & Architecture
+## 2. System Context Diagram
 
-### Backend Optimization Engine
-
-**Core Technologies:**
-- **Python 3.8+** - Primary optimization and ML pipeline
-- **PuLP 2.7.0+** - Linear programming solver (CBC backend)
-- **Pandas 2.0+** - Data manipulation and analysis
-- **NumPy 1.24+** - Numerical computations
-- **PyQt5 5.15+** - Desktop GUI application
-
-**Machine Learning Pipeline:**
-- **StackingRegressor** - Multi-level ensemble model
-  - Base models: Linear Regression, Ridge, Random Forest, XGBoost
-  - Meta-learner: Ridge regression with cross-validation
-- **Feature Engineering**: 500+ engineered features
-  - Rolling statistics (5-game, 7-game, 49-game averages)
-  - Lag features (previous game performance)
-  - Opponent-adjusted metrics
-  - Time series features
-- **Cross-Validation**: 3-fold CV with TimeSeriesSplit
-- **Hyperparameter Optimization**: Grid search with 15 iterations
-
-**Parallel Processing:**
-- **ThreadPoolExecutor** - Multi-threaded lineup generation
-- **CPU Workers**: 4-8 workers (adaptive based on system)
-- **Performance**: 4-8x speedup for multi-lineup generation
-
-### Web Application
-
-**Frontend:**
-- **React 18.3** - Component-based UI framework
-- **TypeScript 5.9** - Type-safe development
-- **Material-UI 5.14** - Design system and components
-- **Radix UI** - Accessible component primitives
-- **Vite 6.3** - Build tool and dev server
-- **WebSocket** - Real-time optimization progress
-
-**Backend:**
-- **Node.js 16+** - Runtime environment
-- **Express 4.17** - Web framework
-- **WebSocket (ws 8.18)** - Real-time communication
-- **Multer** - File upload handling
-- **CSV Parser** - Data processing
-
-**Architecture:**
-- RESTful API for data operations
-- WebSocket for real-time updates
-- Stateless server design
-- CORS-enabled for cross-origin requests
-
-### Data Sources
-
-- **SportsData.io API** - Player projections, salaries, injuries, game data
-- **DraftKings** - Salary and contest data
-- **Historical Performance Data** - 3+ years of MLB statistics
-
----
-
-## System Architecture
-
-### Data Flow Pipeline
+The following **context diagram** (Level 0 DFD) illustrates the system boundary and interactions with external entities:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    DATA COLLECTION                      │
-├─────────────────────────────────────────────────────────┤
-│  SportsData.io API → Player Projections                 │
-│  DraftKings API → Salaries & Contest Data              │
-│  Historical Database → Performance Metrics              │
-└─────────────────────────────────────────────────────────┘
-                        ↓
-┌─────────────────────────────────────────────────────────┐
-│                  MACHINE LEARNING TRAINING              │
-├─────────────────────────────────────────────────────────┤
-│  Feature Engineering (500+ features)                     │
-│  StackingRegressor Ensemble Training                   │
-│  Cross-Validation & Hyperparameter Tuning              │
-│  Model Persistence & Versioning                        │
-└─────────────────────────────────────────────────────────┘
-                        ↓
-┌─────────────────────────────────────────────────────────┐
-│                    PREDICTION GENERATION                 │
-├─────────────────────────────────────────────────────────┤
-│  Load Trained Model                                     │
-│  Generate Player Projections                            │
-│  Calculate Ceiling/Floor/Median                         │
-│  Apply Contest-Specific Adjustments                     │
-└─────────────────────────────────────────────────────────┘
-                        ↓
-┌─────────────────────────────────────────────────────────┐
-│                  OPTIMIZATION ENGINE                     │
-├─────────────────────────────────────────────────────────┤
-│  PuLP Linear Programming (Core Solver)                   │
-│  Genetic Algorithm (Diversity Engine)                    │
-│  Advanced Quantitative Methods (Optional)                │
-│  Constraint Satisfaction (Salary, Position, Stacking)    │
-└─────────────────────────────────────────────────────────┘
-                        ↓
-┌─────────────────────────────────────────────────────────┐
-│                    POST-PROCESSING                      │
-├─────────────────────────────────────────────────────────┤
-│  Deduplication                                          │
-│  Exposure Tracking                                      │
-│  Position Assignment (FLEX handling)                    │
-│  DraftKings CSV Format Export                           │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    EXTERNAL ACTORS                                       │
+│                                                                                          │
+│    ┌─────────────┐     ┌──────────────────┐     ┌────────────────┐     ┌──────────────┐  │
+│    │    DFS       │     │  SportsData.io   │     │   DraftKings   │     │   Firebase   │  │
+│    │   Analyst    │     │      API         │     │   Platform     │     │    Auth      │  │
+│    └──────┬──────┘     └────────┬─────────┘     └───────┬────────┘     └──────┬───────┘  │
+│           │                     │                       │                      │          │
+└───────────┼─────────────────────┼───────────────────────┼──────────────────────┼──────────┘
+            │                     │                       │                      │
+            │  CSV Upload         │  Player Stats         │  Salary Data         │  Auth
+            │  Constraints        │  Projections          │  Contest Formats     │  Tokens
+            │  Configuration      │  Injury Reports       │  Entry Templates     │
+            ▼                     ▼                       ▼                      ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                          │
+│                  ╔══════════════════════════════════════════════════╗                     │
+│                  ║     DFS OPTIMIZATION PLATFORM (Web App)         ║                     │
+│                  ║                                                  ║                     │
+│                  ║  ┌────────────────────────────────────────────┐  ║                     │
+│                  ║  │         React Frontend (Port 3000)         │  ║                     │
+│                  ║  │  Dashboard · DFS Optimizer · Games Hub     │  ║                     │
+│                  ║  │  Prop Betting · Account Settings           │  ║                     │
+│                  ║  └────────────────┬───────────────────────────┘  ║                     │
+│                  ║                   │ REST API + WebSocket         ║                     │
+│                  ║  ┌────────────────▼───────────────────────────┐  ║                     │
+│                  ║  │     Node.js/Express Backend (Port 5001)    │  ║                     │
+│                  ║  │  28 API Endpoints · WebSocket Server       │  ║                     │
+│                  ║  │  File Upload (Multer) · CSV Processing     │  ║                     │
+│                  ║  └────────────────┬───────────────────────────┘  ║                     │
+│                  ║                   │ Internal Calls               ║                     │
+│                  ║  ┌────────────────▼───────────────────────────┐  ║                     │
+│                  ║  │        Optimization Engines                │  ║                     │
+│                  ║  │  MLB Optimizer · NFL Optimizer             │  ║                     │
+│                  ║  │  NBA Optimizer · Quant Methods             │  ║                     │
+│                  ║  └────────────────────────────────────────────┘  ║                     │
+│                  ╚══════════════════════════════════════════════════╝                     │
+│                                                                                          │
+│                           │                         │                                    │
+│                           ▼                         ▼                                    │
+│                  ┌────────────────┐       ┌──────────────────┐                           │
+│                  │ Optimized      │       │  DK-Ready CSV    │                           │
+│                  │ Lineups        │       │  Entry Files     │                           │
+│                  │ (1–500+)       │       │  (Export)        │                           │
+│                  └────────────────┘       └──────────────────┘                           │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Component Architecture
+---
 
-**1. Training Module** (`1_CORE_TRAINING/`)
-- Model training pipeline
-- Feature engineering
-- Hyperparameter optimization
-- Model evaluation and validation
+## 3. Web Application Architecture
 
-**2. Prediction Module** (`2_PREDICTIONS/`)
-- Daily prediction generation
-- Probability modeling
-- Ceiling/floor calculations
-- Contest-specific adjustments
+### 3.1 Component Hierarchy Diagram
 
-**3. Optimization Module** (`6_OPTIMIZATION/`)
-- Core optimization engine (PuLP + Genetic)
-- Stacking strategy implementation
-- Exposure management
-- Lineup generation and export
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          App (React Router)                             │
+│                    Suspense + Lazy Loading Boundary                     │
+├────────────┬──────────────┬──────────────────┬──────────────────────────┤
+│            │              │                  │                          │
+│  Homepage  │  LoginPage   │  RegisterPage    │       Dashboard          │
+│  (Public)  │  (Firebase)  │  (Firebase)      │    (Authenticated)       │
+│            │              │                  │                          │
+│            │              │                  ├──────────────────────────┤
+│            │              │                  │                          │
+│            │              │                  │  ┌─── DFSOptimizer ────┐ │
+│            │              │                  │  │                     │ │
+│            │              │                  │  │  ControlPanelTab    │ │
+│            │              │                  │  │  PlayersTab         │ │
+│            │              │                  │  │  TeamStacksTab      │ │
+│            │              │                  │  │  ResultsTab         │ │
+│            │              │                  │  │    └─ LineupCard[]  │ │
+│            │              │                  │  │  FavoritesTab       │ │
+│            │              │                  │  │  StackExposureTab   │ │
+│            │              │                  │  │  AdvancedQuantTab   │ │
+│            │              │                  │  └────────────────────┘ │
+│            │              │                  │                          │
+│            │              │                  │  ┌─── GamesHub ────────┐ │
+│            │              │                  │  │  GameSlate          │ │
+│            │              │                  │  │  GameAnalysis       │ │
+│            │              │                  │  └────────────────────┘ │
+│            │              │                  │                          │
+│            │              │                  │  ┌─── PropBetting ─────┐ │
+│            │              │                  │  │  PropBetFinder      │ │
+│            │              │                  │  │  BettingSlip        │ │
+│            │              │                  │  └────────────────────┘ │
+│            │              │                  │                          │
+│            │              │                  │  AccountSettings        │
+│            │              │                  │  HowToUse              │
+└────────────┴──────────────┴──────────────────┴──────────────────────────┘
+```
 
-**4. Analysis Module** (`7_ANALYSIS/`)
-- Model performance evaluation
-- Prediction accuracy metrics
-- Lineup scoring and analysis
-- Performance tracking
+### 3.2 Web Application Data Flow Diagram (Level 1 DFD)
 
-**5. Web Application** (`web_optimizer/`)
-- React frontend for interactive optimization
-- Node.js backend API
-- Real-time WebSocket updates
-- File upload and CSV export
+The following diagram delineates the **data flow** through the web application's three-tier architecture:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              CLIENT TIER (React/TypeScript)                          │
+│                                                                                     │
+│  ┌──────────────┐    ┌──────────────────┐    ┌──────────────────────────────────┐   │
+│  │  File Upload  │    │  Player Selection │    │     Optimization Configuration  │   │
+│  │  (CSV Import) │    │  & Filtering      │    │     (Constraints, Stacking,     │   │
+│  │              │    │                  │    │      Risk, Contest Mode)         │   │
+│  └──────┬───────┘    └────────┬─────────┘    └──────────────┬───────────────────┘   │
+│         │                     │                             │                       │
+│         │   POST /upload-*    │   PUT /players/*            │   POST /optimize      │
+│         ▼                     ▼                             ▼                       │
+│  ╔══════════════════════════════════════════════════════════════════════════════╗    │
+│  ║                        dfs-api.ts (Service Layer)                          ║    │
+│  ║         Axios HTTP Client  +  WebSocketConnection.ts                       ║    │
+│  ╚══════════════╤═══════════════════════════════════════════╤═════════════════╝    │
+│                 │            HTTP REST (JSON)                │   WebSocket (ws://)   │
+└─────────────────┼───────────────────────────────────────────┼───────────────────────┘
+                  │                                           │
+                  ▼                                           ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                         SERVER TIER (Node.js/Express, Port 5001)                    │
+│                                                                                     │
+│  ┌──────────────────────────────────────────────────────────────────────────────┐   │
+│  │                         Express Router (28 Endpoints)                        │   │
+│  │                                                                              │   │
+│  │   /upload-players   /players   /optimize   /results   /export   /favorites   │   │
+│  │   /upload-dk-entries   /set-sport   /teams   /stack-analysis   /odds/*       │   │
+│  └──────────────┬───────────────────────────────────────────┬───────────────────┘   │
+│                 │                                           │                       │
+│  ┌──────────────▼──────────────┐  ┌─────────────────────────▼───────────────────┐   │
+│  │     File Processing         │  │        WebSocket Server (ws 8.18)           │   │
+│  │  Multer → CSV Parser        │  │                                             │   │
+│  │  → playersData[]            │  │  broadcast(OPTIMIZATION_STARTED)            │   │
+│  │  → dkEntriesData            │  │  broadcast(OPTIMIZATION_PROGRESS, 0→100%)   │   │
+│  └─────────────────────────────┘  │  broadcast(DK_ENTRIES_LOADED)               │   │
+│                                   │  activeConnections: Set<WebSocket>           │   │
+│                 │                  └─────────────────────────────────────────────┘   │
+│                 ▼                                                                    │
+│  ┌──────────────────────────────────────────────────────────────────────────────┐   │
+│  │                      In-Memory State Store                                   │   │
+│  │                                                                              │   │
+│  │   playersData[]    optimizationResults[]    favorites[]    currentSport      │   │
+│  │   dkEntriesData    dkEntriesFilePath        activeConnections               │   │
+│  └──────────────────────────────────────────────────────────────────────────────┘   │
+└─────────────────┬───────────────────────────────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                         OPTIMIZATION TIER (Sport-Specific Engines)                   │
+│                                                                                     │
+│  ┌────────────────────┐  ┌────────────────────┐  ┌────────────────────────────┐    │
+│  │   MLB Optimizer     │  │   NFL Optimizer     │  │   NBA Optimizer            │    │
+│  │   (optimizer.js)    │  │   (nfl-optimizer.js)│  │   (nba-optimizer.js)       │    │
+│  │                    │  │                    │  │   + Python Markov Chain     │    │
+│  │  Strategies:       │  │  Strategies:       │  │                            │    │
+│  │  · greedy          │  │  · greedy          │  │  Strategies:               │    │
+│  │  · balanced        │  │  · balanced        │  │  · greedy                  │    │
+│  │  · value           │  │  · correlation     │  │  · balanced                │    │
+│  │  · projection      │  │  · stack-based     │  │  · value                   │    │
+│  │                    │  │                    │  │                            │    │
+│  │  Constraints:      │  │  Constraints:      │  │  Constraints:              │    │
+│  │  P(2) C(1) 1B(1)  │  │  QB(1) RB(2)      │  │  PG(1) SG(1) SF(1)       │    │
+│  │  2B(1) 3B(1) SS(1)│  │  WR(3) TE(1)      │  │  PF(1) C(1) G(1)         │    │
+│  │  OF(3)             │  │  FLEX(1) DST(1)   │  │  F(1) UTIL(1)             │    │
+│  └────────────────────┘  └────────────────────┘  └────────────────────────────┘    │
+│                                                                                     │
+│  ┌──────────────────────────────────────────────────────────────────────────────┐   │
+│  │                    Advanced Quantitative Module                               │   │
+│  │                                                                              │   │
+│  │  Mean-Variance Optimization · Monte Carlo (10,000 trials)                    │   │
+│  │  Kelly Criterion Sizing · Exposure Management · Variance Tracking            │   │
+│  └──────────────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.3 Optimization Request–Response Sequence Diagram
+
+```
+  DFS Analyst            React Client              Express Server           Optimizer Engine
+      │                      │                          │                        │
+      │  Upload CSV          │                          │                        │
+      ├─────────────────────►│                          │                        │
+      │                      │  POST /upload-players    │                        │
+      │                      ├─────────────────────────►│                        │
+      │                      │                          │── Multer parse CSV     │
+      │                      │                          │── Store playersData[]  │
+      │                      │  200 OK {count, teams}   │                        │
+      │                      │◄─────────────────────────┤                        │
+      │  Player pool loaded  │                          │                        │
+      │◄─────────────────────┤                          │                        │
+      │                      │                          │                        │
+      │  Configure &         │                          │                        │
+      │  Select Players      │                          │                        │
+      ├─────────────────────►│                          │                        │
+      │                      │  PUT /players/bulk       │                        │
+      │                      ├─────────────────────────►│                        │
+      │                      │  200 OK                  │                        │
+      │                      │◄─────────────────────────┤                        │
+      │                      │                          │                        │
+      │  Click "Optimize"    │                          │                        │
+      ├─────────────────────►│                          │                        │
+      │                      │  POST /optimize          │                        │
+      │                      ├─────────────────────────►│                        │
+      │                      │                          │── Select sport engine  │
+      │                      │                          ├───────────────────────►│
+      │                      │   ◄──── WS: OPTIMIZATION_STARTED ────────────────┤
+      │  Progress: 0%        │                          │                        │
+      │◄─────────────────────┤                          │                        │
+      │                      │   ◄──── WS: OPTIMIZATION_PROGRESS (10%) ─────────┤
+      │  Progress: 10%       │                          │                        │
+      │◄─────────────────────┤                          │                        │
+      │                      │         ...              │      ...               │
+      │                      │   ◄──── WS: OPTIMIZATION_PROGRESS (100%) ────────┤
+      │  Progress: 100%      │                          │                        │
+      │◄─────────────────────┤                          │◄───────────────────────┤
+      │                      │  200 OK {lineups[],      │  Return lineups[]      │
+      │                      │         summary}         │                        │
+      │                      │◄─────────────────────────┤                        │
+      │  Display lineups     │                          │                        │
+      │◄─────────────────────┤                          │                        │
+      │                      │                          │                        │
+      │  Export to DK        │                          │                        │
+      ├─────────────────────►│                          │                        │
+      │                      │  POST /export-dk-entries │                        │
+      │                      ├─────────────────────────►│                        │
+      │                      │  200 OK (CSV download)   │                        │
+      │  Download CSV        │◄─────────────────────────┤                        │
+      │◄─────────────────────┤                          │                        │
+      │                      │                          │                        │
+```
+
+### 3.4 WebSocket Real-Time Communication Protocol
+
+The system employs a **unidirectional server-push** WebSocket protocol for real-time progress streaming:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    WebSocket Message Protocol                       │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Connection: ws://localhost:5001                                    │
+│                                                                     │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │ Message Type                │  Payload                        │  │
+│  ├────────────────────────────┼──────────────────────────────────│  │
+│  │ OPTIMIZATION_STARTED       │  { sport, numLineups, timestamp }│  │
+│  │ OPTIMIZATION_PROGRESS      │  { progress: 0-100, message }   │  │
+│  │ DK_ENTRIES_LOADED          │  { count, filename }             │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│  Server                                      Client                 │
+│    │                                           │                    │
+│    │── wss.on('connection') ──────────────────►│                    │
+│    │   activeConnections.add(ws)               │                    │
+│    │                                           │                    │
+│    │── broadcast(JSON.stringify(msg)) ────────►│                    │
+│    │   for each ws in activeConnections        │── on(type, cb)     │
+│    │   if ws.readyState === OPEN               │   dispatch event   │
+│    │                                           │                    │
+│    │◄── ws.on('close') ──────────────────────── │                    │
+│    │   activeConnections.delete(ws)            │                    │
+│    │                                           │                    │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## Key Features
+## 4. End-to-End Data Pipeline
 
-### Multi-Algorithm Optimization
-- **PuLP Linear Programming**: Mathematically optimal single lineup
-- **Genetic Algorithm**: Diverse multi-lineup generation (1-500+ lineups)
-- **Hybrid Approach**: Combines optimality with diversity
+The complete pipeline from raw data ingestion to contest-ready lineup export follows a **five-stage directed acyclic graph (DAG)**:
 
-### Advanced Stacking Strategies
-- **QB + WR Stacks**: Correlation-based stacking
-- **Game Stacks**: Multiple players from high-scoring games
-- **Bring-Back Plays**: Opposing team players in game stacks
-- **Multi-Stack Combinations**: Complex 4|2|2 and 3|3|2 patterns
-
-### Contest-Specific Optimization
-- **Cash Games (50/50, Double-Up)**: Floor-focused, high-ownership plays
-- **Tournaments (GPP)**: Ceiling-focused, contrarian plays
-- **Ownership-Based Adjustments**: Fade chalk, target low-owned elite plays
-
-### Exposure Management
-- **Player Exposure Limits**: Min/max percentage across lineups
-- **Team Exposure Controls**: Limit team representation
-- **Stack Exposure Tracking**: Monitor stacking frequency
-
-### Real-Time Generation
-- **Interactive Web Interface**: Upload data, configure settings, generate lineups
-- **Progress Tracking**: Real-time WebSocket updates during optimization
-- **Desktop GUI**: PyQt5 application for offline use
-
-### DraftKings Integration
-- **CSV Export**: DraftKings-ready format
-- **Position Validation**: Automatic FLEX assignment
-- **Salary Cap Management**: $45,000 - $50,000 range
-- **Injury Filtering**: Automatic exclusion of injured players
-
----
-
-## Performance Metrics
-
-### Optimization Speed
-
-| Lineups | Players | Stacks | Time (Mac M1) | Time (Windows 4-core) |
-|---------|---------|--------|---------------|----------------------|
-| 1       | 100     | 1      | <1 sec        | <1 sec               |
-| 20      | 100     | 2      | 5-15 sec      | 15-30 sec            |
-| 50      | 150     | 3      | 30-60 sec      | 60-120 sec           |
-| 100     | 200     | 5      | 1-2 min        | 2-4 min              |
-
-**Parallel Processing**: 4-8x speedup with multi-threading
-
-### Contest Performance
-
-**Production Results (NFL Contest - 47,562 entries):**
-
-| Metric | Baseline | Optimized | Improvement |
-|--------|----------|-----------|-------------|
-| **Best Score** | 149.98 | 217.94 | **+45.3%** |
-| **Average Score** | 113.84 | 130.50 | **+14.6%** |
-| **Cash Rate** | 10% | 40% | **+300%** |
-| **Tournament Rank** | N/A | Top 0.01% | Winner |
-
-**Key Achievement**: Generated lineup scored 217.94 points, beating contest winner (213.34 points) by 4.60 points.
-
-### Model Performance
-
-**Machine Learning Metrics:**
-- **Mean Absolute Error**: 3.907 fantasy points
-- **R² Score**: 0.157
-- **Prediction Range**: 0.0 to 100.0 points
-- **Training Time**: ~5.5 hours (171,479 samples, 500 features)
-- **GPU Acceleration**: 2x faster with CUDA-enabled XGBoost
-
-**Training Efficiency:**
-- **Data Preprocessing**: 19.1 seconds (171k rows, 258 columns)
-- **Feature Selection**: 500 features from 258 original columns
-- **Cross-Validation**: 3-fold CV with 15 hyperparameter combinations
-- **Memory Usage**: <16GB RAM with optimized chunking
-
----
-
-## System Configuration
-
-### Environment Requirements
-
-**Python Environment:**
-- Python 3.8 or higher
-- Required packages:
-  - `pulp>=2.7.0` - Linear programming solver
-  - `pandas>=2.0.0` - Data manipulation
-  - `numpy>=1.24.0` - Numerical computations
-  - `PyQt5>=5.15.0` - Desktop GUI (optional)
-  - `scikit-learn` - Machine learning models
-  - `xgboost` - Gradient boosting (optional, for GPU acceleration)
-
-**Node.js Environment:**
-- Node.js 16 or higher
-- npm or yarn package manager
-- Required for web application only
-
-**Hardware Recommendations:**
-- **CPU**: 4+ cores (8+ recommended for parallel processing)
-- **RAM**: 16GB minimum (32GB recommended for large datasets)
-- **GPU**: NVIDIA GPU with CUDA support (optional, for XGBoost acceleration)
-- **Storage**: SSD recommended for faster I/O operations
-
-### API Configuration
-
-**SportsData.io API:**
-- API key required for player data, projections, and salaries
-- Configuration in environment variables or config files
-- Rate limiting handled automatically
-
-**DraftKings Integration:**
-- CSV file upload for player data
-- Automatic salary and position parsing
-- Export to DraftKings CSV format
-
-### Optimization Parameters
-
-**Default Settings:**
-- **Salary Cap**: $50,000 (NFL/NBA), $45,000-$50,000 (MLB)
-- **Lineup Size**: 9 players (NFL), 8 players (NBA), 9 players (MLB)
-- **Position Limits**: Sport-specific (e.g., NFL: 1 QB, 2 RB, 3 WR, 1 TE, 1 FLEX, 1 DST)
-- **Minimum Salary Usage**: Configurable (default: $48,000+)
-- **Uniqueness Requirement**: Minimum 3-4 different players between lineups
-
-**Stacking Configuration:**
-- Stack types: QB+WR, QB+WR+TE, Game Stack, Bring-Back
-- Minimum players per stack: 2-5 players
-- Stack exposure limits: 0-100% per stack type
-
-### ML Model Configuration
-
-**Feature Engineering:**
-- **Total Features**: 500+ engineered features
-- **Feature Selection**: SelectKBest with f_regression (top 30-150 features)
-- **Scaling**: StandardScaler for numeric features
-- **Categorical Encoding**: OneHotEncoder for player/team/opponent
-
-**Model Hyperparameters:**
-- **StackingRegressor**:
-  - Base models: Linear Regression, Ridge (α=1.0), Random Forest (100 trees), XGBoost (100 trees)
-  - Meta-learner: Ridge (α=0.1)
-  - Cross-validation: 3-fold
-- **XGBoost** (when used):
-  - n_estimators: 100
-  - max_depth: 6-8
-  - learning_rate: 0.1
-  - GPU acceleration: Enabled if available
-
-**Training Configuration:**
-- **Dataset Size**: Auto-limited to 100K rows for efficiency
-- **Chunk Size**: 15,000 rows (optimized for 16GB RAM)
-- **Hyperparameter Iterations**: 15 combinations
-- **Cross-Validation Folds**: 3-fold (balanced speed/accuracy)
+```
+  ┌─────────────────────────────────────────────────────────────────────────────────┐
+  │  STAGE 1: DATA INGESTION                                                        │
+  │                                                                                 │
+  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────────────┐  │
+  │  │  SportsData.io   │  │  DraftKings CSV   │  │  Historical Performance DB   │  │
+  │  │  REST API         │  │  File Upload      │  │  (3+ years, 171K+ samples)  │  │
+  │  └────────┬─────────┘  └────────┬─────────┘  └──────────────┬───────────────┘  │
+  │           │                     │                            │                  │
+  │           └─────────────────────┼────────────────────────────┘                  │
+  │                                 ▼                                               │
+  │                    ┌────────────────────────┐                                   │
+  │                    │   Unified Player Pool   │                                   │
+  │                    │   (Projections, Salary, │                                   │
+  │                    │    Status, Positions)   │                                   │
+  │                    └────────────┬────────────┘                                   │
+  └─────────────────────────────────┼───────────────────────────────────────────────┘
+                                    ▼
+  ┌─────────────────────────────────────────────────────────────────────────────────┐
+  │  STAGE 2: FEATURE ENGINEERING & ML TRAINING                                     │
+  │                                                                                 │
+  │  Raw Data ──► 500+ Engineered Features ──► StackingRegressor Ensemble           │
+  │                                                                                 │
+  │  Rolling Averages (w=5,7,49) ──► Lag Features ──► Opponent Adjustments          │
+  │  One-Hot Encoding ──► StandardScaler ──► SelectKBest (F-regression)             │
+  │                                                                                 │
+  │  Base Learners: [Linear, Ridge, RF(100), XGBoost(100)]                          │
+  │  Meta-Learner:  Ridge (α=0.1), 3-fold CV                                       │
+  │                                                                                 │
+  │  Output: Trained Model (persisted to model_cache/)                              │
+  └─────────────────────────────────┬───────────────────────────────────────────────┘
+                                    ▼
+  ┌─────────────────────────────────────────────────────────────────────────────────┐
+  │  STAGE 3: PREDICTION GENERATION                                                 │
+  │                                                                                 │
+  │  Trained Model + Today's Features ──► ŷᵢ (Projected Fantasy Points)             │
+  │                                                                                 │
+  │  ┌──────────────────────────────────────────────────────────────────────────┐   │
+  │  │  Ceiling: ŷᵢ + 1.5σᵢ    │  Floor: ŷᵢ - 1.5σᵢ    │  Median: ŷᵢ        │   │
+  │  └──────────────────────────────────────────────────────────────────────────┘   │
+  │                                                                                 │
+  │  Bayesian Posterior Update ──► Contest-Specific Adjustments                     │
+  │  (Cash: floor-weighted  │  Tournament: ceiling-weighted)                        │
+  └─────────────────────────────────┬───────────────────────────────────────────────┘
+                                    ▼
+  ┌─────────────────────────────────────────────────────────────────────────────────┐
+  │  STAGE 4: CONSTRAINED OPTIMIZATION                                              │
+  │                                                                                 │
+  │  ┌───────────────────────────────────────────────────────────────────────────┐  │
+  │  │                    BILP Solver (PuLP/CBC)                                 │  │
+  │  │   max Σ ŷᵢxᵢ   s.t.  Σsᵢxᵢ ≤ Smax,  Σxᵢ = K,  position & stacking    │  │
+  │  └───────────────────────────────┬───────────────────────────────────────────┘  │
+  │                                  │                                              │
+  │                                  ▼                                              │
+  │  ┌───────────────────────────────────────────────────────────────────────────┐  │
+  │  │               Genetic Algorithm Diversity Engine                          │  │
+  │  │   Lognormal perturbation → 3M candidates → 3 generations                 │  │
+  │  │   Tournament selection → Crossover (α=0.6) → Mutation (pₘ=0.30)         │  │
+  │  │   Diversity enforcement (dH ≥ 3) → Maximin subset selection              │  │
+  │  └───────────────────────────────┬───────────────────────────────────────────┘  │
+  │                                  │                                              │
+  │                                  ▼                                              │
+  │  ┌───────────────────────────────────────────────────────────────────────────┐  │
+  │  │          Advanced Quantitative Methods (Optional)                         │  │
+  │  │   Mean-Variance (Sharpe) · Monte Carlo (10K) · GARCH(1,1) · Kelly       │  │
+  │  │   Copula Dependencies · Bayesian Shrinkage · Exposure Management         │  │
+  │  └───────────────────────────────┬───────────────────────────────────────────┘  │
+  └──────────────────────────────────┼──────────────────────────────────────────────┘
+                                     ▼
+  ┌─────────────────────────────────────────────────────────────────────────────────┐
+  │  STAGE 5: POST-PROCESSING & EXPORT                                              │
+  │                                                                                 │
+  │  Deduplication ──► Exposure Validation ──► FLEX Position Assignment              │
+  │  ──► DraftKings CSV Formatting ──► Contest-Ready Export (1–500+ lineups)         │
+  │                                                                                 │
+  │  ┌──────────────────────────────────────────────────────────────────────────┐   │
+  │  │  Output Formats:                                                        │   │
+  │  │  · DraftKings CSV (direct upload)                                       │   │
+  │  │  · JSON (API response)                                                  │   │
+  │  │  · Favorites (persistent storage)                                       │   │
+  │  └──────────────────────────────────────────────────────────────────────────┘   │
+  └─────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## File Structure
+## 5. Technology Stack
+
+### 5.1 Backend Optimization Engine
+
+| Layer | Technology | Version | Purpose |
+|-------|-----------|---------|---------|
+| **Language** | Python | 3.8+ | Optimization, ML training, prediction |
+| **LP Solver** | PuLP (CBC) | 2.7.0+ | Binary integer linear programming |
+| **Data** | Pandas | 2.0+ | Tabular data manipulation |
+| **Numerical** | NumPy | 1.24+ | Array operations, linear algebra |
+| **ML** | scikit-learn | latest | StackingRegressor, preprocessing |
+| **Boosting** | XGBoost | latest | Gradient boosting (GPU optional) |
+| **GUI** | PyQt5 | 5.15+ | Desktop application (optional) |
+| **Parallelism** | ThreadPoolExecutor | stdlib | Multi-threaded lineup generation (4–8 workers) |
+
+### 5.2 Web Application
+
+| Layer | Technology | Version | Purpose |
+|-------|-----------|---------|---------|
+| **Frontend** | React | 18.3 | Component-based UI |
+| **Type System** | TypeScript | 5.9 | Static type safety |
+| **Build** | Vite | 6.3 | Dev server, HMR, production bundling |
+| **UI Framework** | Material-UI | 5.14 | Design system, theming |
+| **Primitives** | Radix UI | latest | Accessible component primitives |
+| **Runtime** | Node.js | 16+ | Server-side JavaScript |
+| **HTTP** | Express | 4.17 | REST API framework |
+| **WebSocket** | ws | 8.18 | Real-time bidirectional communication |
+| **Upload** | Multer | latest | Multipart file handling |
+| **CSV** | csv-parser / json2csv | latest | CSV read/write |
+| **Auth** | Firebase | latest | Authentication, user management |
+
+### 5.3 Data Sources
+
+| Source | Data Provided | Integration |
+|--------|--------------|-------------|
+| SportsData.io API | Player projections, salaries, injuries, game data | REST API with caching |
+| DraftKings Platform | Salary/contest data, entry templates | CSV file upload |
+| Historical Database | 3+ years of performance metrics (171K+ samples) | Local cache files |
+
+---
+
+## 6. Module Architecture
+
+### 6.1 Training Module (`1_CORE_TRAINING/`)
+- StackingRegressor ensemble training pipeline
+- Feature engineering (500+ features from rolling stats, lags, opponent adjustments)
+- Hyperparameter grid search (15 iterations, 3-fold TimeSeriesSplit CV)
+- Model persistence and versioning to `model_cache/`
+
+### 6.2 Prediction Module (`2_PREDICTIONS/`)
+- Daily projection generation using trained ensemble
+- Bayesian posterior updates for projection refinement
+- Ceiling/floor/median calculation with $\pm 1.5\sigma$ bands
+- Contest-specific adjustments (cash vs. tournament weighting)
+
+### 6.3 Optimization Module (`6_OPTIMIZATION/`)
+- Core BILP solver (PuLP/CBC) with constraint satisfaction
+- Genetic algorithm diversity engine ($3M$ candidates, $G = 3$ generations)
+- Stacking strategy implementation (QB+WR, game stacks, bring-backs)
+- Exposure management and deduplication
+- Advanced quantitative methods (mean-variance, Monte Carlo, GARCH, Kelly, copula)
+
+### 6.4 Analysis Module (`7_ANALYSIS/`)
+- Model performance evaluation (MAE, $R^2$, prediction distributions)
+- Lineup scoring against actual contest results
+- Cash rate and ROI tracking
+- Strategy effectiveness analysis
+
+### 6.5 Web Application (`web_optimizer/`)
+- **Client:** React 18.3 + TypeScript + Vite (lazy-loaded route-based SPA)
+- **Server:** Express + WebSocket (28 endpoints, real-time progress streaming)
+- **Optimizer Engines:** Sport-specific (MLB, NFL, NBA) with strategy selection
+- **Export Pipeline:** DraftKings CSV formatting, favorites persistence
+
+---
+
+## 7. Key Features
+
+### 7.1 Multi-Algorithm Optimization
+- **BILP (PuLP/CBC):** Provably optimal single-lineup solutions in $< 1$ second
+- **Genetic Algorithm:** Diverse multi-lineup portfolios (1–500+ lineups)
+- **Hybrid Pipeline:** Optimal seeds evolved for maximum inter-lineup diversity
+
+### 7.2 Advanced Stacking Strategies
+- **Correlation Stacks:** QB+WR, QB+WR+TE (exploiting positive teammate correlation)
+- **Game Stacks:** Multiple players from projected high-scoring games
+- **Bring-Back Plays:** Opposing team player inclusion for variance capture
+- **Pattern Stacking:** Complex $4|2|2$ and $3|3|2$ multi-stack configurations
+
+### 7.3 Contest-Specific Optimization
+- **Cash Games:** Floor-maximizing via mean-variance optimization ($\lambda \uparrow$)
+- **Tournaments (GPP):** Ceiling-maximizing with contrarian ownership leverage
+- **Ownership Fading:** Systematic underweighting of high-ownership chalk plays
+
+### 7.4 Real-Time Interactive Optimization
+- WebSocket-driven progress streaming (0–100% with per-lineup granularity)
+- Interactive player pool management (CSV upload, filtering, bulk selection)
+- Live constraint adjustment and re-optimization
+- Multi-format export (DraftKings CSV, JSON, favorites)
+
+---
+
+## 8. Performance Metrics
+
+### 8.1 Computational Performance
+
+| Lineups | Players | Stacks | Time (Apple M1) | Time (4-core x86) | Speedup (parallel) |
+|---------|---------|--------|------------------|--------------------|---------------------|
+| 1 | 100 | 1 | $< 1$ s | $< 1$ s | — |
+| 20 | 100 | 2 | 5–15 s | 15–30 s | $4$–$8\times$ |
+| 50 | 150 | 3 | 30–60 s | 60–120 s | $4$–$8\times$ |
+| 100 | 200 | 5 | 1–2 min | 2–4 min | $4$–$8\times$ |
+
+### 8.2 Contest Performance (Production)
+
+**NFL Contest — 47,562 entries:**
+
+| Metric | Baseline | Optimized | Relative Improvement |
+|--------|----------|-----------|----------------------|
+| Best Score | 149.98 | 217.94 | $+45.3\%$ |
+| Average Score | 113.84 | 130.50 | $+14.6\%$ |
+| Cash Rate | 10% | 40% | $+300\%$ |
+| Tournament Rank | — | Top 0.01% | Contest Winner |
+
+**Key result:** Generated lineup scored 217.94 points, exceeding the contest winner (213.34) by $+4.60$ points.
+
+### 8.3 Machine Learning Model Performance
+
+| Metric | Value |
+|--------|-------|
+| Mean Absolute Error | 3.907 fantasy points |
+| $R^2$ Score | 0.157 |
+| Training Samples | 171,479 |
+| Feature Dimensionality | 500+ engineered features |
+| Training Time | ~5.5 hours (CPU) / ~2.75 hours (GPU) |
+| Cross-Validation | 3-fold TimeSeriesSplit |
+| Hyperparameter Search | 15 grid combinations |
+
+---
+
+## 9. Configuration Reference
+
+### 9.1 Environment Requirements
+
+| Requirement | Specification |
+|-------------|---------------|
+| Python | 3.8+ with `pulp>=2.7.0`, `pandas>=2.0.0`, `numpy>=1.24.0`, `scikit-learn`, `xgboost` (optional) |
+| Node.js | 16+ with npm/yarn |
+| CPU | 4+ cores (8+ recommended) |
+| RAM | 16 GB minimum (32 GB recommended) |
+| GPU | NVIDIA CUDA (optional, $2\times$ XGBoost speedup) |
+| Storage | SSD recommended |
+
+### 9.2 Optimization Parameters
+
+| Parameter | NFL | NBA | MLB |
+|-----------|-----|-----|-----|
+| Salary Cap ($S_{\max}$) | \$50,000 | \$50,000 | \$45,000–\$50,000 |
+| Roster Size ($K$) | 9 | 8 | 9 |
+| Positions ($\mathcal{Q}$) | QB, RB×2, WR×3, TE, FLEX, DST | PG, SG, SF, PF, C, G, F, UTIL | P×2, C, 1B, 2B, 3B, SS, OF×3 |
+| Min Salary Usage | \$48,000+ (configurable) | \$48,000+ | \$43,000+ |
+| Min Inter-Lineup Distance ($\delta_{\min}$) | 3–4 players | 3–4 players | 3–4 players |
+
+### 9.3 ML Model Hyperparameters
+
+| Component | Parameter | Value |
+|-----------|-----------|-------|
+| **StackingRegressor** | Base learners | Linear, Ridge ($\alpha=1.0$), RF ($B=100$), XGBoost ($M=100$) |
+| | Meta-learner | Ridge ($\alpha_{\text{meta}}=0.1$) |
+| | CV folds | 3 (TimeSeriesSplit) |
+| **Feature Selection** | Method | SelectKBest ($F$-regression) |
+| | Top-$k$ | 30–150 features |
+| **Preprocessing** | Scaling | StandardScaler |
+| | Encoding | OneHotEncoder (player, team, opponent) |
+| **Training** | Max dataset size | 100K rows |
+| | Chunk size | 15,000 rows |
+| | HP iterations | 15 combinations |
+
+---
+
+## 10. File Structure
 
 ```
 mlb-draftkings-system/
-├── 1_CORE_TRAINING/              # Machine learning model training
-│   ├── training.py               # Main training pipeline
-│   ├── stacking_ml_engine.py    # StackingRegressor implementation
-│   ├── advanced_ml_models.py    # Advanced ML models
+├── 1_CORE_TRAINING/              # ML training pipeline
+│   ├── training.py               # Main training orchestrator
+│   ├── stacking_ml_engine.py     # StackingRegressor implementation
+│   ├── advanced_ml_models.py     # Extended ML models
 │   ├── ensemble_models.py        # Ensemble methods
 │   ├── feature_engineering/      # Feature creation utilities
-│   └── model_cache/              # Trained model storage
+│   └── model_cache/              # Persisted trained models
 │
-├── 2_PREDICTIONS/                # Daily prediction generation
-│   ├── predction01.py            # Main prediction script
-│   ├── add_probability_predictions.py  # Probability modeling
-│   └── [prediction outputs]/     # Generated CSV files
+├── 2_PREDICTIONS/                # Prediction generation
+│   ├── predction01.py            # Daily prediction script
+│   ├── add_probability_predictions.py  # Bayesian probability modeling
+│   └── [prediction CSVs]
 │
-├── 5_DRAFTKINGS_ENTRIES/         # Entry formatting utilities
+├── 5_DRAFTKINGS_ENTRIES/         # Entry formatting
 │   ├── dk_entries_salary_generator.py
 │   └── dk_file_handler.py
 │
 ├── 6_OPTIMIZATION/               # Core optimization engine
-│   ├── genetic_algo_nfl_optimizer.py    # Main optimizer (NFL)
+│   ├── genetic_algo_nfl_optimizer.py    # NFL BILP + GA optimizer
 │   ├── genetic_algo_mlb_optimizer.py    # MLB optimizer
 │   ├── optimizer.genetic.algo.py        # Genetic algorithm core
-│   ├── pulp_lineup_optimizer.py         # PuLP linear programming
-│   ├── advanced_quant_optimizer.py      # Quantitative methods
-│   ├── probability_modeling_engine.py  # Probability modeling
-│   ├── portfolio_optimization.py        # Portfolio theory
-│   ├── OPTIMIZATION_MATH_AND_PIPELINE_EXPLANATION.md  # Math docs
-│   └── DOCUMENTATION/            # Implementation guides
+│   ├── pulp_lineup_optimizer.py         # PuLP LP solver
+│   ├── advanced_quant_optimizer.py      # Quantitative finance methods
+│   ├── probability_modeling_engine.py   # Probability distributions
+│   ├── portfolio_optimization.py        # Mean-variance portfolio
+│   └── DOCUMENTATION/                   # Mathematical documentation
 │
-├── 7_ANALYSIS/                   # Model evaluation and analysis
-│   ├── evaluate_models.py        # Model performance evaluation
+├── 7_ANALYSIS/                   # Model evaluation & analysis
+│   ├── evaluate_models.py        # Performance evaluation
 │   ├── ensemble_model_evaluation.py    # Ensemble analysis
-│   ├── model_metrics_evaluation.py      # Metrics calculation
-│   └── calculate_lineup_scores.py     # Contest result analysis
+│   ├── model_metrics_evaluation.py     # MAE, R² metrics
+│   └── calculate_lineup_scores.py      # Contest result scoring
 │
 ├── 8_DOCUMENTATION/              # Technical documentation
-│   ├── TRAINING_INSTRUCTIONS.md
-│   ├── OPTIMIZATION_SUMMARY.md
-│   └── [additional docs]/
+├── 9_BACKUP/                     # Archives
 │
-├── 9_BACKUP/                     # Backup files and archives
-│
-├── web_optimizer/                 # Web application
-│   ├── client/                   # React frontend
+├── web_optimizer/                # Full-stack web application
+│   ├── client/                   # React 18.3 + TypeScript + Vite
 │   │   ├── src/
-│   │   │   ├── components/       # React components
-│   │   │   ├── services/         # API and WebSocket services
-│   │   │   └── App.tsx           # Main application
+│   │   │   ├── components/       # UI components (DFS, optimizer, UI primitives)
+│   │   │   ├── services/         # dfs-api.ts, WebSocketConnection.ts, betting-api.ts
+│   │   │   ├── types/            # TypeScript interfaces (Player, Lineup, Game)
+│   │   │   └── App.tsx           # Route-based SPA entry point
 │   │   ├── package.json
-│   │   └── vite.config.ts
-│   ├── server/                   # Node.js backend
-│   │   ├── index.js              # Express server
-│   │   ├── optimizer.js         # Optimization engine
+│   │   └── vite.config.ts        # Vite config (proxy, code splitting)
+│   ├── server/                   # Node.js + Express + WebSocket
+│   │   ├── index.js              # Express server (28 endpoints + WS)
+│   │   ├── optimizer.js          # MLB optimization engine
+│   │   ├── nfl-optimizer.js      # NFL optimization engine
+│   │   ├── nba-optimizer.js      # NBA optimization engine
 │   │   └── package.json
 │   └── PYTHON_SETUP_GUIDE.md
 │
-├── python_algorithms/             # Core algorithm implementations
-│   ├── sportsdata_nfl_api.py    # API client
-│   └── [algorithm utilities]/
+├── python_algorithms/            # Shared algorithm utilities
+│   └── sportsdata_nfl_api.py     # SportsData.io API client
 │
-├── nfl_historical_cache/          # Cached historical data
-├── nba_historical_cache/          # Cached historical data
-└── README.md                      # This file
+├── nfl_historical_cache/         # NFL historical data cache
+├── nba_historical_cache/         # NBA historical data cache
+└── README.md                     # This document
 ```
 
 ---
 
-## Maintenance Tasks
+## 11. Maintenance & Operations
 
-### Model Retraining Schedule
+### Model Retraining Cadence
 
-**Daily:**
-- Generate new predictions for upcoming games
-- Update player projections with latest data
-- Refresh injury reports and lineup confirmations
+| Frequency | Tasks |
+|-----------|-------|
+| **Daily** | Generate projections, refresh injury data, update player statuses |
+| **Weekly** | Full ensemble retraining, feature importance analysis, performance evaluation |
+| **Monthly** | Hyperparameter re-optimization, feature engineering review, architecture audit |
 
-**Weekly:**
-- Full model retraining with latest week's data
-- Feature importance analysis and updates
-- Performance evaluation against actual results
-- Update bust/elite player lists based on performance
+### Monitoring
 
-**Monthly:**
-- Comprehensive model evaluation
-- Hyperparameter re-optimization
-- Feature engineering improvements
-- System architecture review
-
-### API Key Management
-
-**SportsData.io API:**
-- Monitor API usage and rate limits
-- Rotate API keys quarterly for security
-- Update API endpoints if service changes
-- Cache responses to minimize API calls
-
-### Performance Monitoring
-
-**Optimization Performance:**
-- Track lineup generation time
-- Monitor memory usage during optimization
-- Log optimization failures and errors
-- Analyze lineup diversity metrics
-
-**Model Performance:**
-- Track prediction accuracy (MAE, R²)
-- Compare predicted vs. actual player scores
-- Monitor model drift over time
-- Retrain if accuracy degrades significantly
-
-**Contest Results:**
-- Analyze lineup performance post-contest
-- Calculate cash rates and ROI
-- Identify successful strategies
-- Update player exclusion/inclusion lists
-
-### Dependency Updates
-
-**Python Dependencies:**
-- Update PuLP, Pandas, NumPy quarterly
-- Test compatibility before production deployment
-- Monitor security advisories
-- Maintain requirements.txt with version pins
-
-**Node.js Dependencies:**
-- Update React, Express, WebSocket libraries
-- Test web application after updates
-- Monitor for breaking changes
-- Maintain package.json with version constraints
-
-### Data Pipeline Maintenance
-
-**Data Quality:**
-- Validate API responses for completeness
-- Check for missing player data
-- Verify salary and position accuracy
-- Handle API failures gracefully
-
-**Storage Management:**
-- Archive old prediction files
-- Clean up temporary optimization outputs
-- Manage historical cache size
-- Backup trained models regularly
-
-**Database Maintenance:**
-- Optimize historical data queries
-- Index frequently accessed columns
-- Archive old contest results
-- Maintain data integrity
-
-### System Health Checks
-
-**Weekly:**
-- Verify all API connections
-- Test optimization engine with sample data
-- Validate CSV export formats
-- Check web application functionality
-
-**Monthly:**
-- Review system logs for errors
-- Analyze performance trends
-- Update documentation
-- Test disaster recovery procedures
+- **Optimization:** Lineup generation latency, memory utilization, failure rates, diversity metrics
+- **ML Model:** Prediction accuracy (MAE, $R^2$), model drift detection, retraining triggers
+- **Contest:** Cash rates, ROI, strategy effectiveness, ownership leverage analysis
+- **Web App:** API response times, WebSocket connection stability, file upload success rates
 
 ---
 
 ## License
 
 This project is provided as-is for educational and research purposes.
-
