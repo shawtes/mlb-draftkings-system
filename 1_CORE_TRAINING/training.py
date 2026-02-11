@@ -1075,6 +1075,11 @@ class WalkForwardValidator:
         self.min_train_pct = min_train_pct
 
     def split(self, X, y=None, groups=None):
+        """Yield (train_indices, test_indices) for each fold.
+
+        ``y`` and ``groups`` are accepted for sklearn splitter API
+        compatibility but are not used; splitting is purely index-based.
+        """
         n = len(X) if hasattr(X, '__len__') else X.shape[0]
         min_train = int(n * self.min_train_pct)
         test_size = max(1, (n - min_train) // self.n_splits)
@@ -1136,6 +1141,7 @@ class ConformalPredictor:
         # Finite-sample corrected quantile
         n_cal = len(self.calibration_scores_)
         level = np.ceil((1 - self.alpha) * (n_cal + 1)) / n_cal
+        # Safety clamp: when n_cal is tiny, the ceil can push level > 1.
         level = min(level, 1.0)
         self.q_hat_ = float(np.quantile(self.calibration_scores_, level))
         return self

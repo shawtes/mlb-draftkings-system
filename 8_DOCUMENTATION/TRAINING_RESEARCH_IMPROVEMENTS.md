@@ -77,26 +77,30 @@ class WalkForwardValidator:
     ----------
     n_splits : int
         Number of forward-looking test windows.
-    embargo_days : int
-        Gap between train and test to prevent label leakage from
-        rolling features (e.g., 7-day rolling mean needs a 7-day gap).
+    embargo_pct : float
+        Fraction of test-set size used as the gap between train and test
+        to prevent label leakage from rolling features.  For example,
+        ``embargo_pct=0.01`` with a test window of 1 000 rows creates a
+        10-row gap.  Increase this if the longest rolling feature window
+        is large relative to the test set.
     min_train_pct : float
         Minimum fraction of data used for the first training window.
     """
 
-    def __init__(self, n_splits=5, embargo_days=7, min_train_pct=0.5):
+    def __init__(self, n_splits=5, embargo_pct=0.01, min_train_pct=0.5):
         self.n_splits = n_splits
-        self.embargo_days = embargo_days
+        self.embargo_pct = embargo_pct
         self.min_train_pct = min_train_pct
 
-    def split(self, X, y=None, dates=None):
+    def split(self, X, y=None, groups=None):
         n = len(X)
         min_train = int(n * self.min_train_pct)
-        test_size = (n - min_train) // self.n_splits
+        test_size = max(1, (n - min_train) // self.n_splits)
+        embargo_size = max(1, int(test_size * self.embargo_pct))
 
         for i in range(self.n_splits):
             train_end = min_train + i * test_size
-            test_start = train_end + self.embargo_days  # embargo gap
+            test_start = train_end + embargo_size  # embargo gap
             test_end = min(test_start + test_size, n)
 
             if test_start >= n:
