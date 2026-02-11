@@ -28,17 +28,17 @@ export default function LoginPage({ onLogin, onSwitchToRegister }: LoginPageProp
     } catch (err) {
       const error = err as FirebaseError;
       console.error('Login error:', error);
-      // Provide user-friendly error messages
-      if (error.code === 'auth/invalid-credential') {
-        setError('Invalid email or password. Please try again.');
-      } else if (error.code === 'auth/user-not-found') {
-        setError('No account found with this email.');
-      } else if (error.code === 'auth/wrong-password') {
-        setError('Incorrect password. Please try again.');
-      } else if (error.code === 'auth/too-many-requests') {
+      // Provide user-friendly error messages without revealing account existence
+      if (error.code === 'auth/too-many-requests') {
         setError('Too many failed attempts. Please try again later.');
+      } else if (
+        error.code === 'auth/invalid-credential' ||
+        error.code === 'auth/user-not-found' ||
+        error.code === 'auth/wrong-password'
+      ) {
+        setError('Invalid email or password. Please try again.');
       } else {
-        setError(error.message || 'Failed to login. Please try again.');
+        setError('Failed to login. Please try again or contact support if the issue persists.');
       }
     } finally {
       setIsLoading(false);
