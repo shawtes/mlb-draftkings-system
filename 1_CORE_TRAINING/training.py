@@ -951,6 +951,76 @@ class AdvancedCopulaEngine:
         print("Advanced copula and dependency feature engineering completed.")
         return df
 
+# =============================================================================
+# NEGATIVE BINOMIAL XGBOOST REGRESSOR
+# =============================================================================
+# Custom XGBRegressor using a Negative Binomial (NB2) objective with log link.
+# This models overdispersed count-like data where Var(Y) = mu + alpha * mu^2,
+# which better captures the variance structure of DraftKings fantasy points
+# compared to the standard squared-error objective (which assumes constant variance).
+# =============================================================================
+
+class NegativeBinomialXGBRegressor(XGBRegressor):
+    """
+    XGBoost regressor with a Negative Binomial (NB2) objective using log link.
+
+    Fantasy points are non-negative and exhibit overdispersion (variance grows
+    with the mean).  The NB2 variance function ``Var(Y) = mu + alpha * mu^2``
+    naturally accounts for this, giving lower weight to high-variance
+    observations and producing strictly positive predictions via the log link.
+
+    Parameters
+    ----------
+    nb_alpha : float, default=1.0
+        Dispersion parameter controlling overdispersion.  Larger values model
+        greater overdispersion.  As ``nb_alpha`` -> 0 the objective approaches
+        Poisson regression.
+    **kwargs
+        All remaining keyword arguments are forwarded to
+        ``xgboost.XGBRegressor``.
+    """
+
+    def __init__(self, nb_alpha=1.0, **kwargs):
+        self.nb_alpha = nb_alpha
+        kwargs.pop('objective', None)
+        super().__init__(**kwargs)
+
+    def fit(self, X, y, **kwargs):
+        y_safe = np.maximum(np.asarray(y, dtype=np.float64), 0)
+        alpha = self.nb_alpha
+
+        def _nb_objective(y_true, y_pred):
+            """NB2 gradient and hessian w.r.t. log-link raw prediction."""
+            mu = np.exp(np.clip(y_pred, -10, 10))
+            grad = (mu - y_true) / (1.0 + alpha * mu)
+            hess = mu * (1.0 + alpha * np.maximum(y_true, 0)) / (1.0 + alpha * mu) ** 2
+            hess = np.maximum(hess, 1e-6)
+            return grad, hess
+
+        self.set_params(objective=_nb_objective)
+        # Suppress the harmless "nb_alpha is not used" warning from XGBoost's
+        # C++ backend — nb_alpha is consumed by our Python objective, not the booster.
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', message='.*nb_alpha.*')
+            return super().fit(X, y_safe, **kwargs)
+
+    def predict(self, X, **kwargs):
+        """Return predictions on the original scale (exp of raw log-link output)."""
+        raw_pred = super().predict(X, **kwargs)
+        return np.exp(np.clip(raw_pred, -10, 10))
+
+    def get_params(self, deep=True):
+        params = super().get_params(deep=deep)
+        params['nb_alpha'] = self.nb_alpha
+        params.pop('objective', None)
+        return params
+
+    def set_params(self, **params):
+        if 'nb_alpha' in params:
+            self.nb_alpha = params.pop('nb_alpha')
+        return super().set_params(**params)
+
+
 # Define constants for calculations
 # CONFIGURATION: Using hard-coded optimal parameters for fast training
 HARDCODED_OPTIMAL_PARAMS = {
@@ -963,6 +1033,7 @@ HARDCODED_OPTIMAL_PARAMS = {
     'model__final_estimator__gamma': 0.1,
     'model__final_estimator__reg_alpha': 0.1,
     'model__final_estimator__reg_lambda': 1.0,
+    'model__final_estimator__nb_alpha': 1.0,
 }
 
 # League averages for 2020 to 2024
@@ -1373,12 +1444,12 @@ print("Using CPU for XGBoost to ensure compatibility with pandas/numpy data stru
 xgb_params = {
     'tree_method': 'hist',
     'device': 'cpu',
-    'objective': 'reg:squarederror',
     'n_jobs': -1,
-    'random_state': 42
+    'random_state': 42,
+    'nb_alpha': 1.0,
 }
 
-meta_model = XGBRegressor(**xgb_params)
+meta_model = NegativeBinomialXGBRegressor(**xgb_params)
 
 
 stacking_model = StackingRegressor(
@@ -1399,7 +1470,7 @@ ensemble_models = [
 # ...existing code...
 final_model = StackingRegressor(
     estimators=ensemble_models,
-    final_estimator=XGBRegressor(**xgb_params)
+    final_estimator=NegativeBinomialXGBRegressor(**xgb_params)
 )
 
 # ...existing code...
