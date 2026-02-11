@@ -982,6 +982,8 @@ class NegativeBinomialXGBRegressor(XGBRegressor):
 
     def __init__(self, nb_alpha=1.0, **kwargs):
         self.nb_alpha = nb_alpha
+        # Remove any caller-supplied objective so the parent __init__ does not
+        # register a competing objective; our custom NB objective is set in fit().
         kwargs.pop('objective', None)
         super().__init__(**kwargs)
 
@@ -1012,6 +1014,8 @@ class NegativeBinomialXGBRegressor(XGBRegressor):
     def get_params(self, deep=True):
         params = super().get_params(deep=deep)
         params['nb_alpha'] = self.nb_alpha
+        # Exclude the callable objective so sklearn clone() does not try to
+        # serialize or pass it back; our fit() sets it fresh each time.
         params.pop('objective', None)
         return params
 
