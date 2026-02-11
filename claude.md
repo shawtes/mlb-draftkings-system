@@ -26,7 +26,8 @@ This is an NFL/NBA/MLB DraftKings & FanDuel optimization platform that combines 
 │   │   ├── index.js          # API routes, WebSocket, Python subprocess spawning
 │   │   ├── optimizer.js      # MLB optimizer (JS) with quant settings handling
 │   │   ├── nfl-optimizer.js  # NFL optimizer
-│   │   └── nba-optimizer.js  # NBA optimizer
+│   │   ├── nba-optimizer.js  # NBA optimizer — QUANT INTEGRATED
+│   │   └── quant-engine.js   # Shared quantitative engine (Monte Carlo, Kelly, VaR, Sharpe)
 │   └── client/               # React 18 + TypeScript frontend
 │       └── src/components/optimizer/
 │           ├── AdvancedQuantTab.tsx       # Quant settings UI
@@ -59,13 +60,16 @@ The system's value proposition is **not** "another lineup optimizer" — it's a 
 | **Genetic Algorithm** | — | ✅ Full | — | **Production** |
 | **Exposure Management** | ✅ Full | ✅ Full | ✅ Full | **Production** |
 | **Team Stacking** | ✅ Full | ✅ Full | ✅ Full | **Production** |
-| **Kelly Criterion** | ✅ UI Controls | ⚠️ Partial (`dfs_risk_engine.py`) | ⚠️ Stub (fixed %) | **Needs Integration** |
+| **Kelly Criterion** | ✅ UI Controls | ⚠️ Partial (`dfs_risk_engine.py`) | ✅ NBA (`quant-engine.js`) | **NBA Production** |
 | **GARCH Volatility** | ✅ UI Controls | ⚠️ Optional (`arch` lib) | ❌ Not implemented | **Needs Integration** |
-| **Monte Carlo Simulation** | ✅ UI Controls | ⚠️ Declared, not called | ❌ Not implemented | **Needs Implementation** |
-| **Mean-Variance (Markowitz)** | ✅ UI Dropdown | ❌ Research only | ❌ Not implemented | **Needs Implementation** |
-| **Risk Parity** | ✅ UI Dropdown | ❌ Not implemented | ❌ Not implemented | **Needs Implementation** |
+| **Monte Carlo Simulation** | ✅ UI Controls | ⚠️ Declared, not called | ✅ NBA (`quant-engine.js`) | **NBA Production** |
+| **Mean-Variance (Markowitz)** | ✅ UI Dropdown | ❌ Research only | ✅ NBA (salary-aware) | **NBA Production** |
+| **Risk Parity** | ✅ UI Dropdown | ❌ Not implemented | ✅ NBA (volatility-normalized) | **NBA Production** |
 | **Copula Dependency** | ✅ UI Controls | ⚠️ Optional (`copulas` lib) | ❌ Not implemented | **Needs Implementation** |
-| **VaR / CVaR** | ✅ UI Controls | ⚠️ Partial (`dfs_risk_engine.py`) | ❌ Not implemented | **Needs Integration** |
+| **VaR / CVaR** | ✅ UI Controls | ⚠️ Partial (`dfs_risk_engine.py`) | ✅ NBA (Monte Carlo-based) | **NBA Production** |
+| **Ownership Leverage** | — | — | ✅ NBA (GPP scoring) | **NBA Production** |
+| **Sharpe Ratio (per lineup)** | — | — | ✅ NBA (Monte Carlo-derived) | **NBA Production** |
+| **Portfolio Analysis** | — | — | ✅ NBA (cross-lineup metrics) | **NBA Production** |
 | **Regime Detection** | ❌ No UI | ⚠️ KMeans code, disconnected | ❌ Not implemented | **Needs Integration** |
 
 ### Architecture: Data Flow for Quant Settings
@@ -76,12 +80,22 @@ User (AdvancedQuantTab.tsx)
   → useOptimizer hook merges with defaults
   → POST /api/optimize (dfs-api.ts)
   → Express handler (index.js:782)
-  → Sport-specific optimizer (optimizer.js / nfl-optimizer.js)
-  → [GOAL] Python quant engine via subprocess
-  → Results returned with risk metrics
+  → NBA: if quant enabled → JS NBAOptimizer + QuantEngine
+         if quant disabled → Python Markov (fallback: JS NBAOptimizer)
+  → NFL/MLB: Sport-specific optimizer (quant not yet wired)
+  → Results returned with quantMetrics per lineup + portfolioMetrics in summary
 ```
 
-**Key Gap**: The Node.js optimizers receive quant settings but mostly log them without applying real quantitative math. The Python backend (`6_OPTIMIZATION/`) has partial implementations that are not connected to the web application's quant settings.
+**NBA Quant Flow (IMPLEMENTED)**:
+1. `QuantEngine` initialized with user's `advancedQuantSettings`
+2. `scorePlayersQuant()` pre-computes quant scores for all players (Sharpe, leverage, Kelly, ceiling probability)
+3. `kellyExposureLimits()` computes per-player exposure bounds based on Kelly fraction
+4. During lineup generation, `selectPlayerQuant()` uses quant scores for player selection
+5. After lineup is built, `monteCarloLineup()` runs 2K-10K simulations → VaR, CVaR, Sharpe, percentiles
+6. After all lineups generated, `analyzePortfolio()` computes cross-lineup metrics (uniqueness, concentration)
+7. Response includes `quantMetrics` per lineup and `portfolioMetrics` in summary
+
+**Key Gap**: NFL and MLB optimizers still receive quant settings but don't apply real quantitative math. The `quant-engine.js` module is ready to be integrated into those optimizers using the same pattern.
 
 ---
 
@@ -232,24 +246,29 @@ bash RUN_ALL.sh                                             # End-to-end executi
 
 ## Priority Roadmap for Quant Integration
 
-### Phase 1: Connect Existing Code (Highest Impact, Lowest Effort)
-1. Wire `dfs_risk_engine.py` Kelly Criterion to the JS optimizer's player selection
-2. Connect GARCH volatility estimates to replace static `stdDev` values
-3. Pass `riskTolerance` and `strategy` to Python optimizer and use them in objective function
+### Phase 1: Connect Existing Code (Highest Impact, Lowest Effort) — ✅ COMPLETE (NBA)
+1. ✅ Built `quant-engine.js` with real Kelly Criterion (edge/variance formula) for player exposure sizing
+2. ✅ Implemented Monte Carlo simulation (2K-10K sims) for lineup outcome distributions
+3. ✅ Wired `riskTolerance` and `strategy` to quantitative player scoring objectives
+4. ✅ Added VaR/CVaR and Sharpe ratio calculations to every generated lineup
+5. ✅ Implemented ownership leverage scoring for GPP tournaments
+6. ✅ Built portfolio-level analysis (cross-lineup Sharpe, uniqueness, exposure concentration)
+7. ✅ Updated `index.js` NBA path: quant mode → JS optimizer, non-quant → Python Markov (fallback JS)
 
-### Phase 2: Core Quant Engine (Primary Selling Point Features)
-4. Implement Monte Carlo simulation for lineup outcome distributions
-5. Build mean-variance optimization using player covariance matrix
-6. Add portfolio-level VaR/CVaR display to lineup results
+### Phase 2: Extend to NFL/MLB + Core Engine Enhancements
+8. Wire `quant-engine.js` into `nfl-optimizer.js` (same pattern as NBA)
+9. Wire `quant-engine.js` into `optimizer.js` (MLB)
+10. Connect GARCH volatility from `dfs_risk_engine.py` to replace static `stdDev` values
+11. Build mean-variance optimization using player covariance matrix (full Markowitz)
 
 ### Phase 3: Advanced Differentiation (Competition Moat)
-7. Implement copula-based correlation modeling for realistic scenario generation
-8. Add regime detection to auto-tune optimization parameters per slate
-9. Build risk parity optimization for multi-entry portfolio construction
-10. Add real-time Sharpe ratio / Sortino ratio metrics to generated lineups
+12. Implement copula-based correlation modeling for realistic scenario generation
+13. Add regime detection to auto-tune optimization parameters per slate
+14. Build risk parity optimization for multi-entry portfolio construction
+15. Add real-time Sharpe ratio / Sortino ratio metrics to generated lineups
 
 ### Phase 4: Product Polish (User-Facing Value)
-11. Display quant metrics in lineup cards (VaR, Sharpe, expected Sharpe, ceiling probability)
-12. Add backtesting framework to show quant strategies vs naive optimization historically
-13. Build slate analysis dashboard showing detected regime, correlation heatmap, ownership vs projection scatter
-14. Export risk reports alongside lineup CSVs for bankroll management
+16. Display quant metrics in lineup cards (VaR, Sharpe, expected Sharpe, ceiling probability)
+17. Add backtesting framework to show quant strategies vs naive optimization historically
+18. Build slate analysis dashboard showing detected regime, correlation heatmap, ownership vs projection scatter
+19. Export risk reports alongside lineup CSVs for bankroll management

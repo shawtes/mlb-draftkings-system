@@ -876,6 +876,8 @@ app.post('/api/optimize', async (req, res) => {
       // When quant settings are enabled, use the JS NBAOptimizer with quant engine
       // Otherwise try Python Markov optimizer first, with JS fallback
       const quantActive = advancedQuantSettings && advancedQuantSettings.enabled;
+      let nbaPortfolioMetrics = null;
+      let nbaWarnings = [];
       
       if (quantActive) {
         console.log('📊 Quant mode active — using JS NBAOptimizer with QuantEngine');
@@ -903,8 +905,7 @@ app.post('/api/optimize', async (req, res) => {
         });
         
         // Extract portfolio metrics if available
-        var portfolioMetrics = results.portfolioMetrics || null;
-        var optimizerWarnings = [];
+        nbaPortfolioMetrics = results.portfolioMetrics || null;
       } else {
         // Default: try Python Markov optimizer, fallback to JS
         try {
@@ -926,7 +927,7 @@ app.post('/api/optimize', async (req, res) => {
             }
           });
           results = pythonResult.lineups;
-          var optimizerWarnings = pythonResult.warnings || [];
+          nbaWarnings = pythonResult.warnings || [];
         } catch (pythonError) {
           console.warn('⚠️ Python optimizer failed, falling back to JS NBAOptimizer:', pythonError.message);
           optimizer = new NBAOptimizer();
@@ -951,9 +952,11 @@ app.post('/api/optimize', async (req, res) => {
               });
             }
           });
-          var optimizerWarnings = ['Python optimizer unavailable, used JavaScript fallback'];
+          nbaWarnings = ['Python optimizer unavailable, used JavaScript fallback'];
         }
       }
+      var optimizerWarnings = nbaWarnings;
+      var portfolioMetrics = nbaPortfolioMetrics;
     } else {
       console.log('⚾ Using MLB Optimizer');
       if (advancedQuantSettings && Object.keys(advancedQuantSettings).length > 0) {

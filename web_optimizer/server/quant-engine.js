@@ -136,12 +136,12 @@ class QuantEngine {
         const stdDev = player.stdDev || (ceiling - floor) / 4;
 
         // Sample from truncated normal distribution (bounded by floor/ceiling)
-        let sample;
-        let attempts = 0;
-        do {
+        // Retry up to 10 times, then accept whatever sample we got
+        let sample = projection;
+        for (let attempt = 0; attempt < 10; attempt++) {
           sample = projection + stdDev * this._boxMullerRandom();
-          attempts++;
-        } while ((sample < floor * 0.5 || sample > ceiling * 1.3) && attempts < 10);
+          if (sample >= floor * 0.5 && sample <= ceiling * 1.3) break;
+        }
         
         // Clamp to reasonable bounds
         sample = Math.max(0, sample);
