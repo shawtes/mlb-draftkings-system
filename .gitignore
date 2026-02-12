@@ -89,6 +89,8 @@ web_optimizer/web_optimizer/
 # Academic/personal files
 hw3/
 chapter12_reverse/
+demntia mlin/
+*Dummies*
 
 # Historical data caches (local only)
 *_historical_cache/
