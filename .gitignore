@@ -1,4 +1,4 @@
-﻿# Dependencies
+# Dependencies
 node_modules/
 .pnp
 .pnp.js
@@ -10,6 +10,11 @@ coverage/
 build/
 dist/
 *.tsbuildinfo
+
+# Compiled files
+*.o
+*.out
+*.a
 
 # Misc
 .DS_Store
@@ -41,6 +46,9 @@ Thumbs.db
 .eslintcache
 *.cache
 
+# Cache directories
+*_cache/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -57,6 +65,31 @@ uploads/
 *.csv
 *.xlsx
 
+# Runtime data
+web_optimizer/server/data/
+data/
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+
 # Firebase
 .firebase/
 firebase-debug.log
+
+# Prevent duplicate/copy directories
+*copy*/
+*Copy*/
+* - Copy*
+
+# Prevent nested duplicates
+web_optimizer/web_optimizer/
+
+# Academic/personal files
+hw3/
+chapter12_reverse/
+
+# Historical data caches (local only)
+*_historical_cache/
+nba_training_data.csv
