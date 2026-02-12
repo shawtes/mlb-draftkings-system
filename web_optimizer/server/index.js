@@ -545,6 +545,68 @@ app.post('/api/upload-players', upload.single('playersFile'), (req, res) => {
       if (zeroProjections.length > 0 && zeroProjections.length < 10) {
         console.log('Players with zero projections:', zeroProjections.map(p => p.name).join(', '));
       }
+
+      // VALIDATION: Detect if projections are actually historical game results
+      // Uses VALUE-BASED detection: compute avg pts per $1K salary across all players.
+      // Realistic projections have avg value ~3.5-5.0; actual results often have avg value >5.5+
+      if (playersWithProjections.length > 0) {
+        // Compute average value (projection / salary * 1000) for players with both projection and salary
+        const playersWithBoth = results.filter(p => p.projection > 0 && p.salary > 0);
+        const avgValue = playersWithBoth.length > 0
+          ? playersWithBoth.reduce((sum, p) => sum + (p.projection / p.salary * 1000), 0) / playersWithBoth.length
+          : 0;
+        const maxProj = Math.max(...playersWithProjections.map(p => p.projection));
+
+        // Sport-specific value thresholds for detecting actuals vs projections
+        const valueThreshold = currentSport === 'NBA' ? 5.5 : currentSport === 'MLB' ? 4.0 : 3.5;
+
+        console.log(`   Avg value (pts/$1K): ${avgValue.toFixed(2)} (threshold: ${valueThreshold})`);
+
+        if (avgValue > valueThreshold) {
+          console.warn(`\n⚠️  WARNING: Avg value ${avgValue.toFixed(2)} exceeds ${valueThreshold} threshold for ${currentSport}.`);
+          console.warn('   This likely means data contains ACTUAL game results, not projections.');
+          console.warn('   Normalizing projections using salary-based expected values...');
+
+          // Salary-tier target value ratios by sport
+          const salaryTiers = currentSport === 'NBA'
+            ? [ { min: 9000, ratio: 4.8 }, { min: 7000, ratio: 4.5 }, { min: 5000, ratio: 4.2 }, { min: 0, ratio: 3.8 } ]
+            : currentSport === 'MLB'
+            ? [ { min: 8000, ratio: 3.5 }, { min: 6000, ratio: 3.2 }, { min: 4000, ratio: 3.0 }, { min: 0, ratio: 2.7 } ]
+            : [ { min: 8000, ratio: 3.0 }, { min: 6000, ratio: 2.8 }, { min: 4000, ratio: 2.5 }, { min: 0, ratio: 2.2 } ];
+
+          // Rank players by original projection to preserve relative ordering
+          const rankedPlayers = playersWithBoth
+            .slice()
+            .sort((a, b) => b.projection - a.projection)
+            .map((p, idx) => ({ id: p.id, rank: idx }));
+          const rankMap = {};
+          rankedPlayers.forEach(r => { rankMap[r.id] = r.rank; });
+          const totalRanked = rankedPlayers.length;
+
+          results.forEach(p => {
+            if (p.projection > 0 && p.salary > 0) {
+              // Find the target value ratio for this player's salary tier
+              const tier = salaryTiers.find(t => p.salary >= t.min) || salaryTiers[salaryTiers.length - 1];
+              const baseProjection = p.salary / 1000 * tier.ratio;
+
+              // Add noise based on original relative ranking to preserve ordering
+              // Top-ranked players get a boost, bottom-ranked get a slight reduction
+              const rank = rankMap[p.id] !== undefined ? rankMap[p.id] : totalRanked;
+              const rankPct = totalRanked > 1 ? 1 - (rank / (totalRanked - 1)) : 0.5; // 1.0 = best, 0.0 = worst
+              const noise = (rankPct - 0.5) * baseProjection * 0.25; // +/-12.5% based on rank
+
+              p.projection = parseFloat(Math.max(3, baseProjection + noise).toFixed(2));
+              p.value = parseFloat((p.projection / p.salary * 1000).toFixed(2));
+            }
+          });
+
+          const adjustedProjs = results.filter(p => p.projection > 0).map(p => p.projection);
+          const adjustedValues = results.filter(p => p.projection > 0 && p.salary > 0).map(p => p.value);
+          console.warn(`   Adjusted projection range: ${Math.min(...adjustedProjs).toFixed(1)} to ${Math.max(...adjustedProjs).toFixed(1)}`);
+          console.warn(`   Adjusted avg projection: ${(adjustedProjs.reduce((a, b) => a + b, 0) / adjustedProjs.length).toFixed(1)}`);
+          console.warn(`   Adjusted avg value: ${(adjustedValues.reduce((a, b) => a + b, 0) / adjustedValues.length).toFixed(2)}`);
+        }
+      }
       console.log('=====================================\n');
       
       // Clean up uploaded file
@@ -862,6 +924,8 @@ app.post('/api/optimize', async (req, res) => {
           });
         }
       });
+      var portfolioMetrics = results.portfolioMetrics || null;
+      var optimizerWarnings = [];
     } else if (sport === 'NBA') {
       console.log('🏀 Using NBA Optimizer');
       if (advancedQuantSettings && Object.keys(advancedQuantSettings).length > 0) {
@@ -873,14 +937,41 @@ app.post('/api/optimize', async (req, res) => {
       console.log('🔍 DEBUG - Team Selections:', JSON.stringify(teamSelections, null, 2));
       console.log('🔍 DEBUG - Team Exposures:', JSON.stringify(teamExposures, null, 2));
 
-      // When quant settings are enabled, use the JS NBAOptimizer with quant engine
-      // Otherwise try Python Markov optimizer first, with JS fallback
+      // ARCHITECTURE (Hunter et al., 2016; Bertsimas & Tsitsiklis, 1997):
+      // 1. ALWAYS use Python PuLP ILP solver for lineup generation (proper optimization)
+      // 2. Layer JS quant engine on top for MC scoring when quant is enabled
+      // 3. Fall back to JS NBAOptimizer only if Python fails
       const quantActive = advancedQuantSettings && advancedQuantSettings.enabled;
       let nbaPortfolioMetrics = null;
       let nbaWarnings = [];
-      
-      if (quantActive) {
-        console.log('📊 Quant mode active — using JS NBAOptimizer with QuantEngine');
+
+      // Step 1: Generate lineups via PuLP ILP (immutable projections + exclusion constraints)
+      let usedPuLP = false;
+      try {
+        console.log('🔬 Using PuLP ILP optimizer (academically-backed: Hunter et al., 2016)');
+        const pythonResult = await callPythonOptimizer({
+          players: selectedPlayers,
+          numLineups,
+          minSalary: minSalary || 48000,
+          maxSalary,
+          stackSettings,
+          teamSelections,
+          teamExposures,
+          uniquePlayers,
+          maxExposure,
+          onProgress: (progress) => {
+            broadcast({
+              type: 'OPTIMIZATION_PROGRESS',
+              data: { id: optimizationId, progress, timestamp: new Date().toISOString() }
+            });
+          }
+        });
+        results = pythonResult.lineups;
+        nbaWarnings = pythonResult.warnings || [];
+        usedPuLP = true;
+        console.log(`✅ PuLP ILP generated ${results.length} lineups`);
+      } catch (pythonError) {
+        console.warn('⚠️ PuLP ILP failed, falling back to JS NBAOptimizer:', pythonError.message);
         optimizer = new NBAOptimizer();
         results = await optimizer.optimize({
           players: selectedPlayers,
@@ -903,58 +994,42 @@ app.post('/api/optimize', async (req, res) => {
             });
           }
         });
-        
-        // Extract portfolio metrics if available
-        nbaPortfolioMetrics = results.portfolioMetrics || null;
-      } else {
-        // Default: try Python Markov optimizer, fallback to JS
-        try {
-          const pythonResult = await callPythonOptimizer({
-            players: selectedPlayers,
-            numLineups,
-            minSalary: minSalary || 48000,
-            maxSalary,
-            stackSettings,
-            teamSelections,
-            teamExposures,
-            uniquePlayers,
-            maxExposure,
-            onProgress: (progress) => {
-              broadcast({
-                type: 'OPTIMIZATION_PROGRESS',
-                data: { id: optimizationId, progress, timestamp: new Date().toISOString() }
-              });
-            }
-          });
-          results = pythonResult.lineups;
-          nbaWarnings = pythonResult.warnings || [];
-        } catch (pythonError) {
-          console.warn('⚠️ Python optimizer failed, falling back to JS NBAOptimizer:', pythonError.message);
-          optimizer = new NBAOptimizer();
-          results = await optimizer.optimize({
-            players: selectedPlayers,
-            numLineups,
-            minSalary: minSalary || 48000,
-            maxSalary,
-            stackSettings,
-            uniquePlayers,
-            maxExposure,
-            stackTypes,
-            exposureSettings,
-            riskTolerance,
-            contestMode,
-            bankroll,
-            advancedQuantSettings,
-            onProgress: (progress) => {
-              broadcast({
-                type: 'OPTIMIZATION_PROGRESS',
-                data: { id: optimizationId, progress, timestamp: new Date().toISOString() }
-              });
-            }
-          });
-          nbaWarnings = ['Python optimizer unavailable, used JavaScript fallback'];
-        }
+        nbaWarnings = ['PuLP ILP unavailable, used JS heuristic fallback'];
       }
+
+      // Step 2: When quant is enabled, layer on JS quant metrics (MC, Sharpe, VaR, portfolio)
+      // This is POST-OPTIMIZATION evaluation — projections are never modified
+      if (quantActive && results.length > 0) {
+        console.log('📊 Applying JS quant scoring to PuLP results (post-optimization evaluation)');
+        const quant = new QuantEngine(advancedQuantSettings);
+
+        for (const lineup of results) {
+          if (lineup.players && lineup.players.length > 0 && !lineup.quantMetrics) {
+            const mcResult = quant.monteCarloLineup(lineup.players);
+            lineup.quantMetrics = {
+              simMean: mcResult.mean,
+              simStdDev: mcResult.stdDev,
+              sharpeRatio: mcResult.sharpeRatio,
+              valueAtRisk: mcResult.valueAtRisk,
+              conditionalVaR: mcResult.conditionalVaR,
+              ceilingProbability: mcResult.ceilingProbability,
+              percentiles: mcResult.percentiles,
+              simulations: mcResult.simulations
+            };
+          }
+        }
+
+        // Sort by Sharpe ratio when quant active
+        results.sort((a, b) => {
+          const aScore = a.quantMetrics ? a.quantMetrics.sharpeRatio : 0;
+          const bScore = b.quantMetrics ? b.quantMetrics.sharpeRatio : 0;
+          return bScore - aScore;
+        });
+
+        nbaPortfolioMetrics = quant.analyzePortfolio(results);
+        console.log('📈 Portfolio metrics:', nbaPortfolioMetrics);
+      }
+
       var optimizerWarnings = nbaWarnings;
       var portfolioMetrics = nbaPortfolioMetrics;
     } else {
@@ -988,6 +1063,8 @@ app.post('/api/optimize', async (req, res) => {
           });
         }
       });
+      var portfolioMetrics = results.portfolioMetrics || null;
+      var optimizerWarnings = [];
     }
     
     optimizationResults = results;

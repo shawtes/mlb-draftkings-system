@@ -1,13 +1,8 @@
 import { useState, useMemo, useCallback, lazy, Suspense } from 'react';
 import {
   Settings,
-  HelpCircle,
   LogOut,
-  User,
   ChevronDown,
-  Cpu,
-  Trophy,
-  BarChart3,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -17,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import { DashboardLoader } from './SkeletonLoader';
+import UrSimLogo from './UrSimLogo';
 import type { DashboardProps } from '../types';
 
 // Lazy load dashboard components
@@ -30,10 +26,10 @@ const HowToUse = lazy(() => import('./HowToUse').catch(err => {
 const AccountSettings = lazy(() => import('./AccountSettings'));
 
 const navItems = [
-  { id: 'games-hub', label: 'Games Hub', icon: BarChart3, section: 'RESEARCH' },
-  { id: 'prop-betting', label: 'Prop Betting', icon: Trophy, section: 'BETTING' },
-  { id: 'dfs-optimizer', label: 'DFS Optimizer', icon: Cpu, section: 'DFS' },
-  { id: 'how-to-use', label: 'How To', icon: HelpCircle, section: 'HELP' },
+  { id: 'dfs-optimizer', label: 'Optimizer' },
+  { id: 'games-hub', label: 'Games' },
+  { id: 'prop-betting', label: 'Props' },
+  { id: 'how-to-use', label: 'Guide' },
 ] as const;
 
 export default function Dashboard({ onLogout }: DashboardProps) {
@@ -88,59 +84,85 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     <div className="h-screen flex flex-col bg-[var(--dfs-bg-primary)]">
       {/* Top bar */}
       <header
-        className="flex items-center justify-between px-4 h-10 flex-shrink-0 border-b"
+        className="flex items-center justify-between px-5 h-11 flex-shrink-0 border-b"
         style={{ backgroundColor: 'var(--dfs-bg-secondary)', borderColor: 'var(--dfs-border)' }}
       >
-        {/* Left: Logo */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-white tracking-wide">UrSim</span>
-          <span className="text-[10px] text-[var(--dfs-text-muted)] font-medium tracking-wider uppercase">DFS Platform</span>
+        {/* Left: Emblem + wordmark */}
+        <div className="flex items-center gap-2.5">
+          <UrSimLogo size={26} />
+          <div className="flex items-baseline gap-1.5">
+            <span
+              className="text-sm font-bold tracking-wide"
+              style={{
+                background: 'linear-gradient(135deg, #00D9FF 0%, #00FFD4 50%, #8B5CF6 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}
+            >
+              UrSim
+            </span>
+            <span className="text-[10px] text-[var(--dfs-text-muted)] font-medium tracking-widest uppercase">DFS</span>
+          </div>
         </div>
 
-        {/* Center: Nav pills */}
-        <nav className="flex items-center gap-1">
+        {/* Center: Text-only nav */}
+        <nav className="flex items-center gap-0.5">
           {navItems.map((item) => {
             const isActive = activeView === item.id;
-            const Icon = item.icon;
             return (
               <button
                 key={item.id}
                 onClick={() => handleNavigation(item.id)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                className={`relative px-3.5 py-1.5 rounded text-xs font-medium transition-all ${
                   isActive
-                    ? 'bg-[var(--dfs-accent)]/15 text-[var(--dfs-accent)] border border-[var(--dfs-accent)]/30'
-                    : 'text-[var(--dfs-text-secondary)] hover:text-[var(--dfs-text-primary)] hover:bg-[var(--dfs-bg-hover)] border border-transparent'
+                    ? 'text-[var(--dfs-accent)]'
+                    : 'text-[var(--dfs-text-secondary)] hover:text-[var(--dfs-text-primary)]'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
                 {item.label}
+                {isActive && (
+                  <span
+                    className="absolute bottom-0 left-1/2 -translate-x-1/2 h-[2px] rounded-full"
+                    style={{
+                      width: '60%',
+                      background: 'linear-gradient(90deg, #00D9FF, #00FFD4)',
+                    }}
+                  />
+                )}
               </button>
             );
           })}
         </nav>
 
-        {/* Right: User dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-1.5 text-[var(--dfs-text-secondary)] hover:text-[var(--dfs-text-primary)] px-2 py-1 rounded-md hover:bg-[var(--dfs-bg-hover)] transition-all">
-              <div className="w-6 h-6 bg-gradient-to-br from-cyan-500 to-blue-600 rounded flex items-center justify-center">
-                <User className="w-3.5 h-3.5 text-white" />
-              </div>
-              <ChevronDown className="w-3 h-3" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 bg-[var(--dfs-bg-tertiary)] border-[var(--dfs-border)]">
-            <DropdownMenuItem onClick={() => handleNavigation('settings')} className="text-[var(--dfs-text-secondary)] hover:text-[var(--dfs-accent)] text-xs">
-              <Settings className="w-3.5 h-3.5 mr-2" />
-              Settings
-            </DropdownMenuItem>
-            <DropdownMenuSeparator className="bg-[var(--dfs-border)]" />
-            <DropdownMenuItem onClick={onLogout} className="text-red-400 focus:text-red-300 text-xs">
-              <LogOut className="w-3.5 h-3.5 mr-2" />
-              Logout
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Right: Settings + Logout text links */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => handleNavigation('settings')}
+            className="text-xs text-[var(--dfs-text-muted)] hover:text-[var(--dfs-text-primary)] transition-colors"
+          >
+            Settings
+          </button>
+          <span className="text-[var(--dfs-border)]">|</span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center gap-1 text-xs text-[var(--dfs-text-secondary)] hover:text-[var(--dfs-text-primary)] transition-colors">
+                Account
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44 bg-[var(--dfs-bg-tertiary)] border-[var(--dfs-border)]">
+              <DropdownMenuItem onClick={() => handleNavigation('settings')} className="text-[var(--dfs-text-secondary)] hover:text-[var(--dfs-accent)] text-xs">
+                <Settings className="w-3.5 h-3.5 mr-2" />
+                Settings
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="bg-[var(--dfs-border)]" />
+              <DropdownMenuItem onClick={onLogout} className="text-red-400 focus:text-red-300 text-xs">
+                <LogOut className="w-3.5 h-3.5 mr-2" />
+                Logout
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </header>
 
       {/* Main Content */}

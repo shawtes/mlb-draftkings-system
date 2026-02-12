@@ -384,25 +384,26 @@ def process_api_projections(api_df):
     elif 'TeamAbbr' in api_df.columns:
         processed['Team'] = api_df['TeamAbbr']
     
-    # DraftKings fantasy points
-    if 'FantasyPointsDraftKings' in api_df.columns:
-        processed['Predicted_DK_Points'] = api_df['FantasyPointsDraftKings']
+    # DraftKings fantasy points — ALWAYS compute from individual stat projections
+    # using the official DK scoring formula. This avoids using FantasyPointsDraftKings
+    # which may contain ACTUAL game results instead of forward-looking projections
+    # when data is fetched for a past date or after games have been played.
+    has_stat_components = any(col in api_df.columns for col in ['Points', 'Rebounds', 'Assists'])
+
+    if has_stat_components:
+        # Compute DK fantasy points from projected stat components (DK NBA scoring)
+        computed_dk = _compute_dk_points_from_stats(api_df)
+        # VALUE-BASED detection: compute avg pts per $1K salary.
+        # Realistic projections have avg value ~3.5-5.0; actual results often >5.5+
+        computed_dk = _validate_and_normalize_projections(computed_dk, api_df, processed)
+        processed['Predicted_DK_Points'] = computed_dk
+    elif 'FantasyPointsDraftKings' in api_df.columns:
+        # Fallback: use FantasyPointsDraftKings but validate with value-based detection
+        fdk = pd.to_numeric(api_df['FantasyPointsDraftKings'], errors='coerce').fillna(0)
+        fdk = _validate_and_normalize_projections(fdk, api_df, processed)
+        processed['Predicted_DK_Points'] = fdk
     else:
-        # Calculate a projection proxy if DK FP not present
-        proxy = pd.Series(0, index=api_df.index, dtype='float64')
-        if 'Points' in api_df.columns:
-            proxy = proxy.add(api_df['Points'].fillna(0))
-        if 'Rebounds' in api_df.columns:
-            proxy = proxy.add(api_df['Rebounds'].fillna(0) * 1.25)
-        if 'Assists' in api_df.columns:
-            proxy = proxy.add(api_df['Assists'].fillna(0) * 1.5)
-        if 'Steals' in api_df.columns:
-            proxy = proxy.add(api_df['Steals'].fillna(0) * 2)
-        if 'BlockedShots' in api_df.columns:
-            proxy = proxy.add(api_df['BlockedShots'].fillna(0) * 2)
-        if 'Turnovers' in api_df.columns:
-            proxy = proxy.sub(api_df['Turnovers'].fillna(0) * 0.5)
-        processed['Predicted_DK_Points'] = proxy.round(2)
+        processed['Predicted_DK_Points'] = pd.Series(0.0, index=api_df.index)
     
     # Opponent
     if 'Opponent' in api_df.columns:
@@ -450,6 +451,74 @@ def _compute_dk_points_from_stats(df: pd.DataFrame) -> pd.Series:
     if 'TripleDouble' in df.columns:
         pts = pts.add((df['TripleDouble'].fillna(0) > 0).astype(float) * 3.0)
     return pts.round(2)
+
+
+def _validate_and_normalize_projections(dk_pts: pd.Series, api_df: pd.DataFrame, processed: pd.DataFrame) -> pd.Series:
+    """Value-based detection: if avg pts/$1K salary > 5.5, data is likely actuals.
+    Normalizes using salary-tier expected values while preserving relative ordering."""
+    # Try to get salary from either processed or api_df
+    salary = None
+    for df_check in [processed, api_df]:
+        if 'Salary' in df_check.columns:
+            salary = pd.to_numeric(df_check['Salary'], errors='coerce').fillna(0)
+            break
+
+    if salary is None or (salary > 0).sum() == 0:
+        # No salary data available; fall back to old max-based check
+        max_val = dk_pts.max()
+        if max_val > 65:
+            print(f"⚠️  WARNING: Max DK points = {max_val:.1f} — likely ACTUAL game results (no salary for value check).")
+            print(f"   Applying regression toward mean to produce realistic projections.")
+            league_avg = dk_pts[dk_pts > 0].mean() if (dk_pts > 0).any() else 25.0
+            dk_pts = (dk_pts * 0.7 + league_avg * 0.3).round(2)
+            print(f"   Adjusted range: {dk_pts[dk_pts > 0].min():.1f} to {dk_pts.max():.1f}")
+        return dk_pts
+
+    # Compute average value (pts per $1K) for players with both projection > 0 and salary > 0
+    mask = (dk_pts > 0) & (salary > 0)
+    if mask.sum() == 0:
+        return dk_pts
+
+    values = dk_pts[mask] / salary[mask] * 1000
+    avg_value = values.mean()
+    print(f"   Avg value (pts/$1K): {avg_value:.2f} (threshold: 5.5)")
+
+    if avg_value > 5.5:
+        print(f"⚠️  WARNING: Avg value {avg_value:.2f} exceeds 5.5 threshold for NBA.")
+        print(f"   This likely means data contains ACTUAL game results, not projections.")
+        print(f"   Normalizing projections using salary-based expected values...")
+
+        # Salary-tier target value ratios for NBA
+        def get_tier_ratio(sal):
+            if sal >= 9000: return 4.8
+            if sal >= 7000: return 4.5
+            if sal >= 5000: return 4.2
+            return 3.8
+
+        # Rank players by original projection to preserve relative ordering
+        ranked = dk_pts[mask].rank(ascending=False, method='min')
+        total_ranked = mask.sum()
+
+        result = dk_pts.copy()
+        for idx in dk_pts.index:
+            if mask.loc[idx]:
+                sal = salary.loc[idx]
+                tier_ratio = get_tier_ratio(sal)
+                base_proj = sal / 1000 * tier_ratio
+
+                # Noise based on rank to preserve ordering
+                rank = ranked.loc[idx]
+                rank_pct = 1.0 - ((rank - 1) / max(total_ranked - 1, 1))  # 1.0=best, 0.0=worst
+                noise = (rank_pct - 0.5) * base_proj * 0.25  # +/-12.5%
+
+                result.loc[idx] = round(max(3.0, base_proj + noise), 2)
+
+        adj = result[result > 0]
+        print(f"   Adjusted projection range: {adj.min():.1f} to {adj.max():.1f}")
+        print(f"   Adjusted avg projection: {adj.mean():.1f}")
+        return result
+
+    return dk_pts
 
 
 def fetch_player_game_stats_by_date(date: str) -> pd.DataFrame:

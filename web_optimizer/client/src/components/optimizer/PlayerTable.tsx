@@ -5,11 +5,34 @@ import { Checkbox } from '../ui/checkbox';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '../ui/hover-card';
 import {
   Users, Search, CheckSquare, XSquare, Eye, EyeOff,
-  ArrowUpDown, ArrowUp, ArrowDown, Lock, Ban,
+  ArrowUpDown, ArrowUp, ArrowDown, Lock, Ban, Target,
 } from 'lucide-react';
 import { Sport, getPositionFilters, getPositionCount, filterPlayersByPosition } from '../sport-config';
 import { Player } from './types';
 import { dfsApi } from '../../services/dfs-api';
+
+function standaloneCDF(x: number): number {
+  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+  const sign = x < 0 ? -1 : 1;
+  const absX = Math.abs(x);
+  const t = 1.0 / (1.0 + p * absX);
+  const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-absX * absX / 2);
+  return 0.5 * (1.0 + sign * y);
+}
+
+const computeBoomPct = (player: Player): number => {
+  const proj = player.projectedPoints || 0;
+  if (proj <= 0) return 0;
+  const stdDev = player.stdDev || proj * 0.25;
+  return (1 - standaloneCDF(0.5 * proj / stdDev)) * 100;
+};
+
+const computeLeverage = (player: Player): number => {
+  const ceiling = player.ceiling || (player.projectedPoints || 0) * 1.4;
+  const ownership = player.ownership || 0;
+  const salary = player.salary || 1;
+  return (ceiling * (1 - ownership / 100)) / salary * 1000;
+};
 
 interface PlayerTableProps {
   playerData: Player[];
@@ -19,7 +42,7 @@ interface PlayerTableProps {
   onPlayerDataChange: (data: Player[]) => void;
 }
 
-type SortKey = 'name' | 'salary' | 'points' | 'value' | 'ownership' | 'ceiling' | 'leverage';
+type SortKey = 'name' | 'salary' | 'points' | 'value' | 'ownership' | 'ceiling' | 'leverage' | 'boom';
 
 const PlayerTable: React.FC<PlayerTableProps> = ({
   playerData, selectedPlayers, sport, onPlayersChange, onPlayerDataChange,
@@ -34,6 +57,7 @@ const PlayerTable: React.FC<PlayerTableProps> = ({
   const [sortBy, setSortBy] = useState<SortKey>('salary');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [showAdvancedCols, setShowAdvancedCols] = useState(false);
+  const [leveragePlaysFilter, setLeveragePlaysFilter] = useState(false);
   const [editingProjection, setEditingProjection] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,7 +95,8 @@ const PlayerTable: React.FC<PlayerTableProps> = ({
         case 'value': aVal = a.salary > 0 ? a.projectedPoints / a.salary * 1000 : 0; bVal = b.salary > 0 ? b.projectedPoints / b.salary * 1000 : 0; break;
         case 'ownership': aVal = a.ownership; bVal = b.ownership; break;
         case 'ceiling': aVal = a.ceiling || a.projectedPoints * 1.3; bVal = b.ceiling || b.projectedPoints * 1.3; break;
-        case 'leverage': aVal = a.leverageScore || 0; bVal = b.leverageScore || 0; break;
+        case 'leverage': aVal = computeLeverage(a); bVal = computeLeverage(b); break;
+        case 'boom': aVal = computeBoomPct(a); bVal = computeBoomPct(b); break;
       }
       if (typeof aVal === 'string' && typeof bVal === 'string') return sortDirection === 'desc' ? bVal.localeCompare(aVal) : aVal.localeCompare(bVal);
       return sortDirection === 'desc' ? (bVal as number) - (aVal as number) : (aVal as number) - (bVal as number);
@@ -86,8 +111,14 @@ const PlayerTable: React.FC<PlayerTableProps> = ({
       const leverageScore = parseFloat((valuePercentile - p.ownership).toFixed(1));
       return { ...p, leverageScore };
     });
+    if (leveragePlaysFilter) {
+      const leverages = withLeverage.map((p: Player) => computeLeverage(p));
+      const sortedLev = [...leverages].sort((a, b) => a - b);
+      const medianLev = sortedLev.length > 0 ? sortedLev[Math.floor(sortedLev.length / 2)] : 0;
+      return withLeverage.filter((p: Player) => computeLeverage(p) > medianLev && p.ownership < 15);
+    }
     return withLeverage;
-  }, [playerData, positionFilter, sortBy, sortDirection, debouncedSearch, sport]);
+  }, [playerData, positionFilter, sortBy, sortDirection, debouncedSearch, sport, leveragePlaysFilter]);
 
   // Compute value percentiles for color-coding (Change #4)
   const valuePercentiles = useMemo(() => {
@@ -278,10 +309,19 @@ const PlayerTable: React.FC<PlayerTableProps> = ({
           {showAdvancedCols ? <EyeOff className="w-3.5 h-3.5 mr-1" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
           Boom/Bust
         </Button>
+        <Button
+          variant="secondary-action"
+          size="sm"
+          onClick={() => setLeveragePlaysFilter(prev => !prev)}
+          className={`h-7 px-2 text-xs ${leveragePlaysFilter ? 'border-purple-500/40 bg-purple-500/20 text-purple-300' : ''}`}
+        >
+          <Target className="w-3.5 h-3.5 mr-1" />
+          Leverage Plays
+        </Button>
       </div>
 
-      {/* Player Table */}
-      <div className="flex-1 overflow-auto max-h-96 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
+      {/* Player Table — scrollable container, sticky header */}
+      <div className="flex-1 min-h-0 overflow-auto border border-[var(--dfs-border)] rounded-lg scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
         <table className="w-full text-sm">
           <thead className="bg-[var(--dfs-bg-tertiary)] sticky top-0 z-10">
             <tr className="border-b border-[var(--dfs-border)]">
@@ -304,6 +344,8 @@ const PlayerTable: React.FC<PlayerTableProps> = ({
                 { key: 'points', label: 'Proj', align: 'right', width: 'w-16' },
                 { key: 'value', label: 'Value', align: 'right', width: 'w-16' },
                 { key: 'ownership', label: 'Own%', align: 'right', width: 'w-14' },
+                { key: 'boom', label: 'Boom%', align: 'right', width: 'w-16' },
+                { key: 'leverage', label: 'Leverage', align: 'right', width: 'w-16' },
               ].map(col => (
                 <th
                   key={col.key}
@@ -442,6 +484,10 @@ const PlayerTable: React.FC<PlayerTableProps> = ({
                   <td className={`px-2 py-1 text-right font-medium font-mono text-xs ${valueColor}`}>{value}</td>
                   {/* Change #3: Ownership color coding with font-bold on chalk */}
                   <td className={`px-2 py-1 text-right text-xs font-medium ${ownColor}`}>{player.ownership > 0 ? `${player.ownership.toFixed(1)}%` : '\u2014'}</td>
+                  {/* Boom% column */}
+                  <td className={`px-2 py-1 text-right text-xs font-medium font-mono ${computeBoomPct(player) > 20 ? 'text-green-400' : computeBoomPct(player) >= 10 ? 'text-yellow-400' : 'text-slate-400'}`}>{computeBoomPct(player).toFixed(1)}%</td>
+                  {/* Leverage column */}
+                  <td className={`px-2 py-1 text-right text-xs font-medium font-mono ${computeLeverage(player) > 8 ? 'text-green-400' : computeLeverage(player) >= 5 ? 'text-yellow-400' : 'text-slate-400'}`}>{computeLeverage(player).toFixed(1)}</td>
                   {showAdvancedCols && (
                     <>
                       <td className="px-2 py-1 text-right text-xs text-green-400">{pCeiling.toFixed(1)}</td>

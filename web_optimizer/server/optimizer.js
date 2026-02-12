@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
+const QuantEngine = require('./quant-engine');
 
 // Enhanced optimization algorithm with multiple strategies
 class MLBOptimizer {
@@ -29,16 +30,27 @@ class MLBOptimizer {
       onProgress 
     } = config;
 
-    // Log quant settings if enabled
-    if (advancedQuantSettings && advancedQuantSettings.enabled) {
-      console.log('📊 Advanced Quant Settings enabled:', {
+    // Initialize quant engine
+    const quantEnabled = advancedQuantSettings && advancedQuantSettings.enabled;
+    const quant = quantEnabled ? new QuantEngine(advancedQuantSettings) : null;
+
+    if (quantEnabled) {
+      console.log('📊 MLB Quant Engine ACTIVE:', {
         strategy: advancedQuantSettings.strategy,
         riskTolerance: advancedQuantSettings.riskTolerance,
         varConfidence: advancedQuantSettings.varConfidence,
-        targetVolatility: advancedQuantSettings.targetVolatility,
         monteCarloSims: advancedQuantSettings.monteCarloSims,
+        maxKellyFraction: advancedQuantSettings.maxKellyFraction,
       });
     }
+
+    // Pre-compute quant scores for all players when quant is enabled
+    const quantScores = quantEnabled ? quant.scorePlayersQuant(players, 'gpp') : null;
+
+    // Compute Kelly-optimal exposure limits when enabled
+    const kellyLimits = (quantEnabled && advancedQuantSettings.strategy !== 'equal_weight')
+      ? quant.kellyExposureLimits(players, maxExposure)
+      : null;
 
     const results = [];
     
@@ -81,10 +93,10 @@ class MLBOptimizer {
 
       do {
         lineup = this.generateAdvancedLineup(
-          playersByPosition, 
-          positionReqs, 
-          minSalary, 
-          maxSalary, 
+          playersByPosition,
+          positionReqs,
+          minSalary,
+          maxSalary,
           strategy,
           stackSettings,
           stackTypes,
@@ -92,7 +104,11 @@ class MLBOptimizer {
           lineupPool,
           exposureTracker,
           maxExposure,
-          minUniquePlayersBetweenLineups
+          minUniquePlayersBetweenLineups,
+          quantEnabled,
+          quant,
+          quantScores,
+          kellyLimits
         );
         attempts++;
       } while (
@@ -103,14 +119,14 @@ class MLBOptimizer {
       if (lineup) {
         const lineupKey = this.getLineupKey(lineup.players);
         lineupPool.add(lineupKey);
-        
+
         // Update exposure tracking
         lineup.players.forEach(player => {
           const count = exposureTracker.get(player.id) || 0;
           exposureTracker.set(player.id, count + 1);
         });
 
-        results.push({
+        const result = {
           id: uuidv4(),
           players: lineup.players,
           totalSalary: lineup.totalSalary,
@@ -119,17 +135,54 @@ class MLBOptimizer {
           strategy,
           stacks: this.analyzeStacks(lineup.players),
           timestamp: new Date().toISOString()
-        });
+        };
+
+        // Run Monte Carlo simulation and add quant metrics when enabled
+        if (quantEnabled && quant) {
+          const mcResult = quant.monteCarloLineup(lineup.players);
+          result.quantMetrics = {
+            simMean: mcResult.mean,
+            simStdDev: mcResult.stdDev,
+            sharpeRatio: mcResult.sharpeRatio,
+            valueAtRisk: mcResult.valueAtRisk,
+            conditionalVaR: mcResult.conditionalVaR,
+            ceilingProbability: mcResult.ceilingProbability,
+            percentiles: mcResult.percentiles,
+            simulations: mcResult.simulations
+          };
+        }
+
+        results.push(result);
       }
 
       // Small delay to simulate processing
       await new Promise(resolve => setTimeout(resolve, 5));
     }
 
-    // Sort results by projection (descending)
-    results.sort((a, b) => b.totalProjection - a.totalProjection);
+    // Sort by quant-adjusted score when enabled, otherwise by projection
+    if (quantEnabled) {
+      results.sort((a, b) => {
+        const aScore = a.quantMetrics ? a.quantMetrics.sharpeRatio : 0;
+        const bScore = b.quantMetrics ? b.quantMetrics.sharpeRatio : 0;
+        return bScore - aScore;
+      });
+    } else {
+      results.sort((a, b) => b.totalProjection - a.totalProjection);
+    }
+
+    // Compute portfolio-level metrics when quant is enabled
+    let portfolioMetrics = null;
+    if (quantEnabled && quant && results.length > 0) {
+      portfolioMetrics = quant.analyzePortfolio(results);
+      console.log('📈 MLB Portfolio Metrics:', portfolioMetrics);
+    }
 
     if (onProgress) onProgress(100);
+
+    console.log(`✅ Generated ${results.length} MLB lineups${quantEnabled ? ' (quant-optimized)' : ''}`);
+
+    // Attach portfolio metrics to results array for the API response
+    results.portfolioMetrics = portfolioMetrics;
     return results;
   }
 
@@ -410,10 +463,10 @@ class MLBOptimizer {
 
   // Enhanced lineup generation with advanced features
   async generateAdvancedLineup(
-    playersByPosition, 
-    positionReqs, 
-    minSalary, 
-    maxSalary, 
+    playersByPosition,
+    positionReqs,
+    minSalary,
+    maxSalary,
     strategy,
     stackSettings,
     stackTypes,
@@ -421,7 +474,11 @@ class MLBOptimizer {
     lineupPool,
     exposureTracker,
     maxExposure,
-    minUniquePlayersBetweenLineups
+    minUniquePlayersBetweenLineups,
+    quantEnabled = false,
+    quant = null,
+    quantScores = null,
+    kellyLimits = null
   ) {
     const lineup = [];
     let totalSalary = 0;
@@ -457,15 +514,19 @@ class MLBOptimizer {
       
       for (let i = 0; i < needed; i++) {
         const player = this.selectAdvancedPlayer(
-          playersByPosition[position], 
-          usedPlayers, 
-          totalSalary, 
-          maxSalary, 
+          playersByPosition[position],
+          usedPlayers,
+          totalSalary,
+          maxSalary,
           strategy,
           exposureTracker,
           maxExposure,
           lineupPool,
-          minUniquePlayersBetweenLineups
+          minUniquePlayersBetweenLineups,
+          quantEnabled,
+          quant,
+          quantScores,
+          kellyLimits
         );
         
         if (!player) return null;
@@ -503,47 +564,55 @@ class MLBOptimizer {
     return lineupObj;
   }
 
-  selectAdvancedPlayer(positionPlayers, usedPlayers, currentSalary, maxSalary, strategy, exposureTracker, maxExposure, lineupPool, minUniquePlayersBetweenLineups) {
+  selectAdvancedPlayer(positionPlayers, usedPlayers, currentSalary, maxSalary, strategy, exposureTracker, maxExposure, lineupPool, minUniquePlayersBetweenLineups, quantEnabled = false, quant = null, quantScores = null, kellyLimits = null) {
     if (!positionPlayers || positionPlayers.length === 0) return null;
-    
+
     const availablePlayers = positionPlayers.filter(p => {
       if (usedPlayers.has(p.id)) return false;
       if (currentSalary + p.salary > maxSalary) return false;
-      
-      // Check exposure limits with better tracking
+
+      // Check exposure limit (use Kelly limit if available, otherwise default)
+      const playerMaxExposure = (kellyLimits && kellyLimits.has(p.id))
+        ? kellyLimits.get(p.id)
+        : maxExposure;
       const currentExposure = exposureTracker.get(p.id) || 0;
-      const totalLineups = lineupPool.size + 1; // Include current lineup
+      const totalLineups = lineupPool.size + 1;
       const exposurePercentage = (currentExposure / totalLineups) * 100;
-      
-      if (exposurePercentage >= maxExposure) return false;
-      
+
+      if (exposurePercentage >= playerMaxExposure) return false;
+
       // Check min/max exposure for specific players if set
       if (p.minExposure > 0 && exposurePercentage < p.minExposure) return false;
       if (p.maxExposure < 100 && exposurePercentage >= p.maxExposure) return false;
-      
+
       return true;
     });
 
     if (availablePlayers.length === 0) return null;
 
-    // Enhanced selection strategies
+    // When quant is enabled, use quant-scored selection
+    if (quantEnabled && quant && quantScores) {
+      return quant.selectPlayerQuant(availablePlayers, quantScores, strategy);
+    }
+
+    // Fallback: original strategy-based selection
     switch (strategy) {
       case 'greedy':
-        return availablePlayers[0]; // Already sorted by primary metric
-      
+        return availablePlayers[0];
+
       case 'balanced':
         const midIndex = Math.floor(availablePlayers.length / 3);
         const balancedPool = availablePlayers.slice(0, Math.max(1, midIndex));
         return balancedPool[Math.floor(Math.random() * balancedPool.length)];
-      
+
       case 'value':
         return availablePlayers
           .sort((a, b) => (b.projection / b.salary) - (a.projection / a.salary))[0];
-      
+
       case 'projection':
         return availablePlayers
           .sort((a, b) => b.projection - a.projection)[0];
-      
+
       default:
         const randomPool = availablePlayers.slice(0, Math.min(5, availablePlayers.length));
         return randomPool[Math.floor(Math.random() * randomPool.length)];

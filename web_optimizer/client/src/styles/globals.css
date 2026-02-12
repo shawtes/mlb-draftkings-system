@@ -1,16 +1,18 @@
 @custom-variant dark (&:is(.dark *));
 
-/* DFS Color Tokens */
+/* DFS Color Tokens — UrSim Premium Dark */
 :root {
-  --dfs-bg-primary: #0B1120;
-  --dfs-bg-secondary: #111827;
-  --dfs-bg-tertiary: #1E293B;
-  --dfs-bg-hover: #283548;
-  --dfs-border: #334155;
+  --dfs-bg-primary: #080E1A;
+  --dfs-bg-secondary: #0C1424;
+  --dfs-bg-tertiary: #141E30;
+  --dfs-bg-hover: #1A2740;
+  --dfs-border: #1E3048;
   --dfs-accent: #00D9FF;
-  --dfs-text-primary: #F8FAFC;
-  --dfs-text-secondary: #94A3B8;
-  --dfs-text-muted: #64748B;
+  --dfs-accent-secondary: #00FFD4;
+  --dfs-accent-purple: #8B5CF6;
+  --dfs-text-primary: #F0F4F8;
+  --dfs-text-secondary: #8899AA;
+  --dfs-text-muted: #4A5C6E;
 }
 
 :root {

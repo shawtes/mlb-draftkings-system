@@ -46,6 +46,25 @@ const LineupCard: React.FC<LineupCardProps> = ({ result, idx, isSelected, onTogg
         </div>
       </div>
 
+      {/* Quant Metrics */}
+      {result.quantMetrics && (
+        <div className="flex gap-1.5 mt-0.5 mb-0.5">
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-mono">
+            VaR {result.quantMetrics.valueAtRisk?.toFixed(0)}
+          </span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+            result.quantMetrics.sharpeRatio > 3 ? 'bg-green-500/15 text-green-400' :
+            result.quantMetrics.sharpeRatio > 2 ? 'bg-yellow-500/15 text-yellow-400' :
+            'bg-red-500/15 text-red-400'
+          }`}>
+            Sharpe {result.quantMetrics.sharpeRatio?.toFixed(2)}
+          </span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 font-mono">
+            Ceil {(result.quantMetrics.ceilingProbability * 100)?.toFixed(1)}%
+          </span>
+        </div>
+      )}
+
       {/* Players List */}
       <div className="space-y-0">
         {(result.players || []).map((player: any, pidx: number) => (

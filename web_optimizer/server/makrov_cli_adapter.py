@@ -80,59 +80,49 @@ def optimize_using_makrov_logic(df_filtered, num_lineups, min_salary, stack_sett
     results = {}
     team_exposure = defaultdict(int)
     stack_exposure = defaultdict(int)
-    
-    # This is the core PuLP optimization from makrovchain_optimizer.py
-    # Using the exact logic from the file
-    
-    import concurrent.futures
-    import itertools
-    
-    # Stack type distribution (from lines 1574-1586)
-    total_candidates_needed = num_lineups * 3
-    lineups_per_stack = max(1, total_candidates_needed // len(stack_settings))
-    
-    print(f"🎯 Generating {total_candidates_needed} candidates for {num_lineups} lineups", file=sys.stderr)
-    
+
+    # ACADEMIC PIPELINE (Hunter et al., 2016; Bertsimas & Tsitsiklis, 1997):
+    # 1. Solve ILP with IMMUTABLE projections
+    # 2. Add EXCLUSION CONSTRAINT from previous lineup (at least 1 different player)
+    # 3. Re-solve → next diverse lineup
+    # 4. Repeat until we have enough candidates
+    # 5. Select best diverse subset respecting exposure limits
+
+    # Generate 2x candidates for portfolio selection (Haugh & Singal, 2021)
+    total_candidates_needed = num_lineups * 2
+    lineups_per_stack = max(1, total_candidates_needed // max(1, len(stack_settings)))
+
+    print(f"🎯 Generating {total_candidates_needed} candidates for {num_lineups} lineups (ILP + exclusion constraints)", file=sys.stderr)
+
     all_lineups = []
-    
-    # Generate lineups using PuLP for each stack type
+
     print(f"🎯 Stack settings: {stack_settings}", file=sys.stderr)
     print(f"🎯 Team selections: {team_selections}", file=sys.stderr)
-    
+
     for stack_type, num_solves in stack_settings.items():
-        print(f"  Stack type '{stack_type}': generating {lineups_per_stack} candidates", file=sys.stderr)
-        
-        # Check if multiple teams are selected for this stack type
+        print(f"  Stack type '{stack_type}': generating {lineups_per_stack} candidates via iterative ILP", file=sys.stderr)
+
+        # Build team list for this stack type
         teams_for_stack = []
-        # Try multiple key formats
         if stack_type in team_selections:
             teams_for_stack = team_selections[stack_type]
         elif str(stack_type) in team_selections:
             teams_for_stack = team_selections[str(stack_type)]
-        elif int(stack_type) in team_selections if stack_type.isdigit() else False:
-            teams_for_stack = team_selections[int(stack_type)]
         elif 'all' in team_selections:
             teams_for_stack = team_selections['all']
-        
-        print(f"    🔍 Teams found for stack '{stack_type}': {teams_for_stack} (count: {len(teams_for_stack) if teams_for_stack else 0})", file=sys.stderr)
-        
-        # If multiple teams selected, generate lineups for EACH team separately
-        if teams_for_stack and len(teams_for_stack) > 1 and stack_type != 'No Stacks':
-            print(f"    📊 Multiple teams selected ({len(teams_for_stack)}): {teams_for_stack}", file=sys.stderr)
-            print(f"    🎯 Generating lineups for EACH team variation", file=sys.stderr)
 
+        print(f"    🔍 Teams for stack '{stack_type}': {teams_for_stack} (count: {len(teams_for_stack) if teams_for_stack else 0})", file=sys.stderr)
+
+        if teams_for_stack and len(teams_for_stack) > 1 and stack_type != 'No Stacks':
             if team_exposures is None:
                 team_exposures = {}
 
-            # Distribute lineups across teams, respecting team exposure caps
             lineups_per_team = max(1, lineups_per_stack // len(teams_for_stack))
             remaining_lineups = lineups_per_stack - (lineups_per_team * len(teams_for_stack))
 
             for team_idx, team in enumerate(teams_for_stack):
-                # Start with even distribution + remainder
                 base_count = lineups_per_team + (1 if team_idx < remaining_lineups else 0)
 
-                # Apply team exposure caps if provided
                 exp = team_exposures.get(team, {})
                 max_exp = exp.get('max', 100)
                 min_exp = exp.get('min', 0)
@@ -140,96 +130,100 @@ def optimize_using_makrov_logic(df_filtered, num_lineups, min_salary, stack_sett
                 min_lineups_for_team = max(0, int(num_lineups * min_exp / 100))
                 team_lineup_count = min(max_lineups_for_team, max(min_lineups_for_team, base_count))
 
-                if exp:
-                    print(f"    📊 Exposure caps for {team}: min={min_exp}%, max={max_exp}% → lineups: {team_lineup_count} (base was {base_count})", file=sys.stderr)
-                
-                print(f"    🏀 Generating {team_lineup_count} lineups for {team} {stack_type}-stack", file=sys.stderr)
-                
-                # Create team-specific selections (single team)
-                # Use both string and int keys to match constraint logic expectations
+                print(f"    🏀 Generating {team_lineup_count} lineups for {team} {stack_type}-stack (iterative ILP)", file=sys.stderr)
+
                 team_specific_selections = {
                     stack_type: [team],
                     str(stack_type): [team],
                     'all': [team]
                 }
-                print(f"      🔍 Team-specific selections for {team}: {team_specific_selections}", file=sys.stderr)
-                
+
+                # Iterative ILP with exclusion constraints for this team
+                exclusion_sets = []
                 for solve_idx in range(team_lineup_count):
                     try:
-                        print(f"      Attempt {solve_idx+1}/{team_lineup_count} for {team}...", file=sys.stderr)
                         lineup = optimize_single_lineup_pulp(
                             df_filtered,
                             stack_type=stack_type,
                             team_selections=team_specific_selections,
                             min_salary=min_salary,
                             salary_cap=SALARY_CAP,
-                            position_limits=POSITION_LIMITS
+                            position_limits=POSITION_LIMITS,
+                            exclusion_sets=exclusion_sets
                         )
-                        
+
                         if lineup is not None and not lineup.empty:
                             all_lineups.append((stack_type, lineup))
-                            print(f"      ✓ Success! Total:{lineup['Predicted_DK_Points'].sum():.1f}", file=sys.stderr)
+                            # Add this lineup's indices to exclusion sets for next solve
+                            exclusion_sets.append(set(lineup.index.tolist()))
+                            print(f"      ✓ Lineup {solve_idx+1}: {lineup['Predicted_DK_Points'].sum():.1f} pts (excl: {len(exclusion_sets)} prev)", file=sys.stderr)
                         else:
-                            print(f"      ✗ No valid lineup found", file=sys.stderr)
-                            
+                            print(f"      ✗ No valid lineup (exhausted diversity space)", file=sys.stderr)
+                            break  # No more diverse lineups possible
+
                     except Exception as e:
                         print(f"      ✗ Exception: {e}", file=sys.stderr)
-                        import traceback
-                        traceback.print_exc(file=sys.stderr)
-                        continue
+                        break
         else:
-            # Single team or no teams - use original logic
+            # Single team or no teams — iterative ILP with exclusion constraints
+            exclusion_sets = []
             for solve_idx in range(lineups_per_stack):
                 try:
-                    print(f"    Attempt {solve_idx+1}/{lineups_per_stack}...", file=sys.stderr)
                     lineup = optimize_single_lineup_pulp(
                         df_filtered,
                         stack_type=stack_type,
                         team_selections=team_selections,
                         min_salary=min_salary,
                         salary_cap=SALARY_CAP,
-                        position_limits=POSITION_LIMITS
+                        position_limits=POSITION_LIMITS,
+                        exclusion_sets=exclusion_sets
                     )
-                    
+
                     if lineup is not None and not lineup.empty:
                         all_lineups.append((stack_type, lineup))
-                        print(f"    ✓ Success! Total:{lineup['Predicted_DK_Points'].sum():.1f}", file=sys.stderr)
+                        exclusion_sets.append(set(lineup.index.tolist()))
+                        print(f"    ✓ Lineup {solve_idx+1}: {lineup['Predicted_DK_Points'].sum():.1f} pts (excl: {len(exclusion_sets)} prev)", file=sys.stderr)
                     else:
-                        print(f"    ✗ No valid lineup found", file=sys.stderr)
-                        
+                        print(f"    ✗ No valid lineup (exhausted diversity space)", file=sys.stderr)
+                        break
+
                 except Exception as e:
                     print(f"    ✗ Exception: {e}", file=sys.stderr)
-                    import traceback
-                    traceback.print_exc(file=sys.stderr)
-                    continue
-    
-    print(f"✅ Generated {len(all_lineups)} candidate lineups", file=sys.stderr)
-    
-    # Select best diverse lineups
+                    break
+
+    print(f"✅ Generated {len(all_lineups)} candidate lineups via iterative ILP", file=sys.stderr)
+
+    # Select best diverse lineups from candidate pool (Haugh & Singal, 2021 — portfolio selection)
     final_lineups = select_diverse_lineups(all_lineups, num_lineups, max_exposure)
-    
+
     return final_lineups, team_exposure, stack_exposure
 
 
-def optimize_single_lineup_pulp(df, stack_type, team_selections, min_salary, 
-                                 salary_cap, position_limits):
+def optimize_single_lineup_pulp(df, stack_type, team_selections, min_salary,
+                                 salary_cap, position_limits, exclusion_sets=None):
     """
-    Single lineup optimization using PuLP
-    This is the exact logic from makrovchain_optimizer.py lines 650-850
+    Single lineup optimization using PuLP ILP.
+
+    ACADEMIC BASIS: Hunter, Vielma, Zaman (2016) "Picking Winners in DFS Using IP"
+    - Projections are IMMUTABLE objective coefficients (Bertsimas & Tsitsiklis, 1997)
+    - Diversity via EXCLUSION CONSTRAINTS, not projection perturbation
+    - Each solve maximizes: SUM(p_i * x_i) subject to salary, position, stack constraints
+
+    Args:
+        exclusion_sets: list of sets of player indices from previous lineups.
+                        For each set S, we add constraint: SUM(x_i for i in S) <= |S| - 1
+                        This guarantees at least 1 different player from each prior lineup.
     """
-    
+
     if df.empty or len(df) < 8:
         return None
-    
+
     # Reset index to ensure clean indexing
     df = df.reset_index(drop=True).copy()
-    
-    # Add controlled variability for lineup diversity (from makrovchain_optimizer.py lines 628-646)
-    import random
-    diversity_factor = random.uniform(0.10, 0.15)  # 10-15% for diversity
-    noise = np.random.lognormal(0, diversity_factor, len(df))
-    df['Predicted_DK_Points'] = df['Predicted_DK_Points'] * noise
-    
+
+    # IMMUTABLE PROJECTIONS — no noise, no modification (Bertsimas & Tsitsiklis, 1997)
+    # Diversity is achieved through exclusion constraints below
+
     # Create PuLP problem
     prob = pulp.LpProblem("NBA_Lineup", pulp.LpMaximize)
     
@@ -358,6 +352,12 @@ def optimize_single_lineup_pulp(df, stack_type, team_selections, min_salary,
                                 prob += pulp.lpSum([player_vars[idx] for idx in other_team_players_idx]) <= stack_size - 1
                                 print(f"    🚫 LIMITING: {other_team} (not in valid teams) to max {stack_size-1} players", file=sys.stderr)
     
+    # EXCLUSION CONSTRAINTS for diversity (Hunter et al., 2016)
+    # For each previous lineup, require at least 1 different player
+    if exclusion_sets:
+        for ex_idx, prev_set in enumerate(exclusion_sets):
+            prob += pulp.lpSum([player_vars[i] for i in prev_set if i < len(player_vars)]) <= len(prev_set) - 1, f"exclude_lineup_{ex_idx}"
+
     # Solve
     prob.solve(pulp.PULP_CBC_CMD(msg=0))
     
@@ -495,6 +495,63 @@ def assign_roster_positions(lineup_df):
     assign_first_match('UTIL')
 
     return list(roster.values())
+
+
+def monte_carlo_lineup(lineup_df, num_sims=2000):
+    """
+    Monte Carlo simulation for lineup evaluation (Markowitz, 1952; Michaud, 1998).
+
+    Simulates each player's outcome from Normal(projection, stdDev) independently,
+    sums to lineup score. Returns distribution statistics for VaR, Sharpe, etc.
+
+    This is POST-OPTIMIZATION evaluation — projections are NEVER modified for optimization.
+    """
+    projections = lineup_df['Predicted_DK_Points'].values.astype(float)
+    # Estimate stdDev as 30% of projection (typical DFS variance)
+    std_devs = projections * 0.30
+
+    # Run simulations
+    scores = np.zeros(num_sims)
+    for sim in range(num_sims):
+        player_outcomes = np.random.normal(projections, std_devs)
+        player_outcomes = np.maximum(player_outcomes, 0)  # floor at 0
+        scores[sim] = player_outcomes.sum()
+
+    scores.sort()
+    mean = float(np.mean(scores))
+    std = float(np.std(scores))
+    total_proj = float(projections.sum())
+
+    # VaR at 95% confidence (5th percentile)
+    var_idx = max(0, int(num_sims * 0.05))
+    value_at_risk = float(scores[var_idx])
+
+    # CVaR (Expected Shortfall) — avg of outcomes below VaR
+    cvar = float(np.mean(scores[:var_idx + 1])) if var_idx > 0 else value_at_risk
+
+    # Sharpe ratio (mean / stdDev)
+    sharpe = mean / std if std > 0 else 0
+
+    # Ceiling probability: P(lineup > 1.3x projection)
+    ceiling_target = total_proj * 1.3
+    ceiling_prob = float(np.mean(scores >= ceiling_target))
+
+    return {
+        'simMean': round(mean, 2),
+        'simStdDev': round(std, 2),
+        'sharpeRatio': round(sharpe, 3),
+        'valueAtRisk': round(value_at_risk, 2),
+        'conditionalVaR': round(cvar, 2),
+        'ceilingProbability': round(ceiling_prob, 4),
+        'percentiles': {
+            'p10': round(float(scores[int(num_sims * 0.10)]), 2),
+            'p25': round(float(scores[int(num_sims * 0.25)]), 2),
+            'p50': round(float(scores[int(num_sims * 0.50)]), 2),
+            'p75': round(float(scores[int(num_sims * 0.75)]), 2),
+            'p90': round(float(scores[int(num_sims * 0.90)]), 2),
+        },
+        'simulations': num_sims
+    }
 
 
 def main():
@@ -684,18 +741,22 @@ def main():
             team_exposures=team_exposures
         )
         
-        # Format output
+        # Format output with Monte Carlo evaluation (Markowitz, 1952; Michaud, 1998)
         output_lineups = []
         for stack_type, lineup_df in lineups:
             players_list = assign_roster_positions(lineup_df)
             total_proj = lineup_df['Predicted_DK_Points'].sum()
             total_sal = lineup_df['Salary'].sum()
-            
+
+            # Monte Carlo simulation per lineup (post-optimization evaluation)
+            mc_metrics = monte_carlo_lineup(lineup_df, num_sims=2000)
+
             output_lineups.append({
                 'players': players_list,
                 'totalProjection': float(total_proj),
                 'totalSalary': int(total_sal),
-                'strategy': f'makrov_{stack_type}'
+                'strategy': f'ilp_{stack_type}',
+                'quantMetrics': mc_metrics
             })
         
         # Lineup count validation

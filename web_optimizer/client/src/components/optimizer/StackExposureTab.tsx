@@ -66,8 +66,8 @@ const StackExposureTab: React.FC<StackExposureTabProps> = ({ stackSettings, spor
     <div className="flex h-full flex-col gap-4 p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-white">Stack Exposure</h2>
-          <p className="text-sm text-[var(--dfs-text-secondary)]">Toggle the stacks you want and set simple min/max exposure targets.</p>
+          <h2 className="text-xl font-semibold text-white">Stack Types</h2>
+          <p className="text-sm text-[var(--dfs-text-secondary)]">Configure lineup correlation structures with min/max exposure targets per stack type.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary-action" onClick={handleEnableAll} disabled={stackSettings.length === 0 || stackSettings.every(s => s.enabled)} className="gap-2 border-cyan-500/40 bg-[var(--dfs-bg-primary)]">
@@ -99,6 +99,7 @@ const StackExposureTab: React.FC<StackExposureTabProps> = ({ stackSettings, spor
                 <tr className="text-left text-[var(--dfs-text-secondary)]">
                   <th className="w-14 px-2 py-2 font-semibold">Use</th>
                   <th className="px-2 py-2 font-semibold">Stack Type</th>
+                  <th className="w-20 px-2 py-2 font-semibold">Corr.</th>
                   <th className="w-28 px-2 py-2 text-right font-semibold">Min %</th>
                   <th className="w-28 px-2 py-2 text-right font-semibold">Max %</th>
                   <th className="px-2 py-2 text-right font-semibold">Live Exposure</th>
@@ -118,8 +119,27 @@ const StackExposureTab: React.FC<StackExposureTabProps> = ({ stackSettings, spor
                         <Checkbox checked={stack.enabled} onCheckedChange={(checked: boolean | 'indeterminate') => { if (checked !== stack.enabled) toggleStackType(stack.id); }} className="cursor-pointer" />
                       </td>
                       <td className="px-2 py-2 align-middle">
-                        <div className={`font-medium ${stack.enabled ? 'text-white' : 'text-[var(--dfs-text-muted)]'}`}>{stack.label}</div>
+                        <div className="flex items-center gap-1">
+                          <span className={`font-medium ${stack.enabled ? 'text-white' : 'text-[var(--dfs-text-muted)]'}`}>{stack.label}</span>
+                          <span className="cursor-help text-[var(--dfs-text-muted)]" title={getStackDescription(stack.label, sport)}>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="inline h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
+                          </span>
+                        </div>
                         <div className="text-xs text-[var(--dfs-text-muted)]">{getStackDescription(stack.label, sport)}</div>
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        {(() => {
+                          const desc = getStackDescription(stack.label, sport);
+                          const corrMatch = desc.match(/r=\+?([\d.]+)/);
+                          const isAvoid = desc.toLowerCase().includes('avoid') || desc.toLowerCase().includes('fade');
+                          if (isAvoid) return <span className="inline-block rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] font-bold text-red-400">Fade</span>;
+                          if (corrMatch) {
+                            const corr = parseFloat(corrMatch[1]);
+                            const color = corr >= 0.35 ? 'bg-green-500/20 text-green-400' : corr >= 0.20 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-blue-500/20 text-blue-400';
+                            return <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${color}`}>r={corrMatch[0].replace('r=', '')}</span>;
+                          }
+                          return <span className="text-[10px] text-[var(--dfs-text-muted)]">{'\u2014'}</span>;
+                        })()}
                       </td>
                       <td className="px-2 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                         <Input type="number" min="0" max="100" value={stack.minExp} onChange={(e) => updateExposure(stack.id, 'minExp', parseInt(e.target.value) || 0)} disabled={!stack.enabled} className={`h-9 w-full text-right ${stack.enabled ? 'bg-[var(--dfs-bg-secondary)] text-white' : 'bg-[var(--dfs-bg-primary)] text-[var(--dfs-text-muted)]'}`} />

@@ -233,113 +233,110 @@ class NBAOptimizer {
     return grouped;
   }
 
+  /**
+   * Compute the minimum possible salary to fill a set of remaining positions.
+   * Used to ensure we don't overspend early and leave positions unfillable.
+   */
+  _getMinSalaryForPositions(positions, playersByPosition, usedPlayerIds) {
+    let minTotal = 0;
+    const tempUsed = new Set(usedPlayerIds);
+
+    for (const { pos, eligible } of positions) {
+      const positionsToCheck = eligible || [pos];
+      let cheapest = null;
+
+      for (const p of positionsToCheck) {
+        if (!playersByPosition[p]) continue;
+        for (const player of playersByPosition[p]) {
+          if (tempUsed.has(player.id)) continue;
+          if (!cheapest || player.salary < cheapest.salary) {
+            cheapest = player;
+          }
+        }
+      }
+
+      if (cheapest) {
+        minTotal += cheapest.salary;
+        tempUsed.add(cheapest.id);
+      } else {
+        minTotal += 3000; // fallback minimum salary estimate
+      }
+    }
+    return minTotal;
+  }
+
   generateAdvancedLineup(playersByPosition, positionReqs, minSalary, maxSalary, strategy, stackSettings, stackTypes, exposureSettings, lineupPool, exposureTracker, maxExposure, minUniquePlayersBetweenLineups, quantEnabled, quant, quantScores, kellyLimits) {
     const lineup = [];
     let totalSalary = 0;
     let totalProjection = 0;
     const usedPlayerIds = new Set();
 
-    // Fill core positions first (PG, SG, SF, PF, C)
-    const corePositions = ['PG', 'SG', 'SF', 'PF', 'C'];
-    
-    for (const position of corePositions) {
+    // All 8 positions in fill order with their eligible position pools
+    const allSlots = [
+      { pos: 'PG', eligible: null },
+      { pos: 'SG', eligible: null },
+      { pos: 'SF', eligible: null },
+      { pos: 'PF', eligible: null },
+      { pos: 'C', eligible: null },
+      { pos: 'G', eligible: ['PG', 'SG'] },
+      { pos: 'F', eligible: ['SF', 'PF'] },
+      { pos: 'UTIL', eligible: ['PG', 'SG', 'SF', 'PF', 'C'] }
+    ];
+
+    // Shuffle the first 5 core positions to eliminate position-order bias
+    for (let i = 4; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allSlots[i], allSlots[j]] = [allSlots[j], allSlots[i]];
+    }
+
+    for (let slotIdx = 0; slotIdx < allSlots.length; slotIdx++) {
+      const { pos, eligible } = allSlots[slotIdx];
+      const remainingSlots = allSlots.slice(slotIdx + 1);
+      const remainingBudget = maxSalary - totalSalary;
+
+      // Compute min salary needed for all positions AFTER this one
+      const minSalaryForRemaining = this._getMinSalaryForPositions(
+        remainingSlots, playersByPosition, usedPlayerIds
+      );
+
+      // Max we can spend on this slot = remaining budget minus what we need for the rest
+      const maxForThisSlot = remainingBudget - minSalaryForRemaining;
+
+      // For the last slot, also enforce the salary floor
+      const slotsLeft = allSlots.length - slotIdx - 1;
+      let minForThisSlot = 0;
+      if (slotsLeft === 0) {
+        // Last slot: check if we need a minimum to reach the salary floor
+        minForThisSlot = Math.max(0, minSalary - totalSalary);
+      }
+
       const player = this.selectPlayerForPosition(
-        position,
+        pos,
         playersByPosition,
         usedPlayerIds,
         strategy,
         exposureTracker,
         maxExposure,
-        null,
+        eligible,
         quantEnabled,
         quant,
         quantScores,
-        kellyLimits
+        kellyLimits,
+        maxForThisSlot,
+        minForThisSlot
       );
 
       if (!player) {
-        return null; // Can't fill required position
+        return null;
       }
 
-      lineup.push({ ...player, rosterPosition: position });
+      lineup.push({ ...player, rosterPosition: pos });
       usedPlayerIds.add(player.id);
       totalSalary += player.salary;
       totalProjection += player.projection || 0;
     }
 
-    // Fill G position (any remaining guard)
-    const guardPlayer = this.selectPlayerForPosition(
-      'G',
-      playersByPosition,
-      usedPlayerIds,
-      strategy,
-      exposureTracker,
-      maxExposure,
-      ['PG', 'SG'],
-      quantEnabled,
-      quant,
-      quantScores,
-      kellyLimits
-    );
-
-    if (!guardPlayer) {
-      return null;
-    }
-
-    lineup.push({ ...guardPlayer, rosterPosition: 'G' });
-    usedPlayerIds.add(guardPlayer.id);
-    totalSalary += guardPlayer.salary;
-    totalProjection += guardPlayer.projection || 0;
-
-    // Fill F position (any remaining forward)
-    const forwardPlayer = this.selectPlayerForPosition(
-      'F',
-      playersByPosition,
-      usedPlayerIds,
-      strategy,
-      exposureTracker,
-      maxExposure,
-      ['SF', 'PF'],
-      quantEnabled,
-      quant,
-      quantScores,
-      kellyLimits
-    );
-
-    if (!forwardPlayer) {
-      return null;
-    }
-
-    lineup.push({ ...forwardPlayer, rosterPosition: 'F' });
-    usedPlayerIds.add(forwardPlayer.id);
-    totalSalary += forwardPlayer.salary;
-    totalProjection += forwardPlayer.projection || 0;
-
-    // Fill UTIL position (any remaining player)
-    const utilPlayer = this.selectPlayerForPosition(
-      'UTIL',
-      playersByPosition,
-      usedPlayerIds,
-      strategy,
-      exposureTracker,
-      maxExposure,
-      ['PG', 'SG', 'SF', 'PF', 'C'],
-      quantEnabled,
-      quant,
-      quantScores,
-      kellyLimits
-    );
-
-    if (!utilPlayer) {
-      return null;
-    }
-
-    lineup.push({ ...utilPlayer, rosterPosition: 'UTIL' });
-    usedPlayerIds.add(utilPlayer.id);
-    totalSalary += utilPlayer.salary;
-    totalProjection += utilPlayer.projection || 0;
-
-    // Validate salary constraints
+    // Final salary validation
     if (totalSalary < minSalary || totalSalary > maxSalary) {
       return null;
     }
@@ -352,10 +349,10 @@ class NBAOptimizer {
     };
   }
 
-  selectPlayerForPosition(rosterPosition, playersByPosition, usedPlayerIds, strategy, exposureTracker, maxExposure, eligiblePositions = null, quantEnabled = false, quant = null, quantScores = null, kellyLimits = null) {
+  selectPlayerForPosition(rosterPosition, playersByPosition, usedPlayerIds, strategy, exposureTracker, maxExposure, eligiblePositions = null, quantEnabled = false, quant = null, quantScores = null, kellyLimits = null, maxSalaryForSlot = Infinity, minSalaryForSlot = 0) {
     // Determine which position pools to look at
     const positionsToCheck = eligiblePositions || [rosterPosition];
-    
+
     // Gather all eligible players from the position pools
     const playerMap = new Map();
     for (const pos of positionsToCheck) {
@@ -367,17 +364,21 @@ class NBAOptimizer {
         });
       }
     }
-    
-    // Convert to array and filter out used players + exposure limits
+
+    // Convert to array and filter: used players, exposure limits, AND salary budget
     let eligiblePlayers = Array.from(playerMap.values()).filter(p => {
       if (usedPlayerIds.has(p.id)) return false;
-      
+
       // Check exposure limit (use Kelly limit if available, otherwise default)
-      const playerMaxExposure = (kellyLimits && kellyLimits.has(p.id)) 
+      const playerMaxExposure = (kellyLimits && kellyLimits.has(p.id))
         ? kellyLimits.get(p.id)
         : maxExposure;
       if ((exposureTracker.get(p.id) || 0) >= playerMaxExposure) return false;
-      
+
+      // Salary budget constraints — can we afford this player?
+      if (p.salary > maxSalaryForSlot) return false;
+      if (p.salary < minSalaryForSlot) return false;
+
       return true;
     });
 
@@ -385,28 +386,25 @@ class NBAOptimizer {
       return null;
     }
 
-    // When quant is enabled, use quant-scored selection
+    // When quant is enabled, use quant-scored selection (with salary-filtered pool)
     if (quantEnabled && quant && quantScores) {
       return quant.selectPlayerQuant(eligiblePlayers, quantScores, strategy);
     }
 
-    // Fallback: original strategy-based selection
+    // Strategy-based selection with salary-aware sorting
     eligiblePlayers.sort((a, b) => {
       switch (strategy) {
         case 'greedy':
         case 'projection':
-          // Pure projection-based
           return (b.projection || 0) - (a.projection || 0);
         case 'value': {
-          // Value-based (points per $1000)
-          const valueA = (a.projection || 0) / a.salary * 1000;
-          const valueB = (b.projection || 0) / b.salary * 1000;
+          const valueA = a.salary > 0 ? (a.projection || 0) / a.salary * 1000 : 0;
+          const valueB = b.salary > 0 ? (b.projection || 0) / b.salary * 1000 : 0;
           return valueB - valueA;
         }
         case 'balanced': {
-          // Balanced approach
-          const balanceA = ((a.projection || 0) * 0.7) + (((a.projection || 0) / a.salary * 1000) * 0.3);
-          const balanceB = ((b.projection || 0) * 0.7) + (((b.projection || 0) / b.salary * 1000) * 0.3);
+          const balanceA = ((a.projection || 0) * 0.6) + (a.salary > 0 ? ((a.projection || 0) / a.salary * 1000) * 0.4 : 0);
+          const balanceB = ((b.projection || 0) * 0.6) + (b.salary > 0 ? ((b.projection || 0) / b.salary * 1000) * 0.4 : 0);
           return balanceB - balanceA;
         }
         default:
@@ -414,13 +412,18 @@ class NBAOptimizer {
       }
     });
 
-    // Use weighted randomness - favor top players but still allow diversity
-    // 70% chance to pick from top 2, 30% chance to pick from top 5
-    const useTop2 = Math.random() < 0.7;
-    const topN = useTop2 ? Math.min(2, eligiblePlayers.length) : Math.min(5, eligiblePlayers.length);
-    const randomIndex = Math.floor(Math.random() * topN);
-    
-    return eligiblePlayers[randomIndex];
+    // Weighted random from top candidates for diversity
+    const poolSize = Math.min(Math.max(3, Math.floor(eligiblePlayers.length * 0.2)), 8);
+    const topPool = eligiblePlayers.slice(0, poolSize);
+
+    // Weight by projection — higher projection = higher pick probability
+    const totalProj = topPool.reduce((s, p) => s + Math.max(p.projection || 0, 0.1), 0);
+    let rand = Math.random() * totalProj;
+    for (const player of topPool) {
+      rand -= Math.max(player.projection || 0, 0.1);
+      if (rand <= 0) return player;
+    }
+    return topPool[0];
   }
 
   isDuplicateLineup(lineup, lineupPool, uniqueThreshold) {

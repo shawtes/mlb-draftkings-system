@@ -38,11 +38,17 @@ export const SPORT_CONFIGS: Record<Sport, SportConfig> = {
       'OF': 3
     },
     stackTypes: [
-      'Same Team (2+)',
-      'Same Team (3+)',
-      'Same Team (4+)',
-      'Pitcher + Batter',
-      'Batter Stack',
+      '5/4',
+      '5/3',
+      '5/2',
+      '4/4',
+      '4/3',
+      '4/2',
+      '3/3/2',
+      '5-Man Batter Stack',
+      '4-Man Batter Stack',
+      'Wrap-Around Stack',
+      'Pitcher vs Weak Lineup',
       'No Stacks'
     ],
     defaultMinSalary: 45000,
@@ -70,12 +76,15 @@ export const SPORT_CONFIGS: Record<Sport, SportConfig> = {
     },
     stackTypes: [
       'QB + WR',
-      'QB + 2 WR',
+      'QB + 2WR',
       'QB + WR + TE',
-      'QB + WR + RB',
-      'QB + 2 WR + TE',
-      'Game Stack',
+      'QB + 2WR + TE',
+      '4/3 Game Stack',
+      '3/2 Game Stack',
+      '3/2/1',
       'Bring-Back',
+      'Run-Back',
+      'Mini Stack (WR+WR)',
       'No Stack'
     ],
     defaultMinSalary: 48000,
@@ -106,13 +115,16 @@ export const SPORT_CONFIGS: Record<Sport, SportConfig> = {
       'UTIL': 1
     },
     stackTypes: [
-      'Same Team (2+)',
-      'Same Team (3+)',
-      'Same Team (4+)',
-      'Same Team (5+)',
-      'PG + SG',
+      '4/2 Game Stack',
+      '3/3 Game Stack',
+      '3/2/2',
+      '2/2/2/2',
+      'Game Environment (2+)',
+      'Game Environment (3+)',
+      'Pace Stack',
       'Stars + Value',
-      'Balanced',
+      'Mini Stack (PG+Wing)',
+      'Blowout Fade',
       'No Stack'
     ],
     defaultMinSalary: 48000,
@@ -204,24 +216,61 @@ export function getPositionCount(players: any[], position: string, sport: Sport)
  */
 export function getStackDescription(stackType: string, sport: Sport): string {
   const descriptions: Record<string, string> = {
-    // MLB
+    // NFL — correlation-backed stacking
+    'QB + WR': 'QB with 1 WR from same team (r=+0.54)',
+    'QB + 2WR': 'QB with 2 WRs from same team — double stack for ceiling (r=+0.54/+0.41)',
+    'QB + WR + TE': 'QB + WR + TE same team — red zone correlation (r=+0.54/+0.38)',
+    'QB + 2WR + TE': 'QB + 2 WRs + TE — max same-team ceiling (r=+0.54/+0.41/+0.38)',
+    '4/3 Game Stack': '4 from Team A (QB+3) + 3 from Team B — full shootout capture (r=+0.37)',
+    '3/2 Game Stack': '3 from Team A (QB+2) + 2 from Team B — standard game stack (r=+0.37)',
+    '3/2/1': '3 from Team A + 2 from Team B + 1 from Team C — diversified game stack',
+    'Bring-Back': 'Opposing pass catcher paired with QB stack (r=+0.37)',
+    'Run-Back': 'Opposing RB/WR paired with QB stack — shootout hedge',
+    'Mini Stack (WR+WR)': 'Same-team WR pair without QB — moderate correlation (r=+0.22)',
+    'No Stack': 'No correlation requirements — pure projection-driven',
+
+    // NBA — game environment + numeric constructions
+    '4/2 Game Stack': '4 from Game A + 2 from Game B — concentrated game environment (r=+0.30)',
+    '3/3 Game Stack': '3 from Game A + 3 from Game B — balanced two-game exposure (r=+0.25)',
+    '3/2/2': '3 from Game A + 2 from Game B + 2 from Game C — three-game spread',
+    '2/2/2/2': '2 from each of 4 games — max diversification, lower ceiling',
+    'Game Environment (2+)': '2+ players from same high-total game (O/U 230+)',
+    'Game Environment (3+)': '3+ from same game — aggressive game environment capture',
+    'Pace Stack': 'Players from top-pace teams (pace > 100) — more possessions',
+    'Stars + Value': 'Salary structure: 2-3 studs ($8K+) + value plays ($3.5-5K)',
+    'Mini Stack (PG+Wing)': 'PG + SG/SF — assist-to-score correlation (r=+0.15)',
+    'Blowout Fade': 'Avoid starters from heavy favorites (spread > 10)',
+
+    // MLB — numeric construction formats (batters only, excludes pitcher slots)
+    '5/4': '5 batters Team A + 4 batters Team B — max correlated, GPP ceiling (r=+0.45)',
+    '5/3': '5 batters Team A + 3 batters Team B — dominant GPP format, 64% of winners (r=+0.40)',
+    '5/2': '5 batters Team A + 2 batters Team B — heavy primary stack (r=+0.38)',
+    '4/4': '4 batters Team A + 4 batters Team B — balanced two-team (r=+0.35)',
+    '4/3': '4 batters Team A + 3 batters Team B — standard GPP construction (r=+0.35)',
+    '4/2': '4 batters Team A + 2 batters Team B + 2 individuals (r=+0.30)',
+    '3/3/2': '3 batters each from 2 teams + 2 from a 3rd — three-team diversified',
+    '5-Man Batter Stack': '5 consecutive batters from same team — big inning capture (r=+0.45)',
+    '4-Man Batter Stack': '4 consecutive batters from same team (r=+0.35)',
+    'Wrap-Around Stack': 'Bottom + top of order (8-9-1-2-3) — extra ABs (r=+0.35)',
+    'Pitcher vs Weak Lineup': 'Pitcher facing bottom-5 offense — high floor',
+    'No Stacks': 'No correlation requirements — uncorrelated lineup',
+
+    // Legacy fallbacks
     'Same Team (2+)': 'At least 2 players from same team',
     'Same Team (3+)': 'At least 3 players from same team',
     'Same Team (4+)': 'At least 4 players from same team',
+    'Same Team (5+)': 'At least 5 players from same team',
     'Pitcher + Batter': 'Pitcher with batter from opposing team',
     'Batter Stack': 'Multiple batters from same team',
-    
-    // NFL
-    'QB + WR': 'QB with 1 WR from same team',
-    'QB + 2 WR': 'QB with 2 WRs from same team',
-    'QB + WR + TE': 'QB with WR and TE from same team',
+    '5+3 Structure': '5-man primary stack + 3-man secondary stack',
+    'Secondary Stack (3-man)': '3-man complementary stack from different team',
+    'PG + SG': 'Point guard + shooting guard from same team',
+    'Balanced': 'No structural constraint — projection-driven',
+    'Game Stack': 'QB+WR (Team A) + WR/TE (Team B) — full game environment',
     'QB + WR + RB': 'QB with WR and RB from same team',
     'QB + 2 WR + TE': 'QB with 2 WRs and TE from same team',
-    'Game Stack': 'QB + WR (Team A) + WR (Team B)',
-    'Bring-Back': 'QB + WR (Team A) + RB (Team B)',
-    'No Stack': 'No correlation requirements'
   };
-  
+
   return descriptions[stackType] || stackType;
 }
 

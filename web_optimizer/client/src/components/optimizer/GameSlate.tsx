@@ -20,6 +20,64 @@ interface GameCard {
 }
 
 /**
+ * Map DraftKings team abbreviations → ESPN CDN slugs (lowercase)
+ * ESPN CDN pattern: https://a.espncdn.com/i/teamlogos/{sport}/500/{slug}.png
+ */
+const DK_TO_ESPN_SLUG: Record<string, Record<string, string>> = {
+  NBA: {
+    ATL: 'atl', BOS: 'bos', BKN: 'bkn', CHA: 'cha', CHI: 'chi',
+    CLE: 'cle', DAL: 'dal', DEN: 'den', DET: 'det', GS: 'gs',
+    GSW: 'gs', HOU: 'hou', IND: 'ind', LAC: 'lac', LAL: 'lal',
+    MEM: 'mem', MIA: 'mia', MIL: 'mil', MIN: 'min', NO: 'no',
+    NOP: 'no', NY: 'ny', NYK: 'ny', OKC: 'okc', ORL: 'orl',
+    PHI: 'phi', PHO: 'phx', PHX: 'phx', POR: 'por', SAC: 'sac',
+    SA: 'sa', SAS: 'sa', TOR: 'tor', UTA: 'utah', UTAH: 'utah',
+    WAS: 'wsh', WSH: 'wsh',
+  },
+  NFL: {
+    ARI: 'ari', ATL: 'atl', BAL: 'bal', BUF: 'buf', CAR: 'car',
+    CHI: 'chi', CIN: 'cin', CLE: 'cle', DAL: 'dal', DEN: 'den',
+    DET: 'det', GB: 'gb', HOU: 'hou', IND: 'ind', JAX: 'jax',
+    JAC: 'jax', KC: 'kc', LV: 'lv', LAR: 'lar', LAC: 'lac',
+    MIA: 'mia', MIN: 'min', NE: 'ne', NO: 'no', NYG: 'nyg',
+    NYJ: 'nyj', PHI: 'phi', PIT: 'pit', SF: 'sf', SEA: 'sea',
+    TB: 'tb', TEN: 'ten', WAS: 'wsh', WSH: 'wsh',
+  },
+  MLB: {
+    ARI: 'ari', ATL: 'atl', BAL: 'bal', BOS: 'bos', CHC: 'chc',
+    CHW: 'chw', CWS: 'chw', CIN: 'cin', CLE: 'cle', COL: 'col',
+    DET: 'det', HOU: 'hou', KC: 'kc', LAA: 'laa', LAD: 'lad',
+    MIA: 'mia', MIL: 'mil', MIN: 'min', NYM: 'nym', NYY: 'nyy',
+    OAK: 'oak', PHI: 'phi', PIT: 'pit', SD: 'sd', SF: 'sf',
+    SEA: 'sea', STL: 'stl', TB: 'tb', TEX: 'tex', TOR: 'tor',
+    WAS: 'wsh', WSH: 'wsh',
+  },
+};
+
+function getTeamLogoUrl(team: string, sport: Sport): string {
+  const slug = DK_TO_ESPN_SLUG[sport]?.[team.toUpperCase()] || team.toLowerCase();
+  const espnSport = sport === 'NBA' ? 'nba' : sport === 'NFL' ? 'nfl' : 'mlb';
+  return `https://a.espncdn.com/i/teamlogos/${espnSport}/500/${slug}.png`;
+}
+
+/** Tiny logo with graceful fallback to text */
+const TeamLogo: React.FC<{ team: string; sport: Sport; size?: number }> = ({ team, sport, size = 20 }) => {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <img
+      src={getTeamLogoUrl(team, sport)}
+      alt={team}
+      width={size}
+      height={size}
+      className="object-contain"
+      onError={() => setFailed(true)}
+      loading="lazy"
+    />
+  );
+};
+
+/**
  * Normalize a matchup key so that "NYY vs BOS" and "BOS vs NYY"
  * resolve to the same game regardless of which team the player is on.
  */
@@ -130,37 +188,43 @@ const GameSlate: React.FC<GameSlateProps> = ({ playerData, sport, onGameFilter }
                 ? 'border-[var(--dfs-accent)] bg-[var(--dfs-accent)]/10'
                 : 'border-[var(--dfs-border)] bg-[var(--dfs-bg-secondary)] hover:border-[var(--dfs-accent)]/40'
             }`}
-            style={{ width: 120, height: 52 }}
+            style={{ width: 150, height: 60 }}
           >
-            {/* Top row: team matchup */}
-            <div className="flex items-center justify-center gap-1 text-xs font-medium leading-tight">
-              <span
-                className="inline-flex items-center justify-center rounded px-1 py-0.5 text-[10px] font-semibold leading-none"
-                style={{
-                  backgroundColor: isSelected ? 'var(--dfs-accent)' : 'var(--dfs-bg-primary)',
-                  color: isSelected ? 'var(--dfs-bg-primary)' : 'var(--dfs-text-secondary)',
-                  minWidth: 28,
-                }}
-              >
-                {game.teamA}
-              </span>
+            {/* Top row: logos + team matchup */}
+            <div className="flex items-center justify-center gap-1.5 text-xs font-medium leading-tight">
+              <div className="flex items-center gap-1">
+                <TeamLogo team={game.teamA} sport={sport} size={18} />
+                <span
+                  className="inline-flex items-center justify-center rounded px-1 py-0.5 text-[10px] font-semibold leading-none"
+                  style={{
+                    backgroundColor: isSelected ? 'var(--dfs-accent)' : 'var(--dfs-bg-primary)',
+                    color: isSelected ? 'var(--dfs-bg-primary)' : 'var(--dfs-text-secondary)',
+                    minWidth: 24,
+                  }}
+                >
+                  {game.teamA}
+                </span>
+              </div>
               <span className="text-[var(--dfs-text-muted)] text-[10px]">vs</span>
-              <span
-                className="inline-flex items-center justify-center rounded px-1 py-0.5 text-[10px] font-semibold leading-none"
-                style={{
-                  backgroundColor: isSelected ? 'var(--dfs-accent)' : 'var(--dfs-bg-primary)',
-                  color: isSelected ? 'var(--dfs-bg-primary)' : 'var(--dfs-text-secondary)',
-                  minWidth: 28,
-                }}
-              >
-                {game.teamB}
-              </span>
+              <div className="flex items-center gap-1">
+                <span
+                  className="inline-flex items-center justify-center rounded px-1 py-0.5 text-[10px] font-semibold leading-none"
+                  style={{
+                    backgroundColor: isSelected ? 'var(--dfs-accent)' : 'var(--dfs-bg-primary)',
+                    color: isSelected ? 'var(--dfs-bg-primary)' : 'var(--dfs-text-secondary)',
+                    minWidth: 24,
+                  }}
+                >
+                  {game.teamB}
+                </span>
+                <TeamLogo team={game.teamB} sport={sport} size={18} />
+              </div>
             </div>
 
             {/* Bottom row: implied total + player count */}
-            <div className="flex items-center justify-center gap-2 mt-1">
-              <span className="text-[10px] text-[var(--dfs-text-muted)]">
-                {game.impliedTotal.toFixed(1)}
+            <div className="flex items-center justify-center gap-2 mt-1.5">
+              <span className="text-[10px] font-medium text-[var(--dfs-text-secondary)]">
+                O/U {game.impliedTotal.toFixed(1)}
               </span>
               <span className="flex items-center gap-0.5 text-[10px] text-[var(--dfs-text-muted)]">
                 <Users className="w-2.5 h-2.5" />

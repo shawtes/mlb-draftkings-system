@@ -67,6 +67,7 @@ const DFSOptimizer = React.memo(() => {
   const [lineups, setLineups] = useState<any[]>([]);
   const [isLoadingLineups] = useState(false);
   const [, setDkEntriesLoaded] = useState(false);
+  const [portfolioMetrics, setPortfolioMetrics] = useState<any>(null);
 
   // Initialize stack settings
   useEffect(() => {
@@ -117,6 +118,7 @@ const DFSOptimizer = React.memo(() => {
     onLineupsChange: setLineups,
     onActiveTabChange: setActiveTab,
     onPlayerDataChange: setPlayerData,
+    onPortfolioMetricsChange: setPortfolioMetrics,
   });
 
   // Fetch lineups
@@ -163,7 +165,7 @@ const DFSOptimizer = React.memo(() => {
   const tabs = [
     { id: 'players', label: 'Players', icon: Users },
     { id: 'team-stacks', label: 'Stacks', icon: Link2 },
-    { id: 'stack-exposure', label: 'Exposure', icon: BarChart3 },
+    { id: 'stack-exposure', label: 'Stack Types', icon: BarChart3 },
     { id: 'team-combos', label: 'Combos', icon: Target },
     { id: 'advanced-quant', label: 'Quant', icon: Cpu },
     { id: 'lineups', label: 'Lineups', icon: Trophy },
@@ -240,8 +242,8 @@ const DFSOptimizer = React.memo(() => {
                   })}
                 </TabsList>
 
-                <div className="flex-1 overflow-auto p-3 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
-                  <TabsContent value="players" className="mt-0 h-full overflow-auto">
+                <div className="flex-1 overflow-hidden p-3 flex flex-col min-h-0">
+                  <TabsContent value="players" className="mt-0 h-full flex flex-col overflow-hidden">
                     <PlayerTable playerData={playerData} selectedPlayers={selectedPlayers} sport={currentSport} onPlayersChange={handleSelectedPlayersChange} onPlayerDataChange={setPlayerData} />
                   </TabsContent>
                   <TabsContent value="team-stacks" className="mt-0 h-full overflow-auto">
@@ -257,6 +259,23 @@ const DFSOptimizer = React.memo(() => {
                     <AdvancedQuantTab settings={advancedQuantSettings} onSettingsChange={setAdvancedQuantSettings} />
                   </TabsContent>
                   <TabsContent value="lineups" className="mt-0 h-full overflow-auto">
+                    {portfolioMetrics && (
+                      <div className="grid grid-cols-4 gap-2 mb-3 p-2 bg-[var(--dfs-bg-tertiary)] border border-[var(--dfs-border)] rounded-lg">
+                        {[
+                          { label: 'Portfolio Sharpe', value: portfolioMetrics.sharpeRatio?.toFixed(2), good: portfolioMetrics.sharpeRatio > 2, warn: portfolioMetrics.sharpeRatio > 1 },
+                          { label: 'Avg Uniqueness', value: `${(portfolioMetrics.avgUniqueness * 100)?.toFixed(0)}%`, good: portfolioMetrics.avgUniqueness > 0.7, warn: portfolioMetrics.avgUniqueness > 0.5 },
+                          { label: 'Max Exposure', value: `${portfolioMetrics.maxExposure?.toFixed(0)}%`, good: portfolioMetrics.maxExposure < 30, warn: portfolioMetrics.maxExposure < 60 },
+                          { label: 'Concentration', value: portfolioMetrics.exposureConcentration?.toFixed(3), good: portfolioMetrics.exposureConcentration < 0.1, warn: portfolioMetrics.exposureConcentration < 0.2 },
+                        ].map((metric, i) => (
+                          <div key={i} className="text-center">
+                            <div className="text-[10px] text-[var(--dfs-text-muted)] uppercase tracking-wider">{metric.label}</div>
+                            <div className={`text-sm font-bold font-mono ${metric.good ? 'text-green-400' : metric.warn ? 'text-yellow-400' : 'text-red-400'}`}>
+                              {metric.value || '\u2014'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <LineupsTab
                       sport={currentSport}
                       lineups={lineups}

@@ -3,6 +3,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const QuantEngine = require('./quant-engine');
 
 /**
  * NFL DraftKings Optimizer - Backend Integration
@@ -55,21 +56,65 @@ class NFLOptimizer {
       onProgress 
     } = config;
 
-    // Log quant settings if enabled
-    if (advancedQuantSettings && advancedQuantSettings.enabled) {
-      console.log('📊 Advanced Quant Settings enabled:', {
+    // Initialize quant engine
+    const quantEnabled = advancedQuantSettings && advancedQuantSettings.enabled;
+    const quant = quantEnabled ? new QuantEngine(advancedQuantSettings) : null;
+
+    if (quantEnabled) {
+      console.log('📊 NFL Quant Engine ACTIVE:', {
         strategy: advancedQuantSettings.strategy,
         riskTolerance: advancedQuantSettings.riskTolerance,
         varConfidence: advancedQuantSettings.varConfidence,
-        targetVolatility: advancedQuantSettings.targetVolatility,
         monteCarloSims: advancedQuantSettings.monteCarloSims,
+        maxKellyFraction: advancedQuantSettings.maxKellyFraction,
       });
     }
+
+    // Pre-compute quant scores for all players when quant is enabled
+    const quantScores = quantEnabled ? quant.scorePlayersQuant(players, contestMode) : null;
+
+    // Compute Kelly-optimal exposure limits when enabled
+    const kellyLimits = (quantEnabled && advancedQuantSettings.strategy !== 'equal_weight')
+      ? quant.kellyExposureLimits(players, maxExposure)
+      : null;
 
     // Try Python optimizer first (preferred for production)
     if (this.pythonOptimizerPath) {
       try {
-        return await this.optimizeWithPython(config);
+        let results = await this.optimizeWithPython(config);
+
+        // Post-hoc quant: run MC on Python-generated lineups when quant enabled
+        if (quantEnabled && quant && results && results.length > 0) {
+          for (const result of results) {
+            if (result.players && result.players.length > 0) {
+              const mcResult = quant.monteCarloLineup(result.players);
+              result.quantMetrics = {
+                simMean: mcResult.mean,
+                simStdDev: mcResult.stdDev,
+                sharpeRatio: mcResult.sharpeRatio,
+                valueAtRisk: mcResult.valueAtRisk,
+                conditionalVaR: mcResult.conditionalVaR,
+                ceilingProbability: mcResult.ceilingProbability,
+                percentiles: mcResult.percentiles,
+                simulations: mcResult.simulations
+              };
+            }
+          }
+
+          // Sort by Sharpe ratio when quant enabled
+          results.sort((a, b) => {
+            const aScore = a.quantMetrics ? a.quantMetrics.sharpeRatio : 0;
+            const bScore = b.quantMetrics ? b.quantMetrics.sharpeRatio : 0;
+            return bScore - aScore;
+          });
+
+          // Compute portfolio-level metrics
+          const portfolioMetrics = quant.analyzePortfolio(results);
+          console.log('📈 NFL Portfolio Metrics (Python path):', portfolioMetrics);
+          results.portfolioMetrics = portfolioMetrics;
+        }
+
+        return results;
       } catch (error) {
         console.error('Python optimizer failed, falling back to JavaScript:', error.message);
       }
@@ -285,16 +330,26 @@ class NFLOptimizer {
    * JavaScript fallback optimizer (when Python unavailable)
    */
   async optimizeWithJavaScript(config) {
-    const { 
-      players, 
-      numLineups, 
-      minSalary, 
-      maxSalary, 
+    const {
+      players,
+      numLineups,
+      minSalary,
+      maxSalary,
       stackSettings,
       uniquePlayers,
       maxExposure,
-      onProgress 
+      advancedQuantSettings = {},
+      contestMode = 'gpp',
+      onProgress
     } = config;
+
+    // Initialize quant engine for JS path
+    const quantEnabled = advancedQuantSettings && advancedQuantSettings.enabled;
+    const quant = quantEnabled ? new QuantEngine(advancedQuantSettings) : null;
+    const quantScores = quantEnabled ? quant.scorePlayersQuant(players, contestMode) : null;
+    const kellyLimits = (quantEnabled && advancedQuantSettings.strategy !== 'equal_weight')
+      ? quant.kellyExposureLimits(players, maxExposure)
+      : null;
 
     const results = [];
     
@@ -358,14 +413,18 @@ class NFLOptimizer {
 
       do {
         lineup = this.generateNFLLineup(
-          playersByPosition, 
-          positionReqs, 
-          minSalary, 
-          maxSalary, 
+          playersByPosition,
+          positionReqs,
+          minSalary,
+          maxSalary,
           strategy,
           stackSettings,
           exposureTracker,
-          maxExposure
+          maxExposure,
+          quantEnabled,
+          quant,
+          quantScores,
+          kellyLimits
         );
         attempts++;
       } while (
@@ -376,14 +435,14 @@ class NFLOptimizer {
       if (lineup) {
         const lineupKey = this.getLineupKey(lineup.players);
         lineupPool.add(lineupKey);
-        
+
         // Update exposure tracking
         lineup.players.forEach(player => {
           const count = exposureTracker.get(player.id) || 0;
           exposureTracker.set(player.id, count + 1);
         });
 
-        results.push({
+        const result = {
           id: uuidv4(),
           players: lineup.players,
           totalSalary: lineup.totalSalary,
@@ -392,17 +451,54 @@ class NFLOptimizer {
           strategy,
           stacks: this.analyzeStacks(lineup.players),
           timestamp: new Date().toISOString()
-        });
+        };
+
+        // Run Monte Carlo simulation and add quant metrics when enabled
+        if (quantEnabled && quant) {
+          const mcResult = quant.monteCarloLineup(lineup.players);
+          result.quantMetrics = {
+            simMean: mcResult.mean,
+            simStdDev: mcResult.stdDev,
+            sharpeRatio: mcResult.sharpeRatio,
+            valueAtRisk: mcResult.valueAtRisk,
+            conditionalVaR: mcResult.conditionalVaR,
+            ceilingProbability: mcResult.ceilingProbability,
+            percentiles: mcResult.percentiles,
+            simulations: mcResult.simulations
+          };
+        }
+
+        results.push(result);
       }
 
       // Small delay for real-time feel
       await new Promise(resolve => setTimeout(resolve, 10));
     }
 
-    // Sort by projection (descending)
-    results.sort((a, b) => b.totalProjection - a.totalProjection);
+    // Sort by quant-adjusted score when enabled, otherwise by projection
+    if (quantEnabled) {
+      results.sort((a, b) => {
+        const aScore = a.quantMetrics ? a.quantMetrics.sharpeRatio : 0;
+        const bScore = b.quantMetrics ? b.quantMetrics.sharpeRatio : 0;
+        return bScore - aScore;
+      });
+    } else {
+      results.sort((a, b) => b.totalProjection - a.totalProjection);
+    }
+
+    // Compute portfolio-level metrics when quant is enabled
+    let portfolioMetrics = null;
+    if (quantEnabled && quant && results.length > 0) {
+      portfolioMetrics = quant.analyzePortfolio(results);
+      console.log('📈 NFL Portfolio Metrics:', portfolioMetrics);
+    }
 
     if (onProgress) onProgress(100);
+
+    console.log(`✅ Generated ${results.length} NFL lineups${quantEnabled ? ' (quant-optimized)' : ''}`);
+
+    // Attach portfolio metrics to results array for the API response
+    results.portfolioMetrics = portfolioMetrics;
     return results;
   }
 
@@ -442,7 +538,7 @@ class NFLOptimizer {
   /**
    * Generate a single NFL lineup
    */
-  generateNFLLineup(playersByPosition, positionReqs, minSalary, maxSalary, strategy, stackSettings, exposureTracker, maxExposure) {
+  generateNFLLineup(playersByPosition, positionReqs, minSalary, maxSalary, strategy, stackSettings, exposureTracker, maxExposure, quantEnabled = false, quant = null, quantScores = null, kellyLimits = null) {
     const lineup = [];
     let totalSalary = 0;
     let totalProjection = 0;
@@ -478,17 +574,21 @@ class NFLOptimizer {
       
       for (let i = 0; i < needed; i++) {
         const player = this.selectPlayerForPosition(
-          playersByPosition[position], 
-          usedPlayers, 
-          totalSalary, 
-          maxSalary, 
+          playersByPosition[position],
+          usedPlayers,
+          totalSalary,
+          maxSalary,
           strategy,
           exposureTracker,
-          maxExposure
+          maxExposure,
+          quantEnabled,
+          quant,
+          quantScores,
+          kellyLimits
         );
-        
+
         if (!player) return null;
-        
+
         lineup.push(player);
         totalSalary += player.salary;
         totalProjection += (player.projection || player.projectedPoints || 0);
@@ -509,7 +609,11 @@ class NFLOptimizer {
         maxSalary,
         strategy,
         exposureTracker,
-        maxExposure
+        maxExposure,
+        quantEnabled,
+        quant,
+        quantScores,
+        kellyLimits
       );
 
       if (player) {
@@ -623,32 +727,40 @@ class NFLOptimizer {
   /**
    * Select player for position using strategy
    */
-  selectPlayerForPosition(positionPlayers, usedPlayers, currentSalary, maxSalary, strategy, exposureTracker, maxExposure) {
+  selectPlayerForPosition(positionPlayers, usedPlayers, currentSalary, maxSalary, strategy, exposureTracker, maxExposure, quantEnabled = false, quant = null, quantScores = null, kellyLimits = null) {
     if (!positionPlayers || positionPlayers.length === 0) return null;
-    
+
     const availablePlayers = positionPlayers.filter(p => {
       if (usedPlayers.has(p.id)) return false;
       if (currentSalary + p.salary > maxSalary) return false;
-      
-      // Check exposure limits
+
+      // Check exposure limit (use Kelly limit if available, otherwise default)
+      const playerMaxExposure = (kellyLimits && kellyLimits.has(p.id))
+        ? kellyLimits.get(p.id)
+        : maxExposure;
       const currentExposure = exposureTracker.get(p.id) || 0;
-      const maxAllowed = Math.ceil(maxExposure / 100 * 10);
+      const maxAllowed = Math.ceil(playerMaxExposure / 100 * 10);
       if (currentExposure >= maxAllowed) return false;
-      
+
       return true;
     });
 
     if (availablePlayers.length === 0) return null;
 
-    // Selection strategies
+    // When quant is enabled, use quant-scored selection
+    if (quantEnabled && quant && quantScores) {
+      return quant.selectPlayerQuant(availablePlayers, quantScores, strategy);
+    }
+
+    // Fallback: original strategy-based selection
     switch (strategy) {
       case 'greedy':
         return availablePlayers[0];
-      
+
       case 'balanced':
         const midIndex = Math.floor(availablePlayers.length / 3);
         return availablePlayers[Math.floor(Math.random() * Math.max(1, midIndex))];
-      
+
       case 'value':
         return availablePlayers
           .sort((a, b) => {
@@ -656,11 +768,11 @@ class NFLOptimizer {
             const bVal = (b.projection || b.projectedPoints || 0) / b.salary;
             return bVal - aVal;
           })[0];
-      
+
       case 'projection':
         return availablePlayers
           .sort((a, b) => (b.projection || b.projectedPoints || 0) - (a.projection || a.projectedPoints || 0))[0];
-      
+
       default:
         return availablePlayers[Math.floor(Math.random() * Math.min(5, availablePlayers.length))];
     }

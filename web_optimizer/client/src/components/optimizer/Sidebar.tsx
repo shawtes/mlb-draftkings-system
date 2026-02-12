@@ -140,6 +140,34 @@ const Sidebar: React.FC<SidebarProps> = ({
                     />
                   ))}
                 </div>
+
+                {/* Portfolio Quant Summary */}
+                {(() => {
+                  const lineupsWithQuant = results.filter((l: any) => l.quantMetrics);
+                  if (lineupsWithQuant.length === 0) return null;
+                  const avgSharpe = lineupsWithQuant.reduce((s: number, l: any) => s + (l.quantMetrics.sharpeRatio || 0), 0) / lineupsWithQuant.length;
+                  const avgVaR = lineupsWithQuant.reduce((s: number, l: any) => s + (l.quantMetrics.valueAtRisk || 0), 0) / lineupsWithQuant.length;
+                  const avgCeiling = lineupsWithQuant.reduce((s: number, l: any) => s + (l.quantMetrics.ceilingProbability || 0), 0) / lineupsWithQuant.length;
+                  const sharpeColor = avgSharpe > 2.5 ? 'text-green-400' : avgSharpe > 1.5 ? 'text-yellow-400' : 'text-red-400';
+                  return (
+                    <div className="mt-2 px-2 py-1.5 rounded bg-[var(--dfs-bg-tertiary)] border border-[var(--dfs-border)]">
+                      <div className="text-[10px] text-[var(--dfs-text-muted)] uppercase tracking-wider mb-1 font-medium">Portfolio</div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-[10px] font-mono ${sharpeColor}`}>
+                          Sharpe {avgSharpe.toFixed(2)}
+                        </span>
+                        <span className="text-[var(--dfs-text-muted)]">|</span>
+                        <span className="text-[10px] font-mono text-blue-400">
+                          VaR {avgVaR.toFixed(0)}
+                        </span>
+                        <span className="text-[var(--dfs-text-muted)]">|</span>
+                        <span className="text-[10px] font-mono text-purple-400">
+                          Ceil {(avgCeiling * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </>

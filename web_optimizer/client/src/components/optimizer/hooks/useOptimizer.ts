@@ -20,6 +20,7 @@ interface UseOptimizerProps {
   onLineupsChange: (lineups: any[]) => void;
   onActiveTabChange: (tab: string) => void;
   onPlayerDataChange?: (data: Player[]) => void;
+  onPortfolioMetricsChange?: (metrics: any) => void;
 }
 
 export function useOptimizer(props: UseOptimizerProps) {
@@ -28,6 +29,7 @@ export function useOptimizer(props: UseOptimizerProps) {
     teamSelections, teamExposures, advancedQuantSettings, numLineups, minUnique,
     minSalary, sortMethod, disableKelly,
     onResultsChange, onLineupsChange, onActiveTabChange, onPlayerDataChange,
+    onPortfolioMetricsChange,
   } = props;
 
   const [isOptimizing, setIsOptimizing] = useState(false);
@@ -100,6 +102,7 @@ export function useOptimizer(props: UseOptimizerProps) {
           salary: lineup.totalSalary,
           totalPoints: lineup.totalProjection,
           totalSalary: lineup.totalSalary,
+          quantMetrics: lineup.quantMetrics || null,
         }));
         onResultsChange(transformedResults);
 
@@ -124,6 +127,7 @@ export function useOptimizer(props: UseOptimizerProps) {
 
         const transformedLineups = (optimizationResponse.lineups || []).map((lineup: any) => ({
           ...lineup,
+          quantMetrics: lineup.quantMetrics || null,
           players: lineup.players.map((p: any) => ({
             ...p,
             projection: p.projection || p.Predicted_DK_Points || p.projectedPoints || 0,
@@ -132,6 +136,11 @@ export function useOptimizer(props: UseOptimizerProps) {
         }));
         onLineupsChange(transformedLineups);
         onActiveTabChange('lineups');
+
+        const portfolioMetrics = optimizationResponse.summary?.portfolioMetrics || optimizationResponse.portfolioMetrics || null;
+        if (portfolioMetrics && onPortfolioMetricsChange) {
+          onPortfolioMetricsChange(portfolioMetrics);
+        }
 
         const warningsText = optimizationResponse.warnings?.length ? `\n\nWarnings:\n${optimizationResponse.warnings.join('\n')}` : '';
         alert(`Generated ${transformedResults.length} optimal lineups!\nAvg Projection: ${optimizationResponse.summary.avgProjection.toFixed(1)} pts${warningsText}`);
@@ -144,7 +153,7 @@ export function useOptimizer(props: UseOptimizerProps) {
     } finally {
       setIsOptimizing(false);
     }
-  }, [currentSport, playerData, selectedPlayers, stackSettings, teamSelections, teamExposures, advancedQuantSettings, numLineups, minUnique, minSalary, sortMethod, disableKelly, onResultsChange, onLineupsChange, onActiveTabChange, onPlayerDataChange, syncSelectionsWithBackend]);
+  }, [currentSport, playerData, selectedPlayers, stackSettings, teamSelections, teamExposures, advancedQuantSettings, numLineups, minUnique, minSalary, sortMethod, disableKelly, onResultsChange, onLineupsChange, onActiveTabChange, onPlayerDataChange, onPortfolioMetricsChange, syncSelectionsWithBackend]);
 
   const handleExportDraftKings = useCallback(async () => {
     if (!currentSport) return;
