@@ -59,6 +59,26 @@ except ImportError:
     STATSMODELS_AVAILABLE = False
     print("Warning: statsmodels not available. Some advanced features will be simplified.")
 
+try:
+    from sklearn.model_selection import TimeSeriesSplit
+    TIMESERIES_SPLIT_AVAILABLE = True
+except ImportError:
+    TIMESERIES_SPLIT_AVAILABLE = False
+
+try:
+    import optuna
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+    print("Warning: optuna not available. Bayesian hyperparameter optimization disabled.")
+
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
+    print("Warning: shap not available. SHAP-based feature importance disabled.")
+
 class EnhancedMLBFinancialStyleEngine:
     def __init__(self, stat_cols=None, rolling_windows=None):
         if stat_cols is None:
@@ -951,6 +971,343 @@ class AdvancedCopulaEngine:
         print("Advanced copula and dependency feature engineering completed.")
         return df
 
+# =============================================================================
+# NEGATIVE BINOMIAL XGBOOST REGRESSOR
+# =============================================================================
+# Custom XGBRegressor using a Negative Binomial (NB2) objective with log link.
+# This models overdispersed count-like data where Var(Y) = mu + alpha * mu^2,
+# which better captures the variance structure of DraftKings fantasy points
+# compared to the standard squared-error objective (which assumes constant variance).
+# =============================================================================
+
+class NegativeBinomialXGBRegressor(XGBRegressor):
+    """
+    XGBoost regressor with a Negative Binomial (NB2) objective using log link.
+
+    Fantasy points are non-negative and exhibit overdispersion (variance grows
+    with the mean).  The NB2 variance function ``Var(Y) = mu + alpha * mu^2``
+    naturally accounts for this, giving lower weight to high-variance
+    observations and producing strictly positive predictions via the log link.
+
+    Parameters
+    ----------
+    nb_alpha : float, default=1.0
+        Dispersion parameter controlling overdispersion.  Larger values model
+        greater overdispersion.  As ``nb_alpha`` -> 0 the objective approaches
+        Poisson regression.
+    **kwargs
+        All remaining keyword arguments are forwarded to
+        ``xgboost.XGBRegressor``.
+    """
+
+    def __init__(self, nb_alpha=1.0, **kwargs):
+        self.nb_alpha = nb_alpha
+        # Remove any caller-supplied objective so the parent __init__ does not
+        # register a competing objective; our custom NB objective is set in fit().
+        kwargs.pop('objective', None)
+        super().__init__(**kwargs)
+
+    def fit(self, X, y, **kwargs):
+        y_safe = np.maximum(np.asarray(y, dtype=np.float64), 0)
+        alpha = self.nb_alpha
+
+        def _nb_objective(y_true, y_pred):
+            """NB2 gradient and hessian w.r.t. log-link raw prediction."""
+            mu = np.exp(np.clip(y_pred, -10, 10))
+            grad = (mu - y_true) / (1.0 + alpha * mu)
+            hess = mu * (1.0 + alpha * np.maximum(y_true, 0)) / (1.0 + alpha * mu) ** 2
+            hess = np.maximum(hess, 1e-6)
+            return grad, hess
+
+        self.set_params(objective=_nb_objective)
+        # Suppress the harmless "nb_alpha is not used" warning from XGBoost's
+        # C++ backend — nb_alpha is consumed by our Python objective, not the booster.
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', message='.*nb_alpha.*')
+            return super().fit(X, y_safe, **kwargs)
+
+    def predict(self, X, **kwargs):
+        """Return predictions on the original scale (exp of raw log-link output)."""
+        raw_pred = super().predict(X, **kwargs)
+        return np.exp(np.clip(raw_pred, -10, 10))
+
+    def get_params(self, deep=True):
+        params = super().get_params(deep=deep)
+        params['nb_alpha'] = self.nb_alpha
+        # Exclude the callable objective so sklearn clone() does not try to
+        # serialize or pass it back; our fit() sets it fresh each time.
+        params.pop('objective', None)
+        return params
+
+    def set_params(self, **params):
+        if 'nb_alpha' in params:
+            self.nb_alpha = params.pop('nb_alpha')
+        return super().set_params(**params)
+
+
+# =============================================================================
+# WALK-FORWARD TEMPORAL CROSS-VALIDATION
+# =============================================================================
+# Standard K-Fold CV causes temporal data leakage when rolling/lag features
+# are present.  This walk-forward validator uses an expanding training window
+# with an embargo gap to prevent look-ahead bias.
+# See: Bergmeir, Hyndman & Koo (2018), de Prado (2018) Ch. 7
+# =============================================================================
+
+class WalkForwardValidator:
+    """
+    Expanding-window walk-forward cross-validation with an embargo gap.
+
+    Parameters
+    ----------
+    n_splits : int
+        Number of forward-looking test windows.
+    embargo_pct : float
+        Fraction of test-set size used as a gap between train and test to
+        prevent label leakage from rolling/lag features.
+    min_train_pct : float
+        Minimum fraction of data used for the first training window.
+    """
+
+    def __init__(self, n_splits=5, embargo_pct=0.01, min_train_pct=0.5):
+        self.n_splits = n_splits
+        self.embargo_pct = embargo_pct
+        self.min_train_pct = min_train_pct
+
+    def split(self, X, y=None, groups=None):
+        """Yield (train_indices, test_indices) for each fold.
+
+        ``y`` and ``groups`` are accepted for sklearn splitter API
+        compatibility but are not used; splitting is purely index-based.
+        """
+        n = len(X) if hasattr(X, '__len__') else X.shape[0]
+        min_train = int(n * self.min_train_pct)
+        test_size = max(1, (n - min_train) // self.n_splits)
+        embargo_size = max(1, int(test_size * self.embargo_pct))
+
+        for i in range(self.n_splits):
+            train_end = min_train + i * test_size
+            test_start = train_end + embargo_size
+            test_end = min(test_start + test_size, n)
+
+            if test_start >= n:
+                break
+
+            yield list(range(0, train_end)), list(range(test_start, test_end))
+
+    def get_n_splits(self, X=None, y=None, groups=None):
+        return self.n_splits
+
+
+# =============================================================================
+# CONFORMAL PREDICTION FOR CALIBRATED UNCERTAINTY
+# =============================================================================
+# Split conformal prediction produces distribution-free prediction intervals
+# with guaranteed marginal coverage.  For heteroscedastic data like fantasy
+# points, we normalize residuals by predicted magnitude.
+# See: Lei et al. (2018), Romano, Patterson & Candès (2019)
+# =============================================================================
+
+class ConformalPredictor:
+    """
+    Split conformal prediction wrapper for any sklearn-compatible regressor.
+
+    Produces prediction intervals with exact (1 - alpha) marginal coverage
+    by calibrating nonconformity scores on a held-out calibration set.
+
+    Parameters
+    ----------
+    model : estimator
+        Fitted or unfitted sklearn-compatible regressor.
+    alpha : float
+        Miscoverage level.  alpha=0.1 produces 90 % prediction intervals.
+    """
+
+    def __init__(self, model, alpha=0.1):
+        self.model = model
+        self.alpha = alpha
+        self.calibration_scores_ = None
+        self.q_hat_ = None
+
+    def calibrate(self, X_cal, y_cal):
+        """Compute nonconformity scores on a calibration set."""
+        y_cal = np.asarray(y_cal, dtype=np.float64)
+        y_cal_pred = self.model.predict(X_cal)
+
+        # Heteroscedastic normalization: scale by max(|ŷ|, 1)
+        difficulty = np.maximum(np.abs(y_cal_pred), 1.0)
+        self.calibration_scores_ = np.abs(y_cal - y_cal_pred) / difficulty
+
+        # Finite-sample corrected quantile
+        n_cal = len(self.calibration_scores_)
+        level = np.ceil((1 - self.alpha) * (n_cal + 1)) / n_cal
+        # Safety clamp: when n_cal is tiny, the ceil can push level > 1.
+        level = min(level, 1.0)
+        self.q_hat_ = float(np.quantile(self.calibration_scores_, level))
+        return self
+
+    def predict_interval(self, X):
+        """Return (point, lower, upper) with guaranteed coverage."""
+        if self.q_hat_ is None:
+            raise RuntimeError("Call calibrate() before predict_interval().")
+        y_pred = self.model.predict(X)
+        difficulty = np.maximum(np.abs(y_pred), 1.0)
+        lower = y_pred - self.q_hat_ * difficulty
+        upper = y_pred + self.q_hat_ * difficulty
+        return y_pred, lower, upper
+
+    def predict_exceedance_prob(self, X, thresholds):
+        """
+        Estimate P(Y > threshold) for each threshold using conformal scores.
+
+        Returns a dict mapping 'prob_over_{t}' → array of probabilities.
+        """
+        if self.calibration_scores_ is None:
+            raise RuntimeError("Call calibrate() before predict_exceedance_prob().")
+        y_pred = self.model.predict(X)
+        difficulty = np.maximum(np.abs(y_pred), 1.0)
+
+        probs = {}
+        for t in thresholds:
+            # For each sample, what fraction of calibration scores would
+            # place the threshold *inside* the interval?
+            needed = (t - y_pred) / difficulty
+            prob = np.mean(
+                self.calibration_scores_[:, None] > needed[None, :], axis=0
+            )
+            probs[f'prob_over_{t}'] = prob
+
+        return probs
+
+
+# =============================================================================
+# BAYESIAN HYPERPARAMETER OPTIMIZATION (OPTUNA)
+# =============================================================================
+# Replaces manual tuning with Tree-Parzen Estimator search.
+# Uses walk-forward temporal CV for honest evaluation.
+# See: Bergstra et al. (2011), Akiba et al. (2019)
+# =============================================================================
+
+def optimize_hyperparameters(X, y, n_trials=50, n_splits=3):
+    """
+    Bayesian hyperparameter optimization using Optuna.
+
+    Uses walk-forward temporal CV so performance estimates are not
+    inflated by temporal data leakage.
+
+    Parameters
+    ----------
+    X : array-like of shape (n_samples, n_features)
+    y : array-like of shape (n_samples,)
+    n_trials : int
+        Number of Optuna trials.
+    n_splits : int
+        Number of walk-forward CV splits.
+
+    Returns
+    -------
+    best_params : dict
+        Optimal hyperparameters found by the search.
+    """
+    if not OPTUNA_AVAILABLE:
+        print("Optuna not installed — returning HARDCODED_OPTIMAL_PARAMS.")
+        return HARDCODED_OPTIMAL_PARAMS
+
+    X_arr = np.asarray(X, dtype=np.float32)
+    y_arr = np.asarray(y, dtype=np.float64)
+
+    def objective(trial):
+        params = {
+            'n_estimators': trial.suggest_int('n_estimators', 100, 500),
+            'max_depth': trial.suggest_int('max_depth', 3, 10),
+            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
+            'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
+            'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
+            'gamma': trial.suggest_float('gamma', 0.0, 1.0),
+            'reg_alpha': trial.suggest_float('reg_alpha', 1e-3, 10.0, log=True),
+            'reg_lambda': trial.suggest_float('reg_lambda', 1e-3, 10.0, log=True),
+            'nb_alpha': trial.suggest_float('nb_alpha', 0.1, 5.0),
+        }
+
+        model = NegativeBinomialXGBRegressor(
+            tree_method='hist', device='cpu', n_jobs=-1, random_state=42,
+            **params,
+        )
+
+        tscv = WalkForwardValidator(n_splits=n_splits, min_train_pct=0.5)
+        scores = []
+
+        for train_idx, val_idx in tscv.split(X_arr):
+            model.fit(X_arr[train_idx], y_arr[train_idx])
+            y_pred = model.predict(X_arr[val_idx])
+            scores.append(mean_absolute_error(y_arr[val_idx], y_pred))
+
+        return float(np.mean(scores))
+
+    study = optuna.create_study(direction='minimize',
+                                sampler=optuna.samplers.TPESampler(seed=42))
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+
+    best = study.best_params
+    print(f"Optuna best MAE: {study.best_value:.4f}")
+    print(f"Optuna best params: {best}")
+
+    # Convert to pipeline-prefixed keys for set_params() compatibility
+    pipeline_params = {
+        f'model__final_estimator__{k}': v for k, v in best.items()
+    }
+    return pipeline_params
+
+
+# =============================================================================
+# SHAP-BASED FEATURE IMPORTANCE
+# =============================================================================
+# SHAP captures nonlinear and interaction-based importance, unlike the
+# univariate SelectKBest(f_regression) currently used.
+# See: Lundberg & Lee (2017)
+# =============================================================================
+
+def compute_shap_importance(model, X, feature_names=None, max_samples=5000):
+    """
+    Compute mean |SHAP| importance for a fitted tree-based model.
+
+    Parameters
+    ----------
+    model : tree-based estimator
+        A fitted XGBoost / GBM model.
+    X : array-like
+        Feature matrix.
+    feature_names : list, optional
+        Feature names aligned to X columns.
+    max_samples : int
+        Subsample size to keep SHAP tractable.
+
+    Returns
+    -------
+    importance_df : pd.DataFrame
+        Columns ['Feature', 'SHAP_Importance'], sorted descending.
+    """
+    if not SHAP_AVAILABLE:
+        print("SHAP not available — falling back to gain-based importance.")
+        return None
+
+    X_sub = X[:min(max_samples, len(X))]
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(X_sub)
+    mean_abs_shap = np.abs(shap_values).mean(axis=0)
+
+    if feature_names is None:
+        feature_names = [f"f{i}" for i in range(X_sub.shape[1])]
+
+    importance_df = pd.DataFrame({
+        'Feature': feature_names[:len(mean_abs_shap)],
+        'SHAP_Importance': mean_abs_shap,
+    }).sort_values('SHAP_Importance', ascending=False).reset_index(drop=True)
+
+    return importance_df
+
+
 # Define constants for calculations
 # CONFIGURATION: Using hard-coded optimal parameters for fast training
 HARDCODED_OPTIMAL_PARAMS = {
@@ -963,6 +1320,7 @@ HARDCODED_OPTIMAL_PARAMS = {
     'model__final_estimator__gamma': 0.1,
     'model__final_estimator__reg_alpha': 0.1,
     'model__final_estimator__reg_lambda': 1.0,
+    'model__final_estimator__nb_alpha': 1.0,
 }
 
 # League averages for 2020 to 2024
@@ -1373,12 +1731,12 @@ print("Using CPU for XGBoost to ensure compatibility with pandas/numpy data stru
 xgb_params = {
     'tree_method': 'hist',
     'device': 'cpu',
-    'objective': 'reg:squarederror',
     'n_jobs': -1,
-    'random_state': 42
+    'random_state': 42,
+    'nb_alpha': 1.0,
 }
 
-meta_model = XGBRegressor(**xgb_params)
+meta_model = NegativeBinomialXGBRegressor(**xgb_params)
 
 
 stacking_model = StackingRegressor(
@@ -1399,7 +1757,7 @@ ensemble_models = [
 # ...existing code...
 final_model = StackingRegressor(
     estimators=ensemble_models,
-    final_estimator=XGBRegressor(**xgb_params)
+    final_estimator=NegativeBinomialXGBRegressor(**xgb_params)
 )
 
 # ...existing code...
