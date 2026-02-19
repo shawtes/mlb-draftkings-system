@@ -9,7 +9,7 @@ team selection system.
 DATA_PATH = 'C:/Users/smtes/FangraphsData/merged_fangraphs_data.csv'
 MODEL_SAVE_PATH = 'c:/Users/smtes/OneDrive/Documents/draftkings project/MLB_DRAFTKINGS_SYSTEM/3_MODELS/mlb_rl_model.pth'
 RESULTS_PATH = '4_DATA/rl_results.csv'
-PLOTS_PATH = 'c:/Users/smtes/OneDrive/Documents/draftkings project/MLB_DRAFTKINGS_SYSTEM/7_ANALYSIS/rl_plots.png'
+PLOTS_PATH = 'data/rl_plots.png'
 
 # DraftKings constraints
 SALARY_CAP = 50000

@@ -5,9 +5,9 @@ Fetches per-player per-game box scores from 1996-97 to present using the
 PlayerGameLogs endpoint (returns ALL players for an entire season in one call).
 
 Usage:
-    python 2_NBA_TRAINING/nba_scraper.py --output ./data/nba_game_logs.csv
-    python 2_NBA_TRAINING/nba_scraper.py --start-year 2004 --end-year 2025
-    python 2_NBA_TRAINING/nba_scraper.py --playoffs  # include playoff games
+    python training/nba/nba_scraper.py --output ./data/nba_game_logs.csv
+    python training/nba/nba_scraper.py --start-year 2004 --end-year 2025
+    python training/nba/nba_scraper.py --playoffs  # include playoff games
 """
 
 import os

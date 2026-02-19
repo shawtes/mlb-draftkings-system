@@ -23,8 +23,13 @@ cd web_optimizer/client && npm run dev                       # Frontend only (po
 cd web_optimizer/client && npx vite build                    # Output: client/build/
 
 # Python Optimization Pipeline (standalone)
-cd 6_OPTIMIZATION && python3 pulp_lineup_optimizer.py        # PuLP BILP solver
-cd 6_OPTIMIZATION && python3 makrovchain_optimizer.py        # Full Markov chain optimizer
+cd optimization && python3 pulp_lineup_optimizer.py          # PuLP BILP solver
+cd optimization && python3 makrovchain_optimizer.py          # Full Markov chain optimizer
+
+# Via Makefile
+make dev                                                     # Start web app
+make train                                                   # Run MLB training
+make backtest                                                # Run backtesting
 ```
 
 **Tech Stack**: React 18 + TypeScript + Vite 6.4 + Radix UI (frontend) | Node.js + Express 4.17 + WebSocket (backend) | Python 3.8+ + PuLP + Pandas + NumPy + SciPy (optimization) | StackingRegressor + XGBoost (ML pipeline)
@@ -34,50 +39,64 @@ cd 6_OPTIMIZATION && python3 makrovchain_optimizer.py        # Full Markov chain
 ## Repository Structure
 
 ```
-├── README.md
-├── CLAUDE.md
+├── .editorconfig                          # Editor consistency
 ├── .gitignore
-├── RUN_ALL.sh / RUN_ON_SERVER.sh          # Launch scripts
-├── SSH_SERVER_INSTRUCTIONS.txt
-├── 1_CORE_TRAINING/                       # ML training pipelines
-├── 2_PREDICTIONS/                         # Prediction models
-├── 5_DRAFTKINGS_ENTRIES/                  # DraftKings entry management
-├── 6_OPTIMIZATION/                        # Core optimization engines
+├── CLAUDE.md
+├── LICENSE                                # MIT
+├── Makefile                               # Common commands (make dev, make train, etc.)
+├── README.md
+├── pyproject.toml                         # Python dependencies
+│
+├── training/                              # ML training pipelines
+│   ├── mlb/                               # MLB training (config, feature_engine, model_builder, etc.)
+│   └── nba/                               # NBA training (nba_config, nba_training, etc.)
+│
+├── optimization/                          # Core optimization engines
 │   ├── makrovchain_optimizer.py           # Full Markov chain optimizer (8900+ lines) — PRODUCTION
 │   ├── pulp_lineup_optimizer.py           # PuLP BILP solver — PRODUCTION
-│   ├── advanced_quant_optimizer.py        # Copula, regime detection, MC — NEEDS INTEGRATION
-│   ├── dfs_risk_engine.py                 # Kelly, GARCH, VaR, Sharpe, correlation — PARTIAL
-│   └── probability_enhanced_optimizer.py  # Ownership probability mapping — PARTIAL
-├── 7_ANALYSIS/                            # Analysis tools
-├── 8_DOCUMENTATION/                       # Internal documentation
-├── 9_BACKUP/                              # Backups
+│   ├── genetic_algo_*.py                  # Genetic algorithm solvers
+│   ├── dfs_risk_engine.py                 # Kelly, GARCH, VaR, Sharpe, correlation
+│   ├── daily_nba_data_fetch.py            # Data fetching
+│   ├── nba_stack_*.py, nfl_stack_*.py     # Stacking engines
+│   ├── rl_hyperopt/                       # RL hyperparameter module
+│   └── rl_parlay_system/                  # RL parlay system
+│
+├── pipeline/                              # Orchestration scripts
+│   ├── run_pipeline.py                    # Master fetch-train-bridge pipeline
+│   ├── backtest_optimizer.py              # Backtesting framework
+│   └── dk_bridge.py                       # DK CSV converter
+│
+├── scripts/                               # Utility scripts
+│   ├── fangraphs_batters.py               # FanGraphs data scraper
+│   ├── fangraphs_pitchers.py
+│   └── underdog/                          # Underdog parlay tools
+│
 ├── web_optimizer/                         # Main web app (React + Node.js)
 │   ├── client/                            # React frontend (Vite + TypeScript)
-│   │   └── src/components/
-│   │       └── optimizer/
-│   │           ├── DFSOptimizer.tsx        # Main orchestrator (multi-build, state management)
-│   │           ├── BuildControlBar.tsx     # Merged build tabs + settings + CTA
-│   │           ├── GameSlate.tsx           # Game context horizontal cards
-│   │           ├── PlayerTable.tsx         # Dense data table with color-coded stats
-│   │           ├── TeamStacksTab.tsx       # Multi-stack team selection + per-team exposure
-│   │           ├── AdvancedQuantTab.tsx     # Quant settings UI (strategy, MC, Kelly, GARCH, copula)
-│   │           ├── Sidebar.tsx             # Compact lineup review panel
-│   │           ├── hooks/useOptimizer.ts   # Optimization hook (request construction)
-│   │           ├── hooks/useBuildManager.ts # Multi-build state management
-│   │           ├── hooks/useFileUpload.ts  # CSV upload + sport detection
-│   │           └── types.ts               # TypeScript interfaces + defaults
+│   │   └── src/components/optimizer/
+│   │       ├── DFSOptimizer.tsx            # Main orchestrator (multi-build, state management)
+│   │       ├── BuildControlBar.tsx         # Merged build tabs + settings + CTA
+│   │       ├── GameSlate.tsx               # Game context horizontal cards
+│   │       ├── PlayerTable.tsx             # Dense data table with color-coded stats
+│   │       ├── TeamStacksTab.tsx           # Multi-stack team selection + per-team exposure
+│   │       ├── AdvancedQuantTab.tsx         # Quant settings UI
+│   │       ├── Sidebar.tsx                 # Compact lineup review panel
+│   │       ├── hooks/useOptimizer.ts       # Optimization hook
+│   │       ├── hooks/useBuildManager.ts    # Multi-build state management
+│   │       └── types.ts                   # TypeScript interfaces + defaults
 │   ├── server/                            # Express backend
 │   │   ├── index.js                       # Express API routes + Python subprocess spawning
-│   │   ├── quant-engine.js                # JS Quant Engine (MC, Kelly, VaR, Sharpe, portfolio) — NBA PRODUCTION
+│   │   ├── quant-engine.js                # JS Quant Engine (MC, Kelly, VaR, Sharpe, portfolio)
 │   │   ├── nba-optimizer.js               # NBA optimizer — QUANT INTEGRATED
 │   │   ├── nfl-optimizer.js               # NFL optimizer — QUANT INTEGRATED
 │   │   ├── optimizer.js                   # MLB optimizer — QUANT INTEGRATED
-│   │   └── makrov_cli_adapter.py          # Python CLI adapter for web (multi-stack, team exposures)
+│   │   └── makrov_cli_adapter.py          # Python CLI adapter for web
 │   └── package.json
-├── scripts/                               # Utility Python scripts (moved from root)
-├── tests/                                 # Test files (moved from web_optimizer root)
+│
 ├── docs/                                  # Project documentation
-└── data/                                  # Data files (gitignored)
+├── tests/                                 # Test files
+├── data/                                  # Data files (gitignored)
+└── _archive/                              # Deprecated/experimental code (see _archive/README.md)
 ```
 
 ---
@@ -555,7 +574,7 @@ PlayerTable (minExp/maxExp edits)
 7. **Training Pipeline: CSV dtype spec crash** (FIXED) — `pd.read_csv()` in `training.py` hard-coded dtypes for `inheritedRunners`, `inheritedRunnersScored`, `catchersInterference`, `salary` which don't exist in FanGraphs data. Fix: read without dtype constraints, coerce known numeric columns only if present.
 8. **Training Pipeline: SHAP sparse matrix crash** (FIXED) — `shap.TreeExplainer.shap_values()` in shap 0.50 returns a list wrapping the array, causing `selected_indices` to become nested `[[...]]`. When `IndexSelector` tried sparse CSR column indexing with nested list, scipy raised `IndexError: >2D not supported`. Fix: replaced SHAP-based selection with LightGBM's built-in `feature_importances_` (faster, robust with sparse input). Added `scipy.sparse` handling in `IndexSelector.transform()` (CSC conversion + `.toarray()`).
 9. **Training Pipeline: CatBoost + sklearn 1.8 incompatibility** (FIXED) — CatBoost 1.2.8 doesn't implement `__sklearn_tags__` required by sklearn 1.8.0, causing `StackingRegressor` to fail at fit time. Fix: version-gated CatBoost disable when `sklearn >= 1.8`. Ensemble runs as Ridge + Lasso + LightGBM → XGBRegressor (4 models instead of 5).
-10. **Training Pipeline v2: CRITICAL SAME-GAME DATA LEAKAGE** (CONFIRMED Feb 2026) — The R² ≈ 0.965 from the v2 training run is **entirely due to same-game feature leakage**, not genuine predictive power. Diagnostic script `1_CORE_TRAINING/diagnose_leakage.py` confirms:
+10. **Training Pipeline v2: CRITICAL SAME-GAME DATA LEAKAGE** (CONFIRMED Feb 2026) — The R² ≈ 0.965 from the v2 training run is **entirely due to same-game feature leakage**, not genuine predictive power. Diagnostic script `training/mlb/diagnose_leakage.py` confirms:
     - **Root cause**: FanGraphs game-log data has one row per player per game. Every column (`Off`, `wRC`, `SLG`, `RE24`, `WAR`, `RAR`, `WPA/LI`, `AB`, etc.) is computed from that game's box score — the same events that produce the DK points target.
     - **Correlation proof**: `wRC` r=0.92, `Off` r=0.91, `SLG` r=0.90 with DK points (same-game). The model learns `DK_pts ≈ f(SLG, wRC, Off, ...)` which is algebraically trivial.
     - **Engineered features also leak**: `engineer_features()` computes `wOBA`, `BABIP`, `ISO`, `wRC+`, `flyBalls`, `Offense_Statcast`, `Dollars_Statcast` from the same game's box score.
@@ -572,7 +591,7 @@ PlayerTable (minExp/maxExp edits)
 ### Module Structure
 
 ```
-1_CORE_TRAINING/
+training/mlb/
 ├── config.py          # CLI args, constants, feature lists, league averages
 ├── feature_engine.py  # 3 feature classes + DK scoring + engineer_features()
 ├── model_builder.py   # Ensemble construction, SHAP selection, Optuna, quantile models
@@ -584,13 +603,13 @@ PlayerTable (minExp/maxExp edits)
 
 ```bash
 # Full pipeline
-python 1_CORE_TRAINING/training.py --data-path /path/to/merged_fangraphs_data.csv --output-dir ./output
+python training/mlb/training.py --data-path /path/to/merged_fangraphs_data.csv --output-dir ./output
 
 # Skip Optuna HPO (faster)
-python 1_CORE_TRAINING/training.py --data-path /path/to/data.csv --skip-hpo
+python training/mlb/training.py --data-path /path/to/data.csv --skip-hpo
 
 # Custom parameters
-python 1_CORE_TRAINING/training.py --data-path /path/to/data.csv --n-splits 3 --gap-days 7 --n-features 100 --optuna-trials 50
+python training/mlb/training.py --data-path /path/to/data.csv --n-splits 3 --gap-days 7 --n-features 100 --optuna-trials 50
 ```
 
 Environment variables: `MLB_DATA_PATH`, `MLB_OUTPUT_DIR` (used when CLI args not provided).
@@ -671,7 +690,7 @@ All with try/except fallback: no LightGBM → GradientBoostingRegressor; no CatB
 
 **Data**: FanGraphs merged batter data — 201,684 rows, 202 raw columns, 2005-04-03 to 2025-08-22, 1783 unique players.
 
-**Command**: `.venv312/bin/python3 1_CORE_TRAINING/training.py --data-path /path/to/merged_fangraphs_data.csv --output-dir 1_CORE_TRAINING/output --skip-hpo`
+**Command**: `.venv312/bin/python3 training/mlb/training.py --data-path /path/to/merged_fangraphs_data.csv --output-dir training/mlb/output --skip-hpo`
 
 **Feature Engineering**: 491 columns after all engines. 90 numeric + 2 categorical → 1907 preprocessed (incl. one-hot). 100 selected via LightGBM importance (57/1907 had nonzero importance).
 
@@ -885,7 +904,7 @@ Config: L20_exp30_nostack_uniq2_sal49000
 | **Both** | Min Salary | $49,000 | Ensures full salary utilization |
 
 ### Backtest Files
-- `backtest_optimizer.py` — Main backtesting script (project root)
+- `pipeline/backtest_optimizer.py` — Main backtesting script
 - `data/backtest_cache/*.json` — Cached API responses (15 dates × 3 endpoints = 45 files)
 - `data/backtest_results.csv` — Full results: 480 rows (date × config × metrics)
 - `data/backtest_summary.txt` — Human-readable rankings and findings

@@ -5,9 +5,9 @@ This script loads the trained model and raw data, then runs 7 diagnostic tests
 to determine whether the R² ≈ 0.965 is real or the result of data leakage.
 
 Usage:
-  .venv312/bin/python3 1_CORE_TRAINING/diagnose_leakage.py \
+  .venv312/bin/python3 training/mlb/diagnose_leakage.py \
       --data-path /path/to/merged_fangraphs_data.csv \
-      --model-dir 1_CORE_TRAINING/output
+      --model-dir training/mlb/output
 """
 
 import argparse
@@ -30,7 +30,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 def parse_args():
     p = argparse.ArgumentParser(description="Leakage audit for MLB DFS training pipeline")
     p.add_argument("--data-path", required=True, help="Path to merged_fangraphs_data.csv")
-    p.add_argument("--model-dir", default="1_CORE_TRAINING/output",
+    p.add_argument("--model-dir", default="training/mlb/output",
                    help="Directory containing trained model artifacts")
     p.add_argument("--quick", action="store_true",
                    help="Run quick mode (smaller sample for speed)")

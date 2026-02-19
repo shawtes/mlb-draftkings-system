@@ -1,0 +1,40 @@
+[project]
+name = "ursim-dfs"
+version = "0.1.0"
+description = "Quantitative DFS optimization platform"
+requires-python = ">=3.8"
+
+dependencies = [
+    "pandas>=1.5",
+    "numpy>=1.23",
+    "scipy>=1.9",
+    "pulp>=2.7",
+    "scikit-learn>=1.2",
+    "xgboost>=1.7",
+    "lightgbm>=4.0",
+    "joblib>=1.2",
+]
+
+[project.optional-dependencies]
+train = [
+    "optuna>=3.0",
+    "shap>=0.42",
+    "catboost>=1.2",
+]
+quant = [
+    "arch>=6.0",
+    "copulas>=0.9",
+]
+scrape = [
+    "selenium>=4.10",
+    "beautifulsoup4>=4.12",
+    "requests>=2.28",
+]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.1",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py38"

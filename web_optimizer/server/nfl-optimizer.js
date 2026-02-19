@@ -20,9 +20,9 @@ class NFLOptimizer {
    */
   findPythonOptimizer() {
     const possiblePaths = [
-      path.join(__dirname, '../../6_OPTIMIZATION/genetic_algo_nfl_optimizer.py'),
-      path.join(__dirname, '../../../6_OPTIMIZATION/genetic_algo_nfl_optimizer.py'),
-      path.join(process.cwd(), '6_OPTIMIZATION/genetic_algo_nfl_optimizer.py'),
+      path.join(__dirname, '../../optimization/genetic_algo_nfl_optimizer.py'),
+      path.join(__dirname, '../../../optimization/genetic_algo_nfl_optimizer.py'),
+      path.join(process.cwd(), 'optimization/genetic_algo_nfl_optimizer.py'),
     ];
 
     for (const testPath of possiblePaths) {

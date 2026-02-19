@@ -13,8 +13,8 @@ import logging
 from collections import defaultdict
 import traceback
 
-# Add the 6_OPTIMIZATION directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '6_OPTIMIZATION'))
+# Add the optimization directory to the path
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'optimization'))
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')

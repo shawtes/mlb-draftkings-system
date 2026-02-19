@@ -4,17 +4,17 @@ nba_training.py — NBA DFS Training Pipeline
 Thin orchestrator that imports from:
   - nba_config.py          (CLI args, constants, feature lists)
   - nba_feature_engine.py  (3 feature classes, DK scoring, advanced stats)
-  - model_builder.py       (ensemble, SHAP, Optuna, quantile models) — from 1_CORE_TRAINING
-  - validator.py           (walk-forward CV, per-player eval, CQR)    — from 1_CORE_TRAINING
+  - model_builder.py       (ensemble, SHAP, Optuna, quantile models) — from training/mlb
+  - validator.py           (walk-forward CV, per-player eval, CQR)    — from training/mlb
 
 Usage:
   # First, scrape data:
-  python 2_NBA_TRAINING/nba_scraper.py --output ./data/nba_game_logs.csv
+  python training/nba/nba_scraper.py --output ./data/nba_game_logs.csv
 
   # Then train:
-  python 2_NBA_TRAINING/nba_training.py --data-path ./data/nba_game_logs.csv --skip-hpo
-  python 2_NBA_TRAINING/nba_training.py --data-path ./data/nba_game_logs.csv --n-splits 3
-  python 2_NBA_TRAINING/nba_training.py --data-path ./data/nba_game_logs.csv --min-season 2014-15
+  python training/nba/nba_training.py --data-path ./data/nba_game_logs.csv --skip-hpo
+  python training/nba/nba_training.py --data-path ./data/nba_game_logs.csv --n-splits 3
+  python training/nba/nba_training.py --data-path ./data/nba_game_logs.csv --min-season 2014-15
 """
 
 import pandas as pd
@@ -39,8 +39,8 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 if script_dir not in sys.path:
     sys.path.insert(0, script_dir)
 
-# Add 1_CORE_TRAINING to path for model_builder and validator (sport-agnostic)
-core_training_dir = os.path.join(os.path.dirname(script_dir), '1_CORE_TRAINING')
+# Add training/mlb to path for model_builder and validator (sport-agnostic)
+core_training_dir = os.path.join(os.path.dirname(script_dir), 'mlb')
 if core_training_dir not in sys.path:
     sys.path.insert(0, core_training_dir)
 
@@ -132,8 +132,8 @@ def main():
                 break
         if data_path is None:
             print("ERROR: No data path specified and no data file found.")
-            print("Run: python 2_NBA_TRAINING/nba_scraper.py --output ./data/nba_game_logs.csv")
-            print("Then: python 2_NBA_TRAINING/nba_training.py --data-path ./data/nba_game_logs.csv")
+            print("Run: python training/nba/nba_scraper.py --output ./data/nba_game_logs.csv")
+            print("Then: python training/nba/nba_training.py --data-path ./data/nba_game_logs.csv")
             sys.exit(1)
 
     print(f"Data path: {data_path}")

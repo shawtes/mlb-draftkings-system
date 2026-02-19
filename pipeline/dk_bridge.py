@@ -10,10 +10,10 @@ Automates the manual step between training and optimization:
   5. Outputs a single CSV ready for the web optimizer upload
 
 Usage:
-  python 3_BRIDGE/dk_to_optimizer.py
-  python 3_BRIDGE/dk_to_optimizer.py --dk-file data/dk_drop/DKSalaries.csv
-  python 3_BRIDGE/dk_to_optimizer.py --predictions-dir output/
-  python 3_BRIDGE/dk_to_optimizer.py --sport MLB
+  python pipeline/dk_bridge.py
+  python pipeline/dk_bridge.py --dk-file data/dk_drop/DKSalaries.csv
+  python pipeline/dk_bridge.py --predictions-dir output/
+  python pipeline/dk_bridge.py --sport MLB
 
 Output:  data/optimizer_ready/YYYY-MM-DD_MLB_optimizer_ready.csv
 """
@@ -35,7 +35,7 @@ import numpy as np
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DK_DROP_DIR = os.path.join(REPO_ROOT, 'data', 'dk_drop')
 OUTPUT_DIR = os.path.join(REPO_ROOT, 'data', 'optimizer_ready')
-DEFAULT_PREDICTIONS_DIR = os.path.join(REPO_ROOT, '1_CORE_TRAINING', 'output')
+DEFAULT_PREDICTIONS_DIR = os.path.join(REPO_ROOT, 'training', 'mlb', 'output')
 
 
 # ---------------------------------------------------------------------------
@@ -487,16 +487,16 @@ def main():
         epilog="""
 Examples:
   # Auto-detect: scan dk_drop folder, use default predictions
-  python 3_BRIDGE/dk_to_optimizer.py
+  python pipeline/dk_bridge.py
 
   # Specify DK file explicitly
-  python 3_BRIDGE/dk_to_optimizer.py --dk-file ~/Downloads/DKSalaries.csv
+  python pipeline/dk_bridge.py --dk-file ~/Downloads/DKSalaries.csv
 
   # Specify predictions directory
-  python 3_BRIDGE/dk_to_optimizer.py --predictions-dir 1_CORE_TRAINING/output
+  python pipeline/dk_bridge.py --predictions-dir training/mlb/output
 
   # Force sport detection
-  python 3_BRIDGE/dk_to_optimizer.py --sport MLB
+  python pipeline/dk_bridge.py --sport MLB
         """,
     )
     parser.add_argument('--dk-file', type=str, default=None,

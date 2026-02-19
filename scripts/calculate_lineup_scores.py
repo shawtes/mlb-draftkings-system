@@ -189,10 +189,10 @@ def calculate_lineup_totals(entries_file, contest_file, player_pool_file=None):
 
 if __name__ == "__main__":
     entries_file = "/Users/sineshawmesfintesfaye/Downloads/my_favorites_entries.csv"
-    contest_file = "/Users/sineshawmesfintesfaye/mlb-draftkings-system/6_OPTIMIZATION/contest-standings-183480502.csv"
+    contest_file = "/Users/sineshawmesfintesfaye/mlb-draftkings-system/data/contest-standings-183480502.csv"
     
     # First, load the player pool to get ID to name mapping
-    player_pool_file = "/Users/sineshawmesfintesfaye/mlb-draftkings-system/6_OPTIMIZATION/nfl_week7_DK_PLAYER_POOL_COMPLETE.csv"
+    player_pool_file = "/Users/sineshawmesfintesfaye/mlb-draftkings-system/data/nfl_week7_DK_PLAYER_POOL_COMPLETE.csv"
     print("="*80)
     print("LOADING PLAYER ID MAPPING")
     print("="*80)

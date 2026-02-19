@@ -1,7 +1,7 @@
 """
 nba_config.py — CLI arguments, constants, feature lists for NBA DFS Training Pipeline.
 
-Mirrors 1_CORE_TRAINING/config.py but with NBA-specific stats, thresholds,
+Mirrors training/mlb/config.py but with NBA-specific stats, thresholds,
 and feature definitions. Reuses detect_hardware() pattern.
 """
 

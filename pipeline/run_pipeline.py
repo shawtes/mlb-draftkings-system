@@ -28,18 +28,18 @@ from datetime import datetime
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FANGRAPHS_SCRIPT = os.path.join(REPO_ROOT, 'scripts', 'fangraphs_batters.py')
 FANGRAPHS_VENV = os.path.join(REPO_ROOT, 'scripts', '.venv', 'bin', 'python3')
 FANGRAPHS_DATA = os.path.join(os.path.expanduser('~'), 'FangraphsData', 'merged_fangraphs_data.csv')
 
-TRAINING_SCRIPT = os.path.join(REPO_ROOT, '1_CORE_TRAINING', 'training.py')
-TRAINING_OUTPUT = os.path.join(REPO_ROOT, '1_CORE_TRAINING', 'output')
+TRAINING_SCRIPT = os.path.join(REPO_ROOT, 'training', 'mlb', 'training.py')
+TRAINING_OUTPUT = os.path.join(REPO_ROOT, 'training', 'mlb', 'output')
 
 DATA_DIR = os.path.join(REPO_ROOT, 'data')
 DATA_LINK = os.path.join(DATA_DIR, 'merged_fangraphs_data.csv')
 
-BRIDGE_SCRIPT = os.path.join(REPO_ROOT, '3_BRIDGE', 'dk_to_optimizer.py')
+BRIDGE_SCRIPT = os.path.join(REPO_ROOT, 'pipeline', 'dk_bridge.py')
 DK_DROP_DIR = os.path.join(DATA_DIR, 'dk_drop')
 OPTIMIZER_READY_DIR = os.path.join(DATA_DIR, 'optimizer_ready')
 

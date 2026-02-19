@@ -1,7 +1,7 @@
 """
 nba_feature_engine.py — NBA-specific feature engineering.
 
-Adapts the 3-engine pattern from 1_CORE_TRAINING/feature_engine.py to NBA box
+Adapts the 3-engine pattern from training/mlb/feature_engine.py to NBA box
 score data from nba_api.  Reuses the same mathematical frameworks (financial
 rolling stats, GARCH volatility, copula dependencies, spectral analysis) but
 with NBA stat columns instead of MLB sabermetrics.

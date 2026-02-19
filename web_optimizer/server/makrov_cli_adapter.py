@@ -12,8 +12,8 @@ import pandas as pd
 import numpy as np
 import logging
 
-# Add the 6_OPTIMIZATION directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '6_OPTIMIZATION'))
+# Add the optimization directory to the path
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'optimization'))
 
 # Suppress Qt-related warnings since we're running headless
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'

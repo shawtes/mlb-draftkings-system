@@ -6,7 +6,7 @@ creates pregame features, and runs walk-forward validation with in-fold
 preprocessing. Skips the expensive 3-engine feature engineering.
 
 Usage:
-  python 1_CORE_TRAINING/run_pregame.py [--n-splits 5] [--skip-hpo]
+  python training/mlb/run_pregame.py [--n-splits 5] [--skip-hpo]
 """
 
 import os
