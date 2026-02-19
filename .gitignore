@@ -66,13 +66,15 @@ venv/
 uploads/
 *.csv
 *.xlsx
-data/
+data/*
+!data/db.py
 web_optimizer/server/data/
 
 # Database
 *.sqlite
 *.sqlite3
 *.db
+data/*.db
 
 # Firebase
 .firebase/

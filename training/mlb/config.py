@@ -90,6 +90,11 @@ def parse_args():
                         help='Path to FanGraphs pitcher game log CSV')
     parser.add_argument('--matchup-cache-dir', type=str, default=None,
                         help='Directory to cache pybaseball scrapes for matchup engine')
+    # Database integration
+    parser.add_argument('--from-db', action='store_true', default=False,
+                        help='Load training data from SQLite DB instead of CSV')
+    parser.add_argument('--db-path', type=str, default=None,
+                        help='Path to SQLite database (default: data/dfs.db)')
     args = parser.parse_known_args()[0]
 
     # --no-gpu overrides --use-gpu

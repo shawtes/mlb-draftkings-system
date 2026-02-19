@@ -141,7 +141,30 @@ def main():
 
     # ---- 3. Load data ----
     print("\nLoading NBA game log dataset...")
-    df = pd.read_csv(data_path, low_memory=False)
+
+    # --from-db: load from SQLite database instead of CSV
+    if args.from_db:
+        try:
+            repo_root = os.path.dirname(os.path.dirname(script_dir))
+            sys.path.insert(0, os.path.join(repo_root, 'data'))
+            from db import get_connection, init_db, query_nba_training_data
+            db_path = args.db_path or os.path.join(repo_root, 'data', 'dfs.db')
+            print(f"Loading from database: {db_path}")
+            conn = get_connection(db_path)
+            init_db(conn)
+            df = query_nba_training_data(conn)
+            conn.close()
+            if len(df) == 0:
+                print("WARNING: Database table nba_game_logs is empty. Falling back to CSV.")
+                args.from_db = False
+            else:
+                print(f"Loaded {len(df)} rows from database.")
+        except Exception as e:
+            print(f"WARNING: DB load failed ({e}). Falling back to CSV.")
+            args.from_db = False
+
+    if not args.from_db:
+        df = pd.read_csv(data_path, low_memory=False)
 
     # Standardize column names (nba_scraper.py already creates Name, Team, date)
     if 'PLAYER_NAME' in df.columns and 'Name' not in df.columns:

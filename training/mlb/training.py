@@ -795,8 +795,31 @@ if __name__ == "__main__":
 
     # ---- 3. Load data ----
     print("Loading dataset...")
-    # Read CSV without forcing dtypes — columns vary across data sources
-    df = pd.read_csv(data_path, low_memory=False)
+
+    # --from-db: load from SQLite database instead of CSV
+    if args.from_db:
+        try:
+            repo_root = os.path.dirname(os.path.dirname(script_dir))
+            sys.path.insert(0, os.path.join(repo_root, 'data'))
+            from db import get_connection, init_db, query_mlb_training_data
+            db_path = args.db_path or os.path.join(repo_root, 'data', 'dfs.db')
+            print(f"Loading from database: {db_path}")
+            conn = get_connection(db_path)
+            init_db(conn)
+            df = query_mlb_training_data(conn)
+            conn.close()
+            if len(df) == 0:
+                print("WARNING: Database table mlb_game_logs is empty. Falling back to CSV.")
+                args.from_db = False
+            else:
+                print(f"Loaded {len(df)} rows from database.")
+        except Exception as e:
+            print(f"WARNING: DB load failed ({e}). Falling back to CSV.")
+            args.from_db = False
+
+    if not args.from_db:
+        # Read CSV without forcing dtypes — columns vary across data sources
+        df = pd.read_csv(data_path, low_memory=False)
     # Coerce known numeric columns if present
     for col, dt in [('inheritedRunners', 'float64'),
                      ('inheritedRunnersScored', 'float64'),

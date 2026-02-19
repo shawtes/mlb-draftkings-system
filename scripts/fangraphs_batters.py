@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import time
 import os
+import sys
 import glob
 import hashlib
 
@@ -230,8 +231,21 @@ def append_data_to_daily_file(file_path, game_date, save_dir):
         except Exception as e:
             print(f"   - Warning: Could not remove temp file: {e}")
             
+        # Write to database if available
+        try:
+            sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data'))
+            from db import get_connection, init_db, upsert_mlb_game_log
+            conn = get_connection()
+            init_db(conn)
+            for _, row in data.iterrows():
+                upsert_mlb_game_log(conn, row.to_dict())
+            conn.close()
+            print(f"   - Written to database ({len(data)} rows)")
+        except Exception as e_db:
+            print(f"   - DB write skipped: {e_db}")
+
         return True
-        
+
     except PermissionError as e:
         print(f"❌ Permission error reading file {file_path}: {e}")
         return False

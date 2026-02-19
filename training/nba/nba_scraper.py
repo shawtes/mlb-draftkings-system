@@ -148,6 +148,19 @@ def main():
     # Save
     df.to_csv(args.output, index=False)
 
+    # Write to database if available
+    try:
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        sys.path.insert(0, os.path.join(repo_root, 'data'))
+        from db import get_connection, init_db, import_nba_csv
+        db_path = os.path.join(repo_root, 'data', 'dfs.db')
+        conn = get_connection(db_path)
+        init_db(conn)
+        import_nba_csv(conn, args.output)
+        conn.close()
+    except Exception as e_db:
+        print(f"  DB write skipped: {e_db}")
+
     elapsed = time.time() - t0
     print(f"\n{'='*60}")
     print(f"SCRAPE COMPLETE")

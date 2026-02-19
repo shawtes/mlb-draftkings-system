@@ -571,6 +571,22 @@ Examples:
     out_path = os.path.join(args.output_dir, out_filename)
     output_df.to_csv(out_path, index=False)
 
+    # 8. Save predictions to database
+    try:
+        sys.path.insert(0, os.path.join(REPO_ROOT, 'data'))
+        from db import get_connection, init_db, upsert_predictions
+        conn = get_connection()
+        init_db(conn)
+        pred_for_db = output_df.rename(columns={
+            'Predicted_DK_Points': 'Predicted',
+        })
+        pred_for_db['Date'] = today
+        count = upsert_predictions(conn, sport.lower(), pred_for_db)
+        conn.close()
+        print(f"  Saved {count} predictions to database")
+    except Exception as e_db:
+        print(f"  DB write skipped: {e_db}")
+
     # Summary
     print(f"\n{'=' * 60}")
     print(f"OUTPUT: {out_path}")

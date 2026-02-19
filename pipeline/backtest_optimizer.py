@@ -314,6 +314,21 @@ def fetch_slate(date_str, use_cache=True):
     # Deduplicate by name (keep higher salary entry)
     df = df.sort_values("Salary", ascending=False).drop_duplicates(subset="Name", keep="first")
 
+    # Save slate to database
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT / "data"))
+        from db import get_connection, init_db, upsert_daily_slate
+        conn = get_connection(str(PROJECT_ROOT / "data" / "dfs.db"))
+        init_db(conn)
+        slate_df = df.rename(columns={"Proj_DK": "projected_dk_pts", "Position": "position",
+                                       "Name": "name", "Team": "team", "Salary": "salary"})
+        # Convert SportsData date format to ISO
+        iso_date = pd.to_datetime(date_str).strftime('%Y-%m-%d')
+        upsert_daily_slate(conn, 'nba', iso_date, slate_df)
+        conn.close()
+    except Exception:
+        pass  # Silently skip — DB is optional for backtest
+
     # Count unique games via teams
     teams = df["Team"].nunique()
     games_approx = max(1, teams // 2)

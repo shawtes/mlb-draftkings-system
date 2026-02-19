@@ -84,6 +84,11 @@ def parse_args():
                         help='Minimum season to include (e.g., "2014-15")')
     parser.add_argument('--min-games', type=int, default=10,
                         help='Minimum games per player to include in training')
+    # Database integration
+    parser.add_argument('--from-db', action='store_true', default=False,
+                        help='Load training data from SQLite DB instead of CSV')
+    parser.add_argument('--db-path', type=str, default=None,
+                        help='Path to SQLite database (default: data/dfs.db)')
     args = parser.parse_known_args()[0]
 
     if args.no_gpu:
