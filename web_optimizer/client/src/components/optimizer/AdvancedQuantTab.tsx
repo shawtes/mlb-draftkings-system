@@ -1,11 +1,121 @@
-import React from 'react';
-import { Card } from '../ui/card';
+import React, { useCallback } from 'react';
 import { Checkbox } from '../ui/checkbox';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Cpu } from 'lucide-react';
 import { AdvancedQuantSettings, DEFAULT_ADVANCED_QUANT_SETTINGS } from './types';
+
+/* ── Strategy one-line descriptions ────────────────────────────── */
+const STRATEGY_DESC: Record<string, string> = {
+  combined: 'Blended Sharpe + leverage + Kelly signals',
+  kelly_criterion: 'Maximize long-term bankroll growth via Kelly',
+  risk_parity: 'Equal risk contribution across all positions',
+  mean_variance: 'Markowitz efficient frontier optimization',
+  equal_weight: 'Baseline equal allocation strategy',
+};
+
+/* ── Scoped CSS for custom range inputs ────────────────────────── */
+const SLIDER_CSS = `
+  .qt-range { -webkit-appearance: none; appearance: none; width: 100%; height: 3px; outline: none; border-radius: 2px; background: var(--dfs-bg-primary, #0B1120); cursor: pointer; }
+  .qt-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--dfs-bg-secondary, #111827); border: 2px solid #00D9FF; cursor: pointer; box-shadow: 0 0 4px rgba(0,217,255,0.35); transition: box-shadow 0.15s; }
+  .qt-range::-webkit-slider-thumb:hover { box-shadow: 0 0 8px rgba(0,217,255,0.6); }
+  .qt-range::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--dfs-bg-secondary, #111827); border: 2px solid #00D9FF; cursor: pointer; box-shadow: 0 0 4px rgba(0,217,255,0.35); }
+  .qt-range::-moz-range-track { height: 3px; border-radius: 2px; background: var(--dfs-bg-primary, #0B1120); }
+  .qt-range:disabled { opacity: 0.3; cursor: not-allowed; }
+  .qt-range:disabled::-webkit-slider-thumb { box-shadow: none; border-color: #475569; }
+`;
+
+/* ── Reusable components ───────────────────────────────────────── */
+
+/** Section header: tiny cyan label with trailing rule line */
+const SectionHeader: React.FC<{ label: string }> = ({ label }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0 6px' }}>
+    <span style={{
+      fontSize: 7.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
+      color: '#00D9FF', whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono', monospace",
+    }}>
+      {label}
+    </span>
+    <div style={{ flex: 1, height: 1, background: 'var(--dfs-border, rgba(255,255,255,0.08))' }} />
+  </div>
+);
+
+/** Compact slider row: [label] [---slider---] [value] */
+const SliderRow: React.FC<{
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  disabled: boolean;
+  onChange: (v: number) => void;
+  format?: (v: number) => string;
+}> = ({ label, value, min, max, step, disabled, onChange, format }) => {
+  const pct = ((value - min) / (max - min)) * 100;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 26 }}>
+      <span style={{
+        fontSize: 9, color: 'var(--dfs-text-muted, #5A6A7E)', whiteSpace: 'nowrap', minWidth: 100,
+        fontWeight: 500,
+      }}>
+        {label}
+      </span>
+      <div style={{ flex: 1, position: 'relative' }}>
+        {/* Filled track overlay */}
+        <div style={{
+          position: 'absolute', top: '50%', left: 0, height: 3, borderRadius: 2,
+          width: `${pct}%`, background: 'rgba(0,217,255,0.45)',
+          transform: 'translateY(-50%)', pointerEvents: 'none', zIndex: 0,
+        }} />
+        <input
+          type="range" className="qt-range" min={min} max={max} step={step}
+          value={value} disabled={disabled}
+          onChange={(e) => onChange(parseFloat(e.target.value))}
+          style={{ position: 'relative', zIndex: 1 }}
+        />
+      </div>
+      <span style={{
+        fontSize: 10, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums',
+        color: '#00D9FF', minWidth: 42, textAlign: 'right', fontWeight: 600,
+      }}>
+        {format ? format(value) : value.toFixed(2)}
+      </span>
+    </div>
+  );
+};
+
+/** Compact number input */
+const CompactNumberInput: React.FC<{
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  disabled: boolean;
+  onChange: (v: number) => void;
+}> = ({ label, value, min, max, step = 1, disabled, onChange }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 6, height: 26 }}>
+    <span style={{ fontSize: 9, color: 'var(--dfs-text-muted, #5A6A7E)', whiteSpace: 'nowrap', fontWeight: 500 }}>
+      {label}
+    </span>
+    <input
+      type="number" min={min} max={max} step={step} value={value} disabled={disabled}
+      onChange={(e) => {
+        const parsed = step >= 1 ? parseInt(e.target.value) : parseFloat(e.target.value);
+        if (!isNaN(parsed)) onChange(Math.max(min, Math.min(max, parsed)));
+      }}
+      style={{
+        width: 60, height: 24, textAlign: 'right',
+        fontSize: 10, fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: 'tabular-nums',
+        background: 'var(--dfs-bg-primary, #0B1120)', color: '#CBD5E1',
+        border: '1px solid var(--dfs-border, rgba(255,255,255,0.08))', borderRadius: 3,
+        outline: 'none', padding: '0 4px',
+      }}
+      onFocus={(e) => { e.target.style.borderColor = 'rgba(0,217,255,0.4)'; }}
+      onBlur={(e) => { e.target.style.borderColor = 'var(--dfs-border, rgba(255,255,255,0.08))'; }}
+    />
+  </div>
+);
+
+/* ── Main Component ────────────────────────────────────────────── */
 
 interface AdvancedQuantTabProps {
   settings: AdvancedQuantSettings;
@@ -15,144 +125,257 @@ interface AdvancedQuantTabProps {
 const AdvancedQuantTab: React.FC<AdvancedQuantTabProps> = ({ settings, onSettingsChange }) => {
   const safeSettings: AdvancedQuantSettings = { ...DEFAULT_ADVANCED_QUANT_SETTINGS, ...settings };
 
-  const updateSetting = <K extends keyof AdvancedQuantSettings>(key: K, value: AdvancedQuantSettings[K]) => {
+  const updateSetting = useCallback(<K extends keyof AdvancedQuantSettings>(key: K, value: AdvancedQuantSettings[K]) => {
     onSettingsChange({ ...safeSettings, [key]: value });
-  };
+  }, [safeSettings, onSettingsChange]);
+
+  const disabled = !safeSettings.enabled;
 
   return (
-    <div className="flex flex-col h-full space-y-4 overflow-auto">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2"><Cpu className="w-6 h-6 text-[var(--dfs-accent)]" /> Advanced Quant</h2>
-          <p className="text-[var(--dfs-text-muted)] text-sm mt-1">Financial-grade quantitative optimization settings</p>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'auto' }}>
+      {/* Inject scoped slider CSS */}
+      <style>{SLIDER_CSS}</style>
+
+      {/* ── Master enable bar ─────────────────────────────────── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        height: 38, padding: '0 12px', flexShrink: 0,
+        background: 'var(--dfs-bg-secondary, #111827)',
+        borderBottom: '1px solid var(--dfs-border, rgba(255,255,255,0.08))',
+      }}>
+        {/* Left: checkbox + label + status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Checkbox
+            checked={safeSettings.enabled}
+            onCheckedChange={(checked: boolean) => updateSetting('enabled', checked)}
+            className="border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400"
+            style={{ width: 14, height: 14 }}
+          />
+          <Cpu style={{ width: 13, height: 13, color: '#00D9FF', opacity: safeSettings.enabled ? 1 : 0.4 }} />
+          <span
+            style={{
+              fontSize: 10, fontWeight: 700, color: '#E2E8F0', letterSpacing: '0.02em',
+              cursor: 'pointer', userSelect: 'none',
+            }}
+            onClick={() => updateSetting('enabled', !safeSettings.enabled)}
+          >
+            Advanced Quant Engine
+          </span>
+          {safeSettings.enabled && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              fontSize: 8, fontWeight: 700, color: '#4ade80', letterSpacing: '0.08em',
+              fontFamily: "'JetBrains Mono', monospace",
+            }}>
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%', background: '#4ade80',
+                boxShadow: '0 0 6px rgba(74,222,128,0.6)',
+                animation: 'pulse 2s infinite',
+              }} />
+              ACTIVE
+            </span>
+          )}
+        </div>
+
+        {/* Right: strategy dropdown */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 8, color: 'var(--dfs-text-muted, #5A6A7E)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            STRATEGY
+          </span>
+          <select
+            value={safeSettings.strategy}
+            onChange={(e) => updateSetting('strategy', e.target.value)}
+            disabled={disabled}
+            style={{
+              height: 24, fontSize: 9, fontFamily: "'JetBrains Mono', monospace",
+              minWidth: 150, padding: '0 8px',
+              background: 'var(--dfs-bg-primary, #0B1120)', color: '#CBD5E1',
+              border: '1px solid var(--dfs-border, rgba(255,255,255,0.08))',
+              borderRadius: 3, outline: 'none',
+            }}
+          >
+            <option value="combined">Combined</option>
+            <option value="kelly_criterion">Kelly Criterion</option>
+            <option value="risk_parity">Risk Parity</option>
+            <option value="mean_variance">Mean-Variance</option>
+            <option value="equal_weight">Equal Weight</option>
+          </select>
         </div>
       </div>
 
-      <Card className="bg-[var(--dfs-bg-tertiary)] border-[var(--dfs-border)] p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Checkbox checked={safeSettings.enabled} onCheckedChange={(checked: boolean) => updateSetting('enabled', checked)} className="border-slate-500 data-[state=checked]:bg-slate-900 data-[state=checked]:border-cyan-400" />
-            <div>
-              <Label className="text-white font-semibold text-base cursor-pointer" onClick={() => updateSetting('enabled', !safeSettings.enabled)}>Enable Advanced Quantitative Optimization</Label>
-              <p className="text-xs text-[var(--dfs-text-muted)] mt-1">Master switch for financial-grade risk modeling</p>
-            </div>
-          </div>
-          {safeSettings.enabled && <div className="flex items-center gap-2 text-white"><div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" /><span className="text-xs font-medium">ENABLED</span></div>}
-        </div>
-      </Card>
+      {/* Strategy description subtitle */}
+      <div style={{
+        height: 18, padding: '0 12px', display: 'flex', alignItems: 'center',
+        background: 'var(--dfs-bg-secondary, #111827)',
+        borderBottom: '1px solid var(--dfs-border, rgba(255,255,255,0.08))',
+      }}>
+        <span style={{
+          fontSize: 8, color: 'var(--dfs-text-muted, #5A6A7E)',
+          fontStyle: 'italic', fontFamily: "'JetBrains Mono', monospace",
+        }}>
+          {STRATEGY_DESC[safeSettings.strategy] || ''}
+        </span>
+      </div>
 
-      <Card className="bg-[var(--dfs-bg-tertiary)] border-[var(--dfs-border)] p-4">
-        <h3 className="text-sm font-bold text-[var(--dfs-accent)] uppercase tracking-wider mb-3">Optimization Strategy</h3>
-        <div>
-          <Label className="text-white block mb-2 text-sm">Strategy</Label>
-          <Select value={safeSettings.strategy} onValueChange={(v: string) => updateSetting('strategy', v)} disabled={!safeSettings.enabled}>
-            <SelectTrigger className="bg-[var(--dfs-bg-secondary)] border-[var(--dfs-border)] text-white"><SelectValue /></SelectTrigger>
-            <SelectContent className="bg-slate-900 border-cyan-500/20">
-              <SelectItem value="combined" className="text-white">Combined (Recommended)</SelectItem>
-              <SelectItem value="kelly_criterion" className="text-white">Kelly Criterion</SelectItem>
-              <SelectItem value="risk_parity" className="text-white">Risk Parity</SelectItem>
-              <SelectItem value="mean_variance" className="text-white">Mean-Variance</SelectItem>
-              <SelectItem value="equal_weight" className="text-white">Equal Weight</SelectItem>
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-[var(--dfs-text-muted)] mt-1">
-            {safeSettings.strategy === 'combined' && 'Combines multiple optimization techniques for balanced approach'}
-            {safeSettings.strategy === 'kelly_criterion' && 'Pure Kelly optimal betting strategy - maximizes long-term growth'}
-            {safeSettings.strategy === 'risk_parity' && 'Equal risk contribution - balances volatility across lineup'}
-            {safeSettings.strategy === 'mean_variance' && 'Classic Markowitz optimization - maximizes return for given risk'}
-            {safeSettings.strategy === 'equal_weight' && 'Simple equal allocation - baseline strategy'}
-          </p>
+      {/* ── Disabled overlay message ──────────────────────────── */}
+      {disabled && (
+        <div style={{
+          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexDirection: 'column', gap: 12, padding: 20,
+        }}>
+          <Cpu style={{ width: 28, height: 28, color: '#475569' }} />
+          <span style={{ fontSize: 10, color: '#5A6A7E', textAlign: 'center', lineHeight: 1.5 }}>
+            Enable quant engine for financial-grade optimization
+          </span>
+          <button
+            onClick={() => updateSetting('enabled', true)}
+            style={{
+              fontSize: 9, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
+              color: '#00D9FF', background: 'rgba(0,217,255,0.08)',
+              border: '1px solid rgba(0,217,255,0.25)', borderRadius: 4,
+              padding: '4px 14px', cursor: 'pointer', letterSpacing: '0.04em',
+            }}
+          >
+            ENABLE
+          </button>
         </div>
-      </Card>
+      )}
 
-      <Card className="bg-[var(--dfs-bg-tertiary)] border-[var(--dfs-border)] p-4">
-        <h3 className="text-sm font-bold text-[var(--dfs-accent)] uppercase tracking-wider mb-3">Risk Parameters</h3>
-        <div className="space-y-4">
-          <div>
-            <div className="flex justify-between mb-2"><Label className="text-white text-sm">Risk Tolerance</Label><span className="text-[var(--dfs-accent)] font-medium text-sm">{(safeSettings.riskTolerance ?? 1.0).toFixed(2)}</span></div>
-            <input type="range" min="0.1" max="2.0" step="0.1" value={safeSettings.riskTolerance} onChange={(e) => updateSetting('riskTolerance', parseFloat(e.target.value))} disabled={!safeSettings.enabled} className="w-full" />
-            <p className="text-xs text-[var(--dfs-text-muted)] mt-1">Range: 0.1 - 2.0</p>
-          </div>
-          <div>
-            <div className="flex justify-between mb-2"><Label className="text-white text-sm">VaR Confidence Level</Label><span className="text-[var(--dfs-accent)] font-medium text-sm">{((safeSettings.varConfidence ?? 0.95) * 100).toFixed(0)}%</span></div>
-            <input type="range" min="0.90" max="0.99" step="0.01" value={safeSettings.varConfidence} onChange={(e) => updateSetting('varConfidence', parseFloat(e.target.value))} disabled={!safeSettings.enabled} className="w-full" />
-          </div>
-          <div>
-            <div className="flex justify-between mb-2"><Label className="text-white text-sm">Target Volatility</Label><span className="text-[var(--dfs-accent)] font-medium text-sm">{((safeSettings.targetVolatility ?? 0.20) * 100).toFixed(0)}%</span></div>
-            <input type="range" min="0.05" max="0.50" step="0.01" value={safeSettings.targetVolatility} onChange={(e) => updateSetting('targetVolatility', parseFloat(e.target.value))} disabled={!safeSettings.enabled} className="w-full" />
-          </div>
-        </div>
-      </Card>
+      {/* ── Parameter sections (grayed when disabled) ─────────── */}
+      <div style={{
+        flex: 1, padding: '0 12px 12px',
+        opacity: disabled ? 0.3 : 1,
+        pointerEvents: disabled ? 'none' : 'auto',
+        transition: 'opacity 0.2s',
+        display: disabled ? 'none' : 'block',
+      }}>
 
-      <Card className="bg-[var(--dfs-bg-tertiary)] border-[var(--dfs-border)] p-4">
-        <h3 className="text-sm font-bold text-[var(--dfs-accent)] uppercase tracking-wider mb-3">Monte Carlo Simulation</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <Label className="text-white block mb-2 text-sm">Simulations</Label>
-            <Input type="number" min="1000" max="50000" step="1000" value={safeSettings.monteCarloSims} onChange={(e) => updateSetting('monteCarloSims', parseInt(e.target.value) || 10000)} disabled={!safeSettings.enabled} className="bg-[var(--dfs-bg-secondary)] border-[var(--dfs-border)] text-white" />
-            <p className="text-xs text-[var(--dfs-text-muted)] mt-1">1K - 50K (10K recommended)</p>
-          </div>
-          <div>
-            <Label className="text-white block mb-2 text-sm">Time Horizon (days)</Label>
-            <Input type="number" min="1" max="30" value={safeSettings.timeHorizon} onChange={(e) => updateSetting('timeHorizon', parseInt(e.target.value) || 1)} disabled={!safeSettings.enabled} className="bg-[var(--dfs-bg-secondary)] border-[var(--dfs-border)] text-white" />
-          </div>
+        {/* ── RISK PARAMETERS ──────────────────────────────────── */}
+        <SectionHeader label="Risk Parameters" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <SliderRow
+            label="Risk Tolerance" value={safeSettings.riskTolerance ?? 1.0}
+            min={0.1} max={2.0} step={0.1} disabled={disabled}
+            onChange={(v) => updateSetting('riskTolerance', v)}
+          />
+          <SliderRow
+            label="VaR Confidence" value={safeSettings.varConfidence ?? 0.95}
+            min={0.90} max={0.99} step={0.01} disabled={disabled}
+            onChange={(v) => updateSetting('varConfidence', v)}
+            format={(v) => `${(v * 100).toFixed(0)}%`}
+          />
+          <SliderRow
+            label="Target Volatility" value={safeSettings.targetVolatility ?? 0.20}
+            min={0.05} max={0.50} step={0.01} disabled={disabled}
+            onChange={(v) => updateSetting('targetVolatility', v)}
+            format={(v) => `${(v * 100).toFixed(0)}%`}
+          />
         </div>
-      </Card>
 
-      <Card className="bg-[var(--dfs-bg-tertiary)] border-[var(--dfs-border)] p-4">
-        <h3 className="text-sm font-bold text-[var(--dfs-accent)] uppercase tracking-wider mb-3">GARCH Volatility Modeling</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <Label className="text-white block mb-2 text-sm">GARCH p</Label>
-            <Input type="number" min="1" max="5" value={safeSettings.garchP} onChange={(e) => updateSetting('garchP', parseInt(e.target.value) || 1)} disabled={!safeSettings.enabled} className="bg-[var(--dfs-bg-secondary)] border-[var(--dfs-border)] text-white" />
-          </div>
-          <div>
-            <Label className="text-white block mb-2 text-sm">GARCH q</Label>
-            <Input type="number" min="1" max="5" value={safeSettings.garchQ} onChange={(e) => updateSetting('garchQ', parseInt(e.target.value) || 1)} disabled={!safeSettings.enabled} className="bg-[var(--dfs-bg-secondary)] border-[var(--dfs-border)] text-white" />
-          </div>
-          <div>
-            <Label className="text-white block mb-2 text-sm">Lookback Period</Label>
-            <Input type="number" min="30" max="365" step="10" value={safeSettings.lookbackPeriod} onChange={(e) => updateSetting('lookbackPeriod', parseInt(e.target.value) || 100)} disabled={!safeSettings.enabled} className="bg-[var(--dfs-bg-secondary)] border-[var(--dfs-border)] text-white" />
-          </div>
+        {/* ── MONTE CARLO ──────────────────────────────────────── */}
+        <SectionHeader label="Monte Carlo Simulation" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <CompactNumberInput
+            label="Simulations" value={safeSettings.monteCarloSims}
+            min={1000} max={50000} step={1000} disabled={disabled}
+            onChange={(v) => updateSetting('monteCarloSims', v)}
+          />
+          <CompactNumberInput
+            label="Horizon (d)" value={safeSettings.timeHorizon}
+            min={1} max={30} step={1} disabled={disabled}
+            onChange={(v) => updateSetting('timeHorizon', v)}
+          />
         </div>
-      </Card>
 
-      <Card className="bg-[var(--dfs-bg-tertiary)] border-[var(--dfs-border)] p-4">
-        <h3 className="text-sm font-bold text-[var(--dfs-accent)] uppercase tracking-wider mb-3">Copula Dependency Modeling</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <Label className="text-white block mb-2 text-sm">Copula Family</Label>
-            <Select value={safeSettings.copulaFamily} onValueChange={(v: string) => updateSetting('copulaFamily', v)} disabled={!safeSettings.enabled}>
-              <SelectTrigger className="bg-[var(--dfs-bg-secondary)] border-[var(--dfs-border)] text-white"><SelectValue /></SelectTrigger>
-              <SelectContent className="bg-slate-900 border-cyan-500/20">
-                <SelectItem value="gaussian" className="text-white">Gaussian</SelectItem>
-                <SelectItem value="t" className="text-white">t-Copula</SelectItem>
-                <SelectItem value="clayton" className="text-white">Clayton</SelectItem>
-                <SelectItem value="frank" className="text-white">Frank</SelectItem>
-                <SelectItem value="gumbel" className="text-white">Gumbel</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <div className="flex justify-between mb-2"><Label className="text-white text-sm">Dependency Threshold</Label><span className="text-[var(--dfs-accent)] font-medium text-sm">{((safeSettings.dependencyThreshold ?? 0.3) * 100).toFixed(0)}%</span></div>
-            <input type="range" min="0.1" max="0.9" step="0.05" value={safeSettings.dependencyThreshold} onChange={(e) => updateSetting('dependencyThreshold', parseFloat(e.target.value))} disabled={!safeSettings.enabled} className="w-full" />
-          </div>
+        {/* ── GARCH ────────────────────────────────────────────── */}
+        <SectionHeader label="GARCH Volatility" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <CompactNumberInput
+            label="p" value={safeSettings.garchP}
+            min={1} max={5} step={1} disabled={disabled}
+            onChange={(v) => updateSetting('garchP', v)}
+          />
+          <CompactNumberInput
+            label="q" value={safeSettings.garchQ}
+            min={1} max={5} step={1} disabled={disabled}
+            onChange={(v) => updateSetting('garchQ', v)}
+          />
+          <CompactNumberInput
+            label="Lookback" value={safeSettings.lookbackPeriod}
+            min={30} max={365} step={10} disabled={disabled}
+            onChange={(v) => updateSetting('lookbackPeriod', v)}
+          />
         </div>
-      </Card>
 
-      <Card className="bg-[var(--dfs-bg-tertiary)] border-[var(--dfs-border)] p-4">
-        <h3 className="text-sm font-bold text-[var(--dfs-accent)] uppercase tracking-wider mb-3">Kelly Criterion Position Sizing</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <div className="flex justify-between mb-2"><Label className="text-white text-sm">Max Kelly Fraction</Label><span className="text-[var(--dfs-accent)] font-medium text-sm">{((safeSettings.maxKellyFraction ?? 0.25) * 100).toFixed(0)}%</span></div>
-            <input type="range" min="0.1" max="1.0" step="0.05" value={safeSettings.maxKellyFraction} onChange={(e) => updateSetting('maxKellyFraction', parseFloat(e.target.value))} disabled={!safeSettings.enabled} className="w-full" />
+        {/* ── COPULA ───────────────────────────────────────────── */}
+        <SectionHeader label="Copula Dependency" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, height: 26 }}>
+            <span style={{ fontSize: 9, color: 'var(--dfs-text-muted, #5A6A7E)', whiteSpace: 'nowrap', fontWeight: 500 }}>
+              Family
+            </span>
+            <select
+              value={safeSettings.copulaFamily}
+              onChange={(e) => updateSetting('copulaFamily', e.target.value)}
+              disabled={disabled}
+              style={{
+                height: 24, fontSize: 9, fontFamily: "'JetBrains Mono', monospace",
+                flex: 1, padding: '0 6px',
+                background: 'var(--dfs-bg-primary, #0B1120)', color: '#CBD5E1',
+                border: '1px solid var(--dfs-border, rgba(255,255,255,0.08))',
+                borderRadius: 3, outline: 'none',
+              }}
+            >
+              <option value="gaussian">Gaussian</option>
+              <option value="t">t-Copula</option>
+              <option value="clayton">Clayton</option>
+              <option value="frank">Frank</option>
+              <option value="gumbel">Gumbel</option>
+            </select>
           </div>
-          <div>
-            <div className="flex justify-between mb-2"><Label className="text-white text-sm">Expected Win Rate</Label><span className="text-[var(--dfs-accent)] font-medium text-sm">{((safeSettings.expectedWinRate ?? 0.20) * 100).toFixed(0)}%</span></div>
-            <input type="range" min="0.1" max="0.9" step="0.05" value={safeSettings.expectedWinRate} onChange={(e) => updateSetting('expectedWinRate', parseFloat(e.target.value))} disabled={!safeSettings.enabled} className="w-full" />
-          </div>
+          <SliderRow
+            label="Dep. Threshold" value={safeSettings.dependencyThreshold ?? 0.3}
+            min={0.1} max={0.9} step={0.05} disabled={disabled}
+            onChange={(v) => updateSetting('dependencyThreshold', v)}
+            format={(v) => `${(v * 100).toFixed(0)}%`}
+          />
         </div>
-      </Card>
+
+        {/* ── KELLY CRITERION ──────────────────────────────────── */}
+        <SectionHeader label="Kelly Criterion" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <SliderRow
+            label="Max Kelly Frac." value={safeSettings.maxKellyFraction ?? 0.25}
+            min={0.1} max={1.0} step={0.05} disabled={disabled}
+            onChange={(v) => updateSetting('maxKellyFraction', v)}
+            format={(v) => `${(v * 100).toFixed(0)}%`}
+          />
+          <SliderRow
+            label="Expected Win Rate" value={safeSettings.expectedWinRate ?? 0.20}
+            min={0.1} max={0.9} step={0.05} disabled={disabled}
+            onChange={(v) => updateSetting('expectedWinRate', v)}
+            format={(v) => `${(v * 100).toFixed(0)}%`}
+          />
+        </div>
+
+        {/* ── Footer status ────────────────────────────────────── */}
+        <div style={{
+          marginTop: 14, padding: '6px 0',
+          borderTop: '1px solid var(--dfs-border, rgba(255,255,255,0.08))',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <span style={{ fontSize: 8, color: 'var(--dfs-text-muted, #5A6A7E)', fontFamily: "'JetBrains Mono', monospace" }}>
+            {safeSettings.monteCarloSims.toLocaleString()} sims | GARCH({safeSettings.garchP},{safeSettings.garchQ}) | {safeSettings.copulaFamily} copula
+          </span>
+          <span style={{
+            fontSize: 8, fontWeight: 700, letterSpacing: '0.06em',
+            fontFamily: "'JetBrains Mono', monospace",
+            color: safeSettings.enabled ? '#a78bfa' : '#475569',
+          }}>
+            QUANT {safeSettings.enabled ? 'ON' : 'OFF'}
+          </span>
+        </div>
+      </div>
     </div>
   );
 };

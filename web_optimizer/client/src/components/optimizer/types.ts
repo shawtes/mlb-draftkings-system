@@ -22,6 +22,28 @@ export interface Player {
   leverageScore?: number;
   opponent?: string;
   projectionSources?: Array<{ source: string; value: number; weight: number }>;
+  // Training pipeline probabilities (from quantile regression)
+  probOver5?: number;
+  probOver10?: number;
+  probOver15?: number;
+  probOver20?: number;
+  probOver25?: number;
+  probOver30?: number;
+  // Training pipeline quant profile (from GARCH, regime, copula engines)
+  garchVolatility?: number;
+  garchConditionalVolatility?: number;
+  volatilityRegime?: number;
+  bullRegime?: number;
+  regimeStrength?: number;
+  momentumRegime?: number;
+  consistencyRegime?: number;
+  entropy?: number;
+  hurstExponent?: number;
+  rollingSharpe?: number;
+  avgPlayerCorrelation?: number;
+  correlationVolatility?: number;
+  evtReturnLevel?: number;
+  exceedanceProb?: number;
 }
 
 export interface Team {
@@ -91,6 +113,45 @@ export const DEFAULT_ADVANCED_QUANT_SETTINGS: AdvancedQuantSettings = {
   expectedWinRate: 0.20,
 };
 
+export const CASH_PRESET: Partial<AdvancedQuantSettings> = {
+  enabled: true,
+  strategy: 'combined',
+  riskTolerance: 0.3,
+  varConfidence: 0.99,
+  monteCarloSims: 2000,
+  maxKellyFraction: 0.15,
+};
+
+export const GPP_PRESET: Partial<AdvancedQuantSettings> = {
+  enabled: true,
+  strategy: 'combined',
+  riskTolerance: 1.5,
+  varConfidence: 0.90,
+  monteCarloSims: 5000,
+  maxKellyFraction: 0.35,
+};
+
+export interface ContestPreset {
+  contestMode: 'gpp' | 'cash';
+  maxExposure: number;
+  minUnique: number;
+  quant: Partial<AdvancedQuantSettings>;
+}
+
+export const CASH_FULL_PRESET: ContestPreset = {
+  contestMode: 'cash',
+  maxExposure: 80,
+  minUnique: 2,
+  quant: CASH_PRESET,
+};
+
+export const GPP_FULL_PRESET: ContestPreset = {
+  contestMode: 'gpp',
+  maxExposure: 50,
+  minUnique: 4,
+  quant: GPP_PRESET,
+};
+
 export interface FavoriteLineup {
   id: string;
   players: Player[];
@@ -114,6 +175,7 @@ export interface BuildState {
   teamExposures: Record<string, { minExp: number; maxExp: number }>;
   stackSettings: StackType[];
   advancedQuantSettings: any;
+  contestMode: 'gpp' | 'cash';
   results: any[];
   minSalary: number | null;
 }

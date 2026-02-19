@@ -1,0 +1,16 @@
+# Core (required) — install these first in your venv
+pandas>=1.4
+numpy>=1.22
+matplotlib>=3.5
+joblib>=1.2
+scikit-learn>=1.2
+scipy>=1.8
+
+# Optional — better ensemble and features (uncomment if needed)
+xgboost>=2.0
+lightgbm>=4.0
+statsmodels>=0.14.0
+arch>=6.0
+optuna>=3.0
+shap>=0.42
+# catboost>=1.2   # Use on Python 3.11/3.12 only; often fails on 3.14

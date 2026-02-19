@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { toast } from 'react-hot-toast';
 import { Sport, SPORT_CONFIGS } from '../../sport-config';
 import { Player, StackType, DEFAULT_ADVANCED_QUANT_SETTINGS } from '../types';
 import { dfsApi } from '../../../services/dfs-api';
@@ -11,6 +12,7 @@ interface UseOptimizerProps {
   teamSelections: Record<number | 'all', string[]>;
   teamExposures?: Record<string, { minExp: number; maxExp: number }>;
   advancedQuantSettings: any;
+  contestMode: 'gpp' | 'cash';
   numLineups: number;
   minUnique: number;
   minSalary: number;
@@ -26,7 +28,7 @@ interface UseOptimizerProps {
 export function useOptimizer(props: UseOptimizerProps) {
   const {
     currentSport, playerData, selectedPlayers, stackSettings,
-    teamSelections, teamExposures, advancedQuantSettings, numLineups, minUnique,
+    teamSelections, teamExposures, advancedQuantSettings, contestMode, numLineups, minUnique,
     minSalary, sortMethod, disableKelly,
     onResultsChange, onLineupsChange, onActiveTabChange, onPlayerDataChange,
     onPortfolioMetricsChange,
@@ -44,11 +46,11 @@ export function useOptimizer(props: UseOptimizerProps) {
   }, []);
 
   const handleRunOptimization = useCallback(async () => {
-    if (!currentSport) { alert('Select a sport before running the optimizer.'); return; }
+    if (!currentSport) { toast.error('Select a sport before running the optimizer.'); return; }
     const sportConfig = SPORT_CONFIGS[currentSport];
     if (!sportConfig) return;
-    if (playerData.length === 0) { alert('Please load player data first'); return; }
-    if (selectedPlayers.length < sportConfig.lineupSize) { alert(`Please select at least ${sportConfig.lineupSize} players`); return; }
+    if (playerData.length === 0) { toast.error('Please load player data first'); return; }
+    if (selectedPlayers.length < sportConfig.lineupSize) { toast.error(`Please select at least ${sportConfig.lineupSize} players`); return; }
 
     setIsOptimizing(true);
     try {
@@ -68,7 +70,8 @@ export function useOptimizer(props: UseOptimizerProps) {
 
       const sortingMethodMap: Record<string, string> = { points: 'Points', value: 'Value', salary: 'Salary' };
       const exposureSettingsPayload = enabledStacks.reduce<Record<string, { min: number; max: number }>>((acc, stack) => { acc[stack.label] = { min: stack.minExp, max: stack.maxExp }; return acc; }, {});
-      const globalMaxExposure = enabledStacks.length > 0 ? Math.max(...enabledStacks.map(s => s.maxExp)) : 100;
+      const defaultMaxExposure = contestMode === 'cash' ? 100 : 50;
+      const globalMaxExposure = enabledStacks.length > 0 ? Math.max(...enabledStacks.map(s => s.maxExp)) : defaultMaxExposure;
 
       const requestedStackSizes = Object.keys(teamSelections)
         .filter(k => k !== 'all')
@@ -81,13 +84,21 @@ export function useOptimizer(props: UseOptimizerProps) {
           )
         : undefined;
 
+      // Build per-player exposure map (only non-default values)
+      const playerExposures = Object.fromEntries(
+        playerData
+          .filter(p => selectedPlayers.includes(p.id) && (p.minExp > 0 || p.maxExp < 100))
+          .map(p => [p.name, { min: p.minExp, max: p.maxExp }])
+      );
+
       const optimizationResponse = await dfsApi.optimizeLineups({
         sport: currentSport, numLineups, minSalary, maxSalary: sportConfig.maxSalary,
         stackSettings: { enabled: enabledStacks.length > 0 && stackTeams.length > 0, teams: stackTeams, requestedStackSizes, minPlayersPerTeam, maxPlayersPerTeam },
         teamSelections, teamExposures: teamExposuresPayload, uniquePlayers: minUnique, maxExposure: globalMaxExposure,
         sortingMethod: sortingMethodMap[sortMethod] ?? 'Points', minUniquePlayersBetweenLineups: minUnique,
-        disableKellySizing: disableKelly, exposureSettings: exposureSettingsPayload, contestMode: 'gpp',
+        disableKellySizing: disableKelly, exposureSettings: exposureSettingsPayload, contestMode,
         monteCarloIterations: 100, advancedQuantSettings: { ...DEFAULT_ADVANCED_QUANT_SETTINGS, ...advancedQuantSettings },
+        ...(Object.keys(playerExposures).length > 0 ? { playerExposures } : {}),
       });
 
       if (optimizationResponse.success) {
@@ -142,18 +153,21 @@ export function useOptimizer(props: UseOptimizerProps) {
           onPortfolioMetricsChange(portfolioMetrics);
         }
 
-        const warningsText = optimizationResponse.warnings?.length ? `\n\nWarnings:\n${optimizationResponse.warnings.join('\n')}` : '';
-        alert(`Generated ${transformedResults.length} optimal lineups!\nAvg Projection: ${optimizationResponse.summary.avgProjection.toFixed(1)} pts${warningsText}`);
+        const avgPts = optimizationResponse.summary?.avgProjection?.toFixed(1) ?? '?';
+        const warnings = optimizationResponse.warnings?.length
+          ? ` (${optimizationResponse.warnings.length} warnings)`
+          : '';
+        toast.success(`Generated ${transformedResults.length} lineups — avg ${avgPts} pts${warnings}`);
       } else {
-        alert(`Optimization failed: ${optimizationResponse.error || 'Unknown error'}`);
+        toast.error(`Optimization failed: ${optimizationResponse.error || 'Unknown error'}`);
       }
     } catch (error) {
       const apiError = dfsApi.handleApiError(error);
-      alert(`Optimization failed: ${apiError.message}`);
+      toast.error(`Optimization failed: ${apiError.message}`);
     } finally {
       setIsOptimizing(false);
     }
-  }, [currentSport, playerData, selectedPlayers, stackSettings, teamSelections, teamExposures, advancedQuantSettings, numLineups, minUnique, minSalary, sortMethod, disableKelly, onResultsChange, onLineupsChange, onActiveTabChange, onPlayerDataChange, onPortfolioMetricsChange, syncSelectionsWithBackend]);
+  }, [currentSport, playerData, selectedPlayers, stackSettings, teamSelections, teamExposures, advancedQuantSettings, contestMode, numLineups, minUnique, minSalary, sortMethod, disableKelly, onResultsChange, onLineupsChange, onActiveTabChange, onPlayerDataChange, onPortfolioMetricsChange, syncSelectionsWithBackend]);
 
   const handleExportDraftKings = useCallback(async () => {
     if (!currentSport) return;
@@ -166,10 +180,10 @@ export function useOptimizer(props: UseOptimizerProps) {
       a.download = `${currentSport.toLowerCase()}_lineups_${new Date().toISOString().split('T')[0]}.csv`;
       document.body.appendChild(a); a.click();
       window.URL.revokeObjectURL(url); document.body.removeChild(a);
-      alert(`Exported lineups`);
+      toast.success('Lineups exported');
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Export failed');
+      toast.error('Export failed');
     }
   }, [currentSport]);
 

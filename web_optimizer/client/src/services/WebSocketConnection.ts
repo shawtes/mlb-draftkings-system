@@ -1,19 +1,34 @@
+export type WsStatus = 'connected' | 'reconnecting' | 'disconnected';
+
 class WebSocketConnection {
   private ws: WebSocket | null = null;
   private url: string;
   private listeners: Map<string, Function[]> = new Map();
+  private _status: WsStatus = 'disconnected';
+  private onStatusChange?: (status: WsStatus) => void;
+  private shouldReconnect = true;
 
-  constructor(url: string) {
+  constructor(url: string, onStatusChange?: (status: WsStatus) => void) {
     this.url = url;
+    this.onStatusChange = onStatusChange;
     this.connect();
+  }
+
+  get status(): WsStatus {
+    return this._status;
+  }
+
+  private setStatus(status: WsStatus) {
+    this._status = status;
+    this.onStatusChange?.(status);
   }
 
   private connect() {
     try {
       this.ws = new WebSocket(this.url);
-      
+
       this.ws.onopen = () => {
-        console.log('WebSocket connected');
+        this.setStatus('connected');
       };
 
       this.ws.onmessage = (event) => {
@@ -26,20 +41,26 @@ class WebSocketConnection {
       };
 
       this.ws.onclose = () => {
-        console.log('WebSocket disconnected');
-        // Attempt to reconnect after 3 seconds
-        setTimeout(() => this.connect(), 3000);
+        if (this.shouldReconnect) {
+          this.setStatus('reconnecting');
+          setTimeout(() => {
+            if (this.shouldReconnect) this.connect();
+          }, 3000);
+        } else {
+          this.setStatus('disconnected');
+        }
       };
 
-      this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+      this.ws.onerror = () => {
+        // onclose will fire after onerror, status handled there
       };
-    } catch (error) {
-      console.error('Failed to create WebSocket connection:', error);
+    } catch {
+      this.setStatus('disconnected');
     }
   }
 
   public disconnect() {
+    this.shouldReconnect = false;
     if (this.ws) {
       this.ws.close();
     }
@@ -50,6 +71,13 @@ class WebSocketConnection {
       this.listeners.set(eventType, []);
     }
     this.listeners.get(eventType)?.push(callback);
+  }
+
+  public off(eventType: string, callback: Function) {
+    const callbacks = this.listeners.get(eventType);
+    if (callbacks) {
+      this.listeners.set(eventType, callbacks.filter(cb => cb !== callback));
+    }
   }
 
   private emit(eventType: string, data: any) {
@@ -68,14 +96,6 @@ class WebSocketConnection {
   public send(data: any) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data));
-    } else {
-      console.warn('WebSocket is not connected');
-    }
-  }
-
-  public close() {
-    if (this.ws) {
-      this.ws.close();
     }
   }
 }

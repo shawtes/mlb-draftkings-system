@@ -27,12 +27,13 @@ class MLBOptimizer {
       riskTolerance = 'medium',
       bankroll = 1000,
       advancedQuantSettings = {},
-      onProgress 
+      contestMode = 'gpp',
+      onProgress
     } = config;
 
     // Initialize quant engine
     const quantEnabled = advancedQuantSettings && advancedQuantSettings.enabled;
-    const quant = quantEnabled ? new QuantEngine(advancedQuantSettings) : null;
+    const quant = quantEnabled ? new QuantEngine({ ...advancedQuantSettings, sport: 'MLB' }) : null;
 
     if (quantEnabled) {
       console.log('📊 MLB Quant Engine ACTIVE:', {
@@ -45,7 +46,7 @@ class MLBOptimizer {
     }
 
     // Pre-compute quant scores for all players when quant is enabled
-    const quantScores = quantEnabled ? quant.scorePlayersQuant(players, 'gpp') : null;
+    const quantScores = quantEnabled ? quant.scorePlayersQuant(players, contestMode) : null;
 
     // Compute Kelly-optimal exposure limits when enabled
     const kellyLimits = (quantEnabled && advancedQuantSettings.strategy !== 'equal_weight')
@@ -75,18 +76,22 @@ class MLBOptimizer {
       }
     }
 
+    // Generate 3x candidates when quant enabled for portfolio selection
+    const candidateMultiplier = quantEnabled ? 3 : 1;
+    const candidateCount = numLineups * candidateMultiplier;
+
     // Generate lineups using different strategies
     const lineupPool = new Set();
     const exposureTracker = new Map();
-    
-    for (let i = 0; i < numLineups; i++) {
-      if (onProgress && i % Math.max(1, Math.floor(numLineups / 10)) === 0) {
-        onProgress(Math.round((i / numLineups) * 100));
+
+    for (let i = 0; i < candidateCount; i++) {
+      if (onProgress && i % Math.max(1, Math.floor(candidateCount / 10)) === 0) {
+        onProgress(Math.round((i / candidateCount) * 80)); // reserve 80-100% for portfolio selection
       }
 
       // Use different strategies to create diversity
       const strategy = this.strategies[i % this.strategies.length];
-      
+
       let lineup;
       let attempts = 0;
       const maxAttempts = 50;
@@ -112,7 +117,7 @@ class MLBOptimizer {
         );
         attempts++;
       } while (
-        attempts < maxAttempts && 
+        attempts < maxAttempts &&
         (lineup === null || this.isDuplicateLineup(lineup, lineupPool, uniquePlayers))
       );
 
@@ -137,21 +142,6 @@ class MLBOptimizer {
           timestamp: new Date().toISOString()
         };
 
-        // Run Monte Carlo simulation and add quant metrics when enabled
-        if (quantEnabled && quant) {
-          const mcResult = quant.monteCarloLineup(lineup.players);
-          result.quantMetrics = {
-            simMean: mcResult.mean,
-            simStdDev: mcResult.stdDev,
-            sharpeRatio: mcResult.sharpeRatio,
-            valueAtRisk: mcResult.valueAtRisk,
-            conditionalVaR: mcResult.conditionalVaR,
-            ceilingProbability: mcResult.ceilingProbability,
-            percentiles: mcResult.percentiles,
-            simulations: mcResult.simulations
-          };
-        }
-
         results.push(result);
       }
 
@@ -159,29 +149,28 @@ class MLBOptimizer {
       await new Promise(resolve => setTimeout(resolve, 5));
     }
 
-    // Sort by quant-adjusted score when enabled, otherwise by projection
-    if (quantEnabled) {
-      results.sort((a, b) => {
-        const aScore = a.quantMetrics ? a.quantMetrics.sharpeRatio : 0;
-        const bScore = b.quantMetrics ? b.quantMetrics.sharpeRatio : 0;
-        return bScore - aScore;
-      });
-    } else {
-      results.sort((a, b) => b.totalProjection - a.totalProjection);
-    }
-
-    // Compute portfolio-level metrics when quant is enabled
+    // Portfolio optimization: MC + selection when quant enabled, else just sort
     let portfolioMetrics = null;
     if (quantEnabled && quant && results.length > 0) {
-      portfolioMetrics = quant.analyzePortfolio(results);
+      if (candidateMultiplier > 1) {
+        console.log(`📊 MLB portfolio selection: ${results.length} candidates → ${numLineups} optimal`);
+      }
+      const portfolio = quant.portfolioOptimize(results, numLineups, contestMode, players);
+      const selected = portfolio.selected;
+      portfolioMetrics = portfolio.portfolioMetrics;
       console.log('📈 MLB Portfolio Metrics:', portfolioMetrics);
+
+      if (onProgress) onProgress(100);
+      console.log(`✅ Generated ${selected.length} MLB lineups (quant-optimized from ${results.length} candidates)`);
+      selected.portfolioMetrics = portfolioMetrics;
+      return selected;
     }
 
+    results.sort((a, b) => b.totalProjection - a.totalProjection);
+
     if (onProgress) onProgress(100);
+    console.log(`✅ Generated ${results.length} MLB lineups`);
 
-    console.log(`✅ Generated ${results.length} MLB lineups${quantEnabled ? ' (quant-optimized)' : ''}`);
-
-    // Attach portfolio metrics to results array for the API response
     results.portfolioMetrics = portfolioMetrics;
     return results;
   }

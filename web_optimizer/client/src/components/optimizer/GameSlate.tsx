@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { Player } from './types';
 import { Sport } from '../sport-config';
-import { Users } from 'lucide-react';
+import { TeamLogo } from '../ui/team-logo';
 
 interface GameSlateProps {
   playerData: Player[];
@@ -19,63 +19,31 @@ interface GameCard {
   playerCount: number;
 }
 
-/**
- * Map DraftKings team abbreviations → ESPN CDN slugs (lowercase)
- * ESPN CDN pattern: https://a.espncdn.com/i/teamlogos/{sport}/500/{slug}.png
- */
-const DK_TO_ESPN_SLUG: Record<string, Record<string, string>> = {
-  NBA: {
-    ATL: 'atl', BOS: 'bos', BKN: 'bkn', CHA: 'cha', CHI: 'chi',
-    CLE: 'cle', DAL: 'dal', DEN: 'den', DET: 'det', GS: 'gs',
-    GSW: 'gs', HOU: 'hou', IND: 'ind', LAC: 'lac', LAL: 'lal',
-    MEM: 'mem', MIA: 'mia', MIL: 'mil', MIN: 'min', NO: 'no',
-    NOP: 'no', NY: 'ny', NYK: 'ny', OKC: 'okc', ORL: 'orl',
-    PHI: 'phi', PHO: 'phx', PHX: 'phx', POR: 'por', SAC: 'sac',
-    SA: 'sa', SAS: 'sa', TOR: 'tor', UTA: 'utah', UTAH: 'utah',
-    WAS: 'wsh', WSH: 'wsh',
-  },
-  NFL: {
-    ARI: 'ari', ATL: 'atl', BAL: 'bal', BUF: 'buf', CAR: 'car',
-    CHI: 'chi', CIN: 'cin', CLE: 'cle', DAL: 'dal', DEN: 'den',
-    DET: 'det', GB: 'gb', HOU: 'hou', IND: 'ind', JAX: 'jax',
-    JAC: 'jax', KC: 'kc', LV: 'lv', LAR: 'lar', LAC: 'lac',
-    MIA: 'mia', MIN: 'min', NE: 'ne', NO: 'no', NYG: 'nyg',
-    NYJ: 'nyj', PHI: 'phi', PIT: 'pit', SF: 'sf', SEA: 'sea',
-    TB: 'tb', TEN: 'ten', WAS: 'wsh', WSH: 'wsh',
-  },
-  MLB: {
-    ARI: 'ari', ATL: 'atl', BAL: 'bal', BOS: 'bos', CHC: 'chc',
-    CHW: 'chw', CWS: 'chw', CIN: 'cin', CLE: 'cle', COL: 'col',
-    DET: 'det', HOU: 'hou', KC: 'kc', LAA: 'laa', LAD: 'lad',
-    MIA: 'mia', MIL: 'mil', MIN: 'min', NYM: 'nym', NYY: 'nyy',
-    OAK: 'oak', PHI: 'phi', PIT: 'pit', SD: 'sd', SF: 'sf',
-    SEA: 'sea', STL: 'stl', TB: 'tb', TEX: 'tex', TOR: 'tor',
-    WAS: 'wsh', WSH: 'wsh',
-  },
+/* Team color dots — compact replacement for logos */
+const TEAM_COLORS: Record<string, string> = {
+  // NBA
+  ATL: '#e03a3e', BOS: '#007a33', BKN: '#000', CHA: '#1d1160', CHI: '#ce1141',
+  CLE: '#860038', DAL: '#00538c', DEN: '#0e2240', DET: '#c8102e', GSW: '#1d428a',
+  GS: '#1d428a', HOU: '#ce1141', IND: '#002d62', LAC: '#c8102e', LAL: '#552583',
+  MEM: '#5d76a9', MIA: '#98002e', MIL: '#00471b', MIN: '#0c2340', NOP: '#0c2340',
+  NO: '#0c2340', NYK: '#006bb6', NY: '#006bb6', OKC: '#007ac1', ORL: '#0077c0',
+  PHI: '#006bb6', PHX: '#1d1160', PHO: '#1d1160', POR: '#e03a3e', SAC: '#5a2d81',
+  SAS: '#c4ced4', SA: '#c4ced4', TOR: '#ce1141', UTA: '#002b5c', UTAH: '#002b5c',
+  WAS: '#002b5c', WSH: '#002b5c',
+  // NFL extras
+  ARI: '#97233f', BAL: '#241773', BUF: '#00338d', CAR: '#0085ca', CIN: '#fb4f14',
+  GB: '#203731', JAX: '#006778', JAC: '#006778', KC: '#e31837', LV: '#a5acaf',
+  LAR: '#003594', NE: '#002244', NYG: '#0b2265', NYJ: '#125740', PIT: '#ffb612',
+  SF: '#aa0000', SEA: '#002244', TB: '#d50a0a', TEN: '#0c2340',
+  // MLB extras
+  CHC: '#0e3386', CHW: '#27251f', CWS: '#27251f', COL: '#33006f', KAN: '#004687',
+  LAA: '#ba0021', LAD: '#005a9c', NYM: '#002d72', NYY: '#003087',
+  OAK: '#003831', SD: '#2f241d', STL: '#c41e3a', TEX: '#003278',
 };
 
-function getTeamLogoUrl(team: string, sport: Sport): string {
-  const slug = DK_TO_ESPN_SLUG[sport]?.[team.toUpperCase()] || team.toLowerCase();
-  const espnSport = sport === 'NBA' ? 'nba' : sport === 'NFL' ? 'nfl' : 'mlb';
-  return `https://a.espncdn.com/i/teamlogos/${espnSport}/500/${slug}.png`;
+function getTeamColor(team: string): string {
+  return TEAM_COLORS[team.toUpperCase()] || '#6b7280';
 }
-
-/** Tiny logo with graceful fallback to text */
-const TeamLogo: React.FC<{ team: string; sport: Sport; size?: number }> = ({ team, sport, size = 20 }) => {
-  const [failed, setFailed] = useState(false);
-  if (failed) return null;
-  return (
-    <img
-      src={getTeamLogoUrl(team, sport)}
-      alt={team}
-      width={size}
-      height={size}
-      className="object-contain"
-      onError={() => setFailed(true)}
-      loading="lazy"
-    />
-  );
-};
 
 /**
  * Normalize a matchup key so that "NYY vs BOS" and "BOS vs NYY"
@@ -91,14 +59,12 @@ const GameSlate: React.FC<GameSlateProps> = ({ playerData, sport, onGameFilter }
 
   // Derive unique games from player data
   const games: GameCard[] = useMemo(() => {
-    // Only include players that have an opponent field
     const playersWithOpponent = playerData.filter(
       (p) => p.opponent && p.opponent.trim() !== ''
     );
 
     if (playersWithOpponent.length === 0) return [];
 
-    // Accumulate stats per game
     const gameMap = new Map<
       string,
       {
@@ -117,7 +83,6 @@ const GameSlate: React.FC<GameSlateProps> = ({ playerData, sport, onGameFilter }
       const key = makeGameKey(team, opp);
 
       if (!gameMap.has(key)) {
-        // Use alphabetical order for consistent display
         const [first, second] = [team, opp].sort();
         gameMap.set(key, {
           teamA: first,
@@ -160,7 +125,6 @@ const GameSlate: React.FC<GameSlateProps> = ({ playerData, sport, onGameFilter }
   const handleCardClick = useCallback(
     (game: GameCard) => {
       if (selectedGameId === game.id) {
-        // Deselect
         setSelectedGameId(null);
         onGameFilter?.([]);
       } else {
@@ -171,11 +135,55 @@ const GameSlate: React.FC<GameSlateProps> = ({ playerData, sport, onGameFilter }
     [selectedGameId, onGameFilter]
   );
 
-  // If no games derived, render nothing
   if (games.length === 0) return null;
 
   return (
-    <div className="overflow-x-auto flex gap-2 px-4 py-2 border-b border-[var(--dfs-border)] bg-[var(--dfs-bg-primary)] flex-shrink-0 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
+    <div
+      style={{
+        height: 54,
+        display: 'flex',
+        alignItems: 'center',
+        padding: '0 8px',
+        gap: 2,
+        background: 'var(--dfs-bg-secondary)',
+        borderBottom: '1px solid var(--dfs-border)',
+        overflowX: 'auto',
+        flexShrink: 0,
+      }}
+      className="game-slate-scroll"
+    >
+      {/* Entry Fees summary on the left */}
+      <div
+        style={{
+          padding: '4px 8px',
+          textAlign: 'center',
+          flexShrink: 0,
+          marginRight: 4,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 7,
+            color: 'var(--dfs-text-muted)',
+            fontWeight: 600,
+            letterSpacing: '0.3px',
+            textTransform: 'uppercase',
+          }}
+        >
+          Entry Fees
+        </div>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: 'var(--dfs-text-primary)',
+          }}
+        >
+          $0.00
+        </div>
+      </div>
+
+      {/* Game cards */}
       {games.map((game) => {
         const isSelected = selectedGameId === game.id;
         return (
@@ -183,57 +191,109 @@ const GameSlate: React.FC<GameSlateProps> = ({ playerData, sport, onGameFilter }
             key={game.id}
             type="button"
             onClick={() => handleCardClick(game)}
-            className={`flex-shrink-0 rounded border px-3 py-1.5 cursor-pointer transition-colors text-left ${
-              isSelected
-                ? 'border-[var(--dfs-accent)] bg-[var(--dfs-accent)]/10'
-                : 'border-[var(--dfs-border)] bg-[var(--dfs-bg-secondary)] hover:border-[var(--dfs-accent)]/40'
-            }`}
-            style={{ width: 150, height: 60 }}
+            style={{
+              flexShrink: 0,
+              borderRadius: 4,
+              border: isSelected
+                ? '1px solid var(--dfs-accent)'
+                : '1px solid var(--dfs-border)',
+              background: isSelected
+                ? 'rgba(6,182,212,0.1)'
+                : 'var(--dfs-bg-primary)',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 2,
+              height: 44,
+              minWidth: 100,
+            }}
           >
-            {/* Top row: logos + team matchup */}
-            <div className="flex items-center justify-center gap-1.5 text-xs font-medium leading-tight">
-              <div className="flex items-center gap-1">
-                <TeamLogo team={game.teamA} sport={sport} size={18} />
-                <span
-                  className="inline-flex items-center justify-center rounded px-1 py-0.5 text-[10px] font-semibold leading-none"
-                  style={{
-                    backgroundColor: isSelected ? 'var(--dfs-accent)' : 'var(--dfs-bg-primary)',
-                    color: isSelected ? 'var(--dfs-bg-primary)' : 'var(--dfs-text-secondary)',
-                    minWidth: 24,
-                  }}
-                >
-                  {game.teamA}
-                </span>
-              </div>
-              <span className="text-[var(--dfs-text-muted)] text-[10px]">vs</span>
-              <div className="flex items-center gap-1">
-                <span
-                  className="inline-flex items-center justify-center rounded px-1 py-0.5 text-[10px] font-semibold leading-none"
-                  style={{
-                    backgroundColor: isSelected ? 'var(--dfs-accent)' : 'var(--dfs-bg-primary)',
-                    color: isSelected ? 'var(--dfs-bg-primary)' : 'var(--dfs-text-secondary)',
-                    minWidth: 24,
-                  }}
-                >
-                  {game.teamB}
-                </span>
-                <TeamLogo team={game.teamB} sport={sport} size={18} />
-              </div>
+            {/* Team matchup row */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                lineHeight: 1,
+              }}
+            >
+              {/* Team A */}
+              <TeamLogo team={game.teamA} sport={sport} size={16} />
+              <span
+                style={{
+                  fontSize: 8,
+                  fontWeight: 700,
+                  color: isSelected ? 'var(--dfs-text-primary)' : 'var(--dfs-text-secondary)',
+                }}
+              >
+                {game.teamA}
+              </span>
+
+              {/* Lightning bolt separator */}
+              <span
+                style={{
+                  fontSize: 7,
+                  color: 'var(--dfs-text-muted)',
+                  opacity: 0.5,
+                }}
+              >
+                ⚡
+              </span>
+
+              {/* Team B */}
+              <span
+                style={{
+                  fontSize: 8,
+                  fontWeight: 700,
+                  color: isSelected ? 'var(--dfs-text-primary)' : 'var(--dfs-text-secondary)',
+                }}
+              >
+                {game.teamB}
+              </span>
+              <TeamLogo team={game.teamB} sport={sport} size={16} />
             </div>
 
-            {/* Bottom row: implied total + player count */}
-            <div className="flex items-center justify-center gap-2 mt-1.5">
-              <span className="text-[10px] font-medium text-[var(--dfs-text-secondary)]">
-                O/U {game.impliedTotal.toFixed(1)}
+            {/* Implied total + time */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                lineHeight: 1,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  fontFamily: 'JetBrains Mono, monospace',
+                  color: isSelected ? 'var(--dfs-accent)' : 'var(--dfs-text-primary)',
+                }}
+              >
+                {game.impliedTotal.toFixed(1)}
               </span>
-              <span className="flex items-center gap-0.5 text-[10px] text-[var(--dfs-text-muted)]">
-                <Users className="w-2.5 h-2.5" />
-                {game.playerCount}
+              <span
+                style={{
+                  fontSize: 6,
+                  color: 'var(--dfs-text-muted)',
+                  opacity: 0.6,
+                }}
+              >
+                7:05 PM
               </span>
             </div>
           </button>
         );
       })}
+
+      {/* CSS to hide scrollbar */}
+      <style>{`
+        .game-slate-scroll::-webkit-scrollbar { height: 0; display: none; }
+        .game-slate-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+      `}</style>
     </div>
   );
 };

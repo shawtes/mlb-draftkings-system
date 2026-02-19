@@ -80,7 +80,12 @@ const ControlPanelTab: React.FC<ControlPanelTabProps> = ({
         body: formData,
       });
 
-      const result = await response.json();
+      let result;
+      try {
+        result = await response.json();
+      } catch {
+        result = { success: false, error: response.statusText || 'Server error' };
+      }
 
       if (result.success) {
         toast.success(`✅ Loaded ${result.playersCount} players successfully!`);
@@ -93,7 +98,7 @@ const ControlPanelTab: React.FC<ControlPanelTabProps> = ({
       }
     } catch (error) {
       console.error('Upload error:', error);
-      toast.error('❌ Upload failed. Please try again.');
+      toast.error('❌ Upload failed. Make sure the app server is running (port 5001) and try again.');
     } finally {
       setUploading(false);
     }

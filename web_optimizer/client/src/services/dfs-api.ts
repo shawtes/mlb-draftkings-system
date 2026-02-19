@@ -43,6 +43,7 @@ export interface OptimizeRequest {
   teamSelections?: Record<number | 'all', string[]>;
   teamExposures?: Record<string, { min: number; max: number }>;
   advancedQuantSettings?: Record<string, unknown>;
+  playerExposures?: Record<string, { min: number; max: number }>;
 }
 
 export interface OptimizeResponse {

@@ -2,17 +2,22 @@
 
 /* DFS Color Tokens — UrSim Premium Dark */
 :root {
-  --dfs-bg-primary: #080E1A;
-  --dfs-bg-secondary: #0C1424;
-  --dfs-bg-tertiary: #141E30;
-  --dfs-bg-hover: #1A2740;
-  --dfs-border: #1E3048;
-  --dfs-accent: #00D9FF;
-  --dfs-accent-secondary: #00FFD4;
-  --dfs-accent-purple: #8B5CF6;
-  --dfs-text-primary: #F0F4F8;
-  --dfs-text-secondary: #8899AA;
-  --dfs-text-muted: #4A5C6E;
+  --dfs-bg-primary: #0d1117;
+  --dfs-bg-secondary: #161b22;
+  --dfs-bg-tertiary: #1c2128;
+  --dfs-bg-surface3: #21262d;
+  --dfs-bg-hover: #21262d;
+  --dfs-border: rgba(240,246,252,0.1);
+  --dfs-ghost: #30363d;
+  --dfs-accent: #2dd4bf;
+  --dfs-accent-secondary: #22c55e;
+  --dfs-accent-purple: #a78bfa;
+  --dfs-accent-orange: #f59e0b;
+  --dfs-accent-blue: #3b82f6;
+  --dfs-accent-red: #ef4444;
+  --dfs-text-primary: #e6edf3;
+  --dfs-text-secondary: #8b949e;
+  --dfs-text-muted: #484f58;
 }
 
 :root {
@@ -148,6 +153,11 @@
   [data-mono] {
     font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
   }
+
+  .app-shell {
+    font-size: 11px;
+    -webkit-font-smoothing: antialiased;
+  }
 }
 
 /**
@@ -223,93 +233,14 @@ html {
   animation: scroll 20s linear infinite;
 }
 
-/* Custom Scrollbar Styles */
 @layer utilities {
-  /* Thin scrollbar */
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
+  /* Ultra-thin scrollbar */
+  ::-webkit-scrollbar { width: 3px; height: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--dfs-ghost, #30363d); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--dfs-text-muted, #484f58); }
 
-  /* Scrollbar track */
-  .scrollbar-track-slate-800::-webkit-scrollbar-track {
-    background-color: rgb(30 41 59); /* slate-800 */
-    border-radius: 4px;
-  }
-
-  .scrollbar-track-slate-900::-webkit-scrollbar-track {
-    background-color: rgb(15 23 42); /* slate-900 */
-    border-radius: 4px;
-  }
-
-  /* Scrollbar thumb */
-  .scrollbar-thumb-slate-600::-webkit-scrollbar-thumb {
-    background-color: rgb(71 85 105); /* slate-600 */
-    border-radius: 4px;
-  }
-
-  .scrollbar-thumb-slate-700::-webkit-scrollbar-thumb {
-    background-color: rgb(51 65 85); /* slate-700 */
-    border-radius: 4px;
-  }
-
-  /* Scrollbar thumb hover */
-  .hover\:scrollbar-thumb-slate-500:hover::-webkit-scrollbar-thumb {
-    background-color: rgb(100 116 139); /* slate-500 */
-  }
-
-  .hover\:scrollbar-thumb-slate-600:hover::-webkit-scrollbar-thumb {
-    background-color: rgb(71 85 105); /* slate-600 */
-  }
-
-  /* Firefox scrollbar support */
-  .scrollbar-thin {
-    scrollbar-width: thin;
-  }
-
-  .scrollbar-track-slate-800 {
-    scrollbar-color: rgb(71 85 105) rgb(30 41 59);
-  }
-
-  .scrollbar-track-slate-900 {
-    scrollbar-color: rgb(51 65 85) rgb(15 23 42);
-  }
-  
-  /* Lineup scrollbar container - Force visible scrollbar */
-  div[style*="overflow-y: scroll"]::-webkit-scrollbar,
-  div[style*="overflowY"]::-webkit-scrollbar {
-    width: 16px !important;
-    height: 16px !important;
-  }
-  
-  div[style*="overflow-y: scroll"]::-webkit-scrollbar-track,
-  div[style*="overflowY"]::-webkit-scrollbar-track {
-    background: #1e293b !important;
-    border-radius: 0;
-  }
-  
-  div[style*="overflow-y: scroll"]::-webkit-scrollbar-thumb,
-  div[style*="overflowY"]::-webkit-scrollbar-thumb {
-    background: #3b82f6 !important;
-    border-radius: 8px;
-    border: 3px solid #1e293b;
-  }
-  
-  div[style*="overflow-y: scroll"]::-webkit-scrollbar-thumb:hover,
-  div[style*="overflowY"]::-webkit-scrollbar-thumb:hover {
-    background: #2563eb !important;
-  }
-  
-  div[style*="overflow-y: scroll"]::-webkit-scrollbar-thumb:active,
-  div[style*="overflowY"]::-webkit-scrollbar-thumb:active {
-    background: #1d4ed8 !important;
-  }
-  
-  /* For Firefox */
-  div[style*="overflow-y: scroll"],
-  div[style*="overflowY"] {
-    scrollbar-width: auto !important;
-    scrollbar-color: #3b82f6 #1e293b !important;
-  }
+  /* Firefox */
+  * { scrollbar-width: thin; scrollbar-color: var(--dfs-ghost, #30363d) transparent; }
 }
 

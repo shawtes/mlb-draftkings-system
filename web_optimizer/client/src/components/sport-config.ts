@@ -5,11 +5,23 @@
 
 export type Sport = 'MLB' | 'NFL' | 'NBA';
 
+export interface StackTypeDefinition {
+  id: string;
+  label: string;
+  correlation: number | null;     // Primary correlation coefficient, null if N/A
+  correlationLabel: string | null; // e.g. "r=+0.54" or "Fade" or null
+  description: string;
+  category: 'primary' | 'secondary' | 'game-stack' | 'structural' | 'fade' | 'none';
+  gppImpact: 'high' | 'moderate' | 'low' | 'negative';
+  defaultEnabled: boolean;
+}
+
 export interface SportConfig {
   positions: string[];
   positionLabels: Record<string, string>;
   positionCounts: Record<string, number>;
   stackTypes: string[];
+  stackTypeDefinitions: StackTypeDefinition[];
   defaultMinSalary: number;
   maxSalary: number;
   lineupSize: number;
@@ -51,6 +63,20 @@ export const SPORT_CONFIGS: Record<Sport, SportConfig> = {
       'Pitcher vs Weak Lineup',
       'No Stacks'
     ],
+    stackTypeDefinitions: [
+      { id: 'mlb-5-4', label: '5/4 Structure', correlation: 0.45, correlationLabel: 'r=+0.45', description: '5 batters Team A + 4 batters Team B -- max correlated, GPP ceiling', category: 'primary', gppImpact: 'high', defaultEnabled: false },
+      { id: 'mlb-5-3', label: '5/3 Structure', correlation: 0.40, correlationLabel: 'r=+0.40', description: '5 batters Team A + 3 batters Team B -- dominant GPP format, 64% of winners', category: 'primary', gppImpact: 'high', defaultEnabled: true },
+      { id: 'mlb-5-2', label: '5/2 Structure', correlation: 0.38, correlationLabel: 'r=+0.38', description: '5 batters Team A + 2 batters Team B -- heavy primary stack', category: 'primary', gppImpact: 'high', defaultEnabled: false },
+      { id: 'mlb-4-4', label: '4/4 Structure', correlation: 0.35, correlationLabel: 'r=+0.35', description: '4 batters Team A + 4 batters Team B -- balanced two-team', category: 'primary', gppImpact: 'moderate', defaultEnabled: false },
+      { id: 'mlb-4-3', label: '4/3 Structure', correlation: 0.35, correlationLabel: 'r=+0.35', description: '4 batters Team A + 3 batters Team B -- standard GPP construction', category: 'primary', gppImpact: 'moderate', defaultEnabled: true },
+      { id: 'mlb-4-2', label: '4/2 Structure', correlation: 0.30, correlationLabel: 'r=+0.30', description: '4 batters Team A + 2 batters Team B + 2 individuals', category: 'primary', gppImpact: 'moderate', defaultEnabled: false },
+      { id: 'mlb-3-3-2', label: '3/3/2 Structure', correlation: null, correlationLabel: null, description: '3 batters each from 2 teams + 2 from a 3rd -- three-team diversified', category: 'structural', gppImpact: 'moderate', defaultEnabled: false },
+      { id: 'mlb-5man', label: '5-Man Batter Stack', correlation: 0.45, correlationLabel: 'r=+0.35-0.50', description: '5 consecutive batters from same team -- big inning capture', category: 'primary', gppImpact: 'high', defaultEnabled: true },
+      { id: 'mlb-4man', label: '4-Man Batter Stack', correlation: 0.35, correlationLabel: 'r=+0.30-0.45', description: '4 consecutive batters from same team', category: 'primary', gppImpact: 'high', defaultEnabled: true },
+      { id: 'mlb-wrap', label: 'Wrap-Around Stack', correlation: 0.35, correlationLabel: 'r=+0.35', description: 'Bottom + top of order (8-9-1-2-3) -- extra ABs', category: 'secondary', gppImpact: 'moderate', defaultEnabled: false },
+      { id: 'mlb-pitcher', label: 'Pitcher vs. Weak Lineup', correlation: null, correlationLabel: null, description: 'Pitcher facing bottom-5 offense -- high floor', category: 'structural', gppImpact: 'moderate', defaultEnabled: false },
+      { id: 'no-stacks', label: 'No Stacks', correlation: null, correlationLabel: null, description: 'No correlation requirements -- uncorrelated lineup', category: 'none', gppImpact: 'low', defaultEnabled: false },
+    ],
     defaultMinSalary: 45000,
     maxSalary: 50000,
     lineupSize: 10,
@@ -86,6 +112,19 @@ export const SPORT_CONFIGS: Record<Sport, SportConfig> = {
       'Run-Back',
       'Mini Stack (WR+WR)',
       'No Stack'
+    ],
+    stackTypeDefinitions: [
+      { id: 'qb-wr', label: 'QB + WR', correlation: 0.54, correlationLabel: 'r=+0.54', description: 'QB with 1 WR from same team -- core passing stack', category: 'primary', gppImpact: 'high', defaultEnabled: true },
+      { id: 'qb-2wr', label: 'QB + 2WR', correlation: 0.54, correlationLabel: 'r=+0.54/+0.41', description: 'QB with 2 WRs from same team -- double stack for ceiling', category: 'primary', gppImpact: 'high', defaultEnabled: true },
+      { id: 'qb-wr-te', label: 'QB + WR + TE', correlation: 0.38, correlationLabel: 'r=+0.54/+0.38', description: 'QB + WR + TE same team -- red zone correlation', category: 'primary', gppImpact: 'moderate', defaultEnabled: false },
+      { id: 'qb-2wr-te', label: 'QB + 2WR + TE', correlation: 0.54, correlationLabel: 'r=+0.54/+0.41/+0.38', description: 'QB + 2 WRs + TE -- max same-team ceiling', category: 'primary', gppImpact: 'high', defaultEnabled: false },
+      { id: 'game-stack-4-3', label: 'Game Stack (4/3)', correlation: 0.37, correlationLabel: 'r=+0.37', description: '4 from Team A (QB+3) + 3 from Team B -- full shootout capture', category: 'game-stack', gppImpact: 'high', defaultEnabled: true },
+      { id: 'game-stack-3-2', label: 'Game Stack (3/2)', correlation: 0.37, correlationLabel: 'r=+0.37', description: '3 from Team A (QB+2) + 2 from Team B -- standard game stack', category: 'game-stack', gppImpact: 'high', defaultEnabled: true },
+      { id: 'game-stack-3-2-1', label: 'Game Stack (3/2/1)', correlation: null, correlationLabel: null, description: '3 from Team A + 2 from Team B + 1 from Team C -- diversified', category: 'game-stack', gppImpact: 'moderate', defaultEnabled: false },
+      { id: 'bring-back', label: 'Bring-Back', correlation: 0.37, correlationLabel: 'r=+0.37', description: 'Opposing pass catcher paired with QB stack -- shootout hedge', category: 'secondary', gppImpact: 'high', defaultEnabled: true },
+      { id: 'run-back', label: 'Run-Back', correlation: null, correlationLabel: null, description: 'Opposing RB/WR paired with QB stack -- game-script hedge', category: 'secondary', gppImpact: 'moderate', defaultEnabled: false },
+      { id: 'mini-wr-wr', label: 'Mini Stack (WR+WR)', correlation: 0.22, correlationLabel: 'r=+0.22', description: 'Same-team WR pair without QB -- moderate correlation', category: 'secondary', gppImpact: 'low', defaultEnabled: false },
+      { id: 'no-stack', label: 'No Stack', correlation: null, correlationLabel: null, description: 'No correlation requirements -- pure projection-driven', category: 'none', gppImpact: 'low', defaultEnabled: false },
     ],
     defaultMinSalary: 48000,
     maxSalary: 50000,
@@ -126,6 +165,19 @@ export const SPORT_CONFIGS: Record<Sport, SportConfig> = {
       'Mini Stack (PG+Wing)',
       'Blowout Fade',
       'No Stack'
+    ],
+    stackTypeDefinitions: [
+      { id: 'game-4-2', label: 'Game Stack (4/2)', correlation: 0.30, correlationLabel: 'r=+0.30', description: '4 from Game A + 2 from Game B -- concentrated game environment', category: 'game-stack', gppImpact: 'high', defaultEnabled: true },
+      { id: 'game-3-3', label: 'Game Stack (3/3)', correlation: 0.25, correlationLabel: 'r=+0.25', description: '3 from Game A + 3 from Game B -- balanced two-game exposure', category: 'game-stack', gppImpact: 'high', defaultEnabled: true },
+      { id: 'game-3-2-2', label: 'Game Stack (3/2/2)', correlation: null, correlationLabel: null, description: '3 from Game A + 2 from Game B + 2 from Game C -- three-game spread', category: 'game-stack', gppImpact: 'moderate', defaultEnabled: false },
+      { id: 'game-2-2-2-2', label: 'Game Stack (2/2/2/2)', correlation: null, correlationLabel: null, description: '2 from each of 4 games -- max diversification, lower ceiling', category: 'structural', gppImpact: 'low', defaultEnabled: false },
+      { id: 'game-env-2', label: 'Game Environment (2+)', correlation: 0.30, correlationLabel: 'r=+0.25-0.40', description: '2+ players from same high-total game (O/U 230+)', category: 'game-stack', gppImpact: 'high', defaultEnabled: true },
+      { id: 'game-env-3', label: 'Game Environment (3+)', correlation: 0.35, correlationLabel: 'r=+0.30-0.40', description: '3+ from same game -- aggressive game environment capture', category: 'game-stack', gppImpact: 'high', defaultEnabled: false },
+      { id: 'pace-stack', label: 'Pace Stack', correlation: 0.30, correlationLabel: 'r=+0.20-0.35', description: 'Players from top-pace teams (pace > 100) -- more possessions', category: 'structural', gppImpact: 'moderate', defaultEnabled: false },
+      { id: 'stars-value', label: 'Stars + Value', correlation: null, correlationLabel: null, description: 'Salary structure: 2-3 studs ($8K+) + value plays ($3.5-5K)', category: 'structural', gppImpact: 'moderate', defaultEnabled: true },
+      { id: 'mini-pg-wing', label: 'Mini Stack (PG+Wing)', correlation: 0.15, correlationLabel: 'r=+0.15', description: 'PG + SG/SF -- assist-to-score correlation', category: 'secondary', gppImpact: 'low', defaultEnabled: false },
+      { id: 'blowout-fade', label: 'Blowout Fade', correlation: -0.15, correlationLabel: 'Fade', description: 'Avoid starters from heavy favorites (spread > 10)', category: 'fade', gppImpact: 'negative', defaultEnabled: false },
+      { id: 'no-stack', label: 'No Stack', correlation: null, correlationLabel: null, description: 'No correlation requirements -- projection-driven', category: 'none', gppImpact: 'low', defaultEnabled: false },
     ],
     defaultMinSalary: 48000,
     maxSalary: 50000,

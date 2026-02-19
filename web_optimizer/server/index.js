@@ -11,6 +11,7 @@ const { spawn } = require('child_process');
 const MLBOptimizer = require('./optimizer');
 const NFLOptimizer = require('./nfl-optimizer');
 const NBAOptimizer = require('./nba-optimizer');
+const QuantEngine = require('./quant-engine');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -37,7 +38,7 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ 
+const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
@@ -46,7 +47,7 @@ const upload = multer({
       cb(new Error('Only CSV files are allowed'), false);
     }
   },
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
 });
 
 // WebSocket server for real-time updates (will be initialized after HTTP server)
@@ -128,6 +129,100 @@ function saveFavorites() {
 
 // Load favorites on startup
 loadFavorites();
+
+// Auto-load a CSV file into playersData on startup (no upload required)
+function autoLoadCsv(csvPath) {
+  if (!fs.existsSync(csvPath)) {
+    console.log(`📂 No auto-load CSV found at ${csvPath}`);
+    return;
+  }
+  console.log(`📂 Auto-loading players from ${path.basename(csvPath)}...`);
+  const results = [];
+  fs.createReadStream(csvPath)
+    .pipe(csv())
+    .on('data', (data) => {
+      try {
+        let projectionValue = 0;
+        if (data.Predicted_DK_Points && !isNaN(parseFloat(data.Predicted_DK_Points))) projectionValue = parseFloat(data.Predicted_DK_Points);
+        else if (data.Adjusted_Projection && !isNaN(parseFloat(data.Adjusted_Projection))) projectionValue = parseFloat(data.Adjusted_Projection);
+        else if (data.AvgPointsPerGame && !isNaN(parseFloat(data.AvgPointsPerGame))) projectionValue = parseFloat(data.AvgPointsPerGame);
+        else if (data.My_Proj && !isNaN(parseFloat(data.My_Proj))) projectionValue = parseFloat(data.My_Proj);
+        else if (data.PPG_Projection && !isNaN(parseFloat(data.PPG_Projection))) projectionValue = parseFloat(data.PPG_Projection);
+        else if (data.projection && !isNaN(parseFloat(data.projection))) projectionValue = parseFloat(data.projection);
+        else if (data.Projection && !isNaN(parseFloat(data.Projection))) projectionValue = parseFloat(data.Projection);
+
+        const positionValue = data.Pos || data.Position || data.position || data.Roster_Position || '';
+        const salaryValue = parseInt(data.Salary || data.salary || data.DK_Salary || data.Cost || 0) || 0;
+
+        const player = {
+          id: uuidv4(),
+          name: data.Name || data.name || data.Player || '',
+          team: data.Team || data.TeamAbbrev || data.team || data.Tm || '',
+          position: positionValue,
+          salary: salaryValue,
+          projection: projectionValue,
+          source: data.Source || '',
+          value: 0,
+          ownership: parseFloat(data.Ownership || data.ownership || data.Own || 0) || 0,
+          ceiling: parseFloat(data.Ceiling || data.ceiling) || undefined,
+          floor: parseFloat(data.Floor || data.floor) || undefined,
+          stdDev: parseFloat(data.StdDev || data.stdDev || data.SD) || undefined,
+          opponent: data.Opponent || data.opponent || data.Opp || undefined,
+          probOver5: parseFloat(data.prob_over_5) || undefined,
+          probOver10: parseFloat(data.prob_over_10) || undefined,
+          probOver15: parseFloat(data.prob_over_15) || undefined,
+          probOver20: parseFloat(data.prob_over_20) || undefined,
+          probOver25: parseFloat(data.prob_over_25) || undefined,
+          probOver30: parseFloat(data.prob_over_30) || undefined,
+          garchVolatility: parseFloat(data.garch_volatility) || undefined,
+          garchConditionalVolatility: parseFloat(data.garch_conditional_volatility) || undefined,
+          volatilityRegime: data.volatility_regime != null && data.volatility_regime !== '' ? parseInt(data.volatility_regime) : undefined,
+          bullRegime: data.bull_regime != null && data.bull_regime !== '' ? parseInt(data.bull_regime) : undefined,
+          regimeStrength: parseFloat(data.regime_strength) || undefined,
+          momentumRegime: data.momentum_regime != null && data.momentum_regime !== '' ? parseInt(data.momentum_regime) : undefined,
+          consistencyRegime: data.consistency_regime != null && data.consistency_regime !== '' ? parseInt(data.consistency_regime) : undefined,
+          entropy: parseFloat(data.entropy) || undefined,
+          hurstExponent: parseFloat(data.hurst_exponent) || undefined,
+          rollingSharpe: parseFloat(data.rolling_sharpe) || undefined,
+          avgPlayerCorrelation: parseFloat(data.avg_player_correlation) || undefined,
+          correlationVolatility: parseFloat(data.correlation_volatility) || undefined,
+          evtReturnLevel: parseFloat(data.evt_return_level) || undefined,
+          exceedanceProb: parseFloat(data.exceedance_prob) || undefined,
+          selected: true,
+          locked: false,
+          excluded: false,
+          favorite: false,
+          minExposure: 0,
+          maxExposure: 100
+        };
+
+        if (player.salary > 0 && player.projection > 0) {
+          player.value = parseFloat((player.projection / player.salary * 1000).toFixed(2));
+        }
+        results.push(player);
+      } catch (err) {
+        console.error('Auto-load parse error:', err);
+      }
+    })
+    .on('end', () => {
+      playersData = results;
+      const withProj = results.filter(p => p.projection > 0);
+      const withGarch = results.filter(p => p.garchVolatility !== undefined);
+      // Detect sport from filename
+      const basename = path.basename(csvPath).toLowerCase();
+      if (basename.includes('nba')) currentSport = 'NBA';
+      else if (basename.includes('nfl')) currentSport = 'NFL';
+      else if (basename.includes('mlb')) currentSport = 'MLB';
+      console.log(`✅ Auto-loaded ${results.length} players (${withProj.length} with projections, ${withGarch.length} with GARCH) — sport: ${currentSport}`);
+    })
+    .on('error', (err) => {
+      console.error('Auto-load CSV error:', err);
+    });
+}
+
+// Auto-load the quant-enriched CSV if it exists
+const AUTO_LOAD_CSV = path.join(__dirname, '../../nba_NOV4_READY_WITH_QUANT.csv');
+autoLoadCsv(AUTO_LOAD_CSV);
 
 // Parse DK entries file robustly (matching desktop logic)
 function parseDkEntriesRobustly(filePath) {
@@ -474,6 +569,28 @@ app.post('/api/upload-players', upload.single('playersFile'), (req, res) => {
           floor: parseFloat(data.Floor || data.floor) || undefined,
           stdDev: parseFloat(data.StdDev || data.stdDev || data.Std_Dev || data.SD) || undefined,
           opponent: data.Opponent || data.opponent || data.Opp || data.opp || undefined,
+          // Training pipeline probability columns (from quantile regression)
+          probOver5: parseFloat(data.prob_over_5) || undefined,
+          probOver10: parseFloat(data.prob_over_10) || undefined,
+          probOver15: parseFloat(data.prob_over_15) || undefined,
+          probOver20: parseFloat(data.prob_over_20) || undefined,
+          probOver25: parseFloat(data.prob_over_25) || undefined,
+          probOver30: parseFloat(data.prob_over_30) || undefined,
+          // Training pipeline quant profile columns (from player_quant_profile.csv via bridge)
+          garchVolatility: parseFloat(data.garch_volatility) || undefined,
+          garchConditionalVolatility: parseFloat(data.garch_conditional_volatility) || undefined,
+          volatilityRegime: data.volatility_regime != null && data.volatility_regime !== '' ? parseInt(data.volatility_regime) : undefined,
+          bullRegime: data.bull_regime != null && data.bull_regime !== '' ? parseInt(data.bull_regime) : undefined,
+          regimeStrength: parseFloat(data.regime_strength) || undefined,
+          momentumRegime: data.momentum_regime != null && data.momentum_regime !== '' ? parseInt(data.momentum_regime) : undefined,
+          consistencyRegime: data.consistency_regime != null && data.consistency_regime !== '' ? parseInt(data.consistency_regime) : undefined,
+          entropy: parseFloat(data.entropy) || undefined,
+          hurstExponent: parseFloat(data.hurst_exponent) || undefined,
+          rollingSharpe: parseFloat(data.rolling_sharpe) || undefined,
+          avgPlayerCorrelation: parseFloat(data.avg_player_correlation) || undefined,
+          correlationVolatility: parseFloat(data.correlation_volatility) || undefined,
+          evtReturnLevel: parseFloat(data.evt_return_level) || undefined,
+          exceedanceProb: parseFloat(data.exceedance_prob) || undefined,
           selected: false,
           locked: false,
           excluded: false,
@@ -608,7 +725,19 @@ app.post('/api/upload-players', upload.single('playersFile'), (req, res) => {
         }
       }
       console.log('=====================================\n');
-      
+
+      // Quant profile coverage
+      const playersWithGarch = results.filter(p => p.garchVolatility !== undefined);
+      const playersWithRegime = results.filter(p => p.volatilityRegime !== undefined);
+      const playersWithCorrelation = results.filter(p => p.avgPlayerCorrelation !== undefined);
+      if (playersWithGarch.length > 0 || playersWithRegime.length > 0) {
+        console.log('\n=== QUANT PROFILE COVERAGE ===');
+        console.log(`  GARCH volatility: ${playersWithGarch.length}/${results.length} players`);
+        console.log(`  Regime indicators: ${playersWithRegime.length}/${results.length} players`);
+        console.log(`  Correlation data: ${playersWithCorrelation.length}/${results.length} players`);
+        console.log('================================\n');
+      }
+
       // Clean up uploaded file
       fs.unlink(filePath, (err) => {
         if (err) console.error('Error deleting file:', err);
@@ -757,7 +886,8 @@ app.get('/api/players', (req, res) => {
     players: filteredPlayers,
     total: filteredPlayers.length,
     allTeams: [...new Set(playersData.map(p => p.team))].sort(),
-    allPositions: [...new Set(playersData.map(p => p.position))].sort()
+    allPositions: [...new Set(playersData.map(p => p.position))].sort(),
+    sport: currentSport
   });
 });
 
@@ -864,7 +994,8 @@ app.post('/api/optimize', async (req, res) => {
       riskTolerance = 'medium',
       contestMode = 'gpp',
       bankroll = 1000,
-      advancedQuantSettings = {}
+      advancedQuantSettings = {},
+      playerExposures = {}
     } = req.body;
     
     // Validate inputs
@@ -874,13 +1005,34 @@ app.post('/api/optimize', async (req, res) => {
     
     const selectedPlayers = playersData.filter(p => p.selected);
     const minPlayersRequired = sport === 'NFL' ? 9 : sport === 'NBA' ? 8 : 10;
-    
+
     if (selectedPlayers.length < minPlayersRequired) {
-      return res.status(400).json({ 
-        error: `Need at least ${minPlayersRequired} players selected for ${sport}` 
+      return res.status(400).json({
+        error: `Need at least ${minPlayersRequired} players selected for ${sport}`
       });
     }
-    
+
+    // Apply per-player exposure limits to player objects (used by JS optimizer paths)
+    if (playerExposures && Object.keys(playerExposures).length > 0) {
+      const expKeys = Object.keys(playerExposures);
+      console.log(`📊 Per-player exposures received for ${expKeys.length} players:`);
+      expKeys.forEach(name => {
+        console.log(`   ${name}: min=${playerExposures[name].min}%, max=${playerExposures[name].max}%`);
+      });
+      let matched = 0;
+      selectedPlayers.forEach(p => {
+        const exp = playerExposures[p.name];
+        if (exp) {
+          p.minExposure = exp.min;
+          p.maxExposure = exp.max;
+          matched++;
+        }
+      });
+      console.log(`   Matched ${matched}/${expKeys.length} players to selected pool`);
+    } else {
+      console.log('📊 No per-player exposures in request (all defaults)');
+    }
+
     // Start optimization process
     const optimizationId = uuidv4();
     
@@ -946,17 +1098,24 @@ app.post('/api/optimize', async (req, res) => {
       let nbaWarnings = [];
 
       // Step 1: Generate lineups via PuLP ILP (immutable projections + exclusion constraints)
+      // Generate 3x candidates when quant enabled for portfolio selection
+      const candidateMultiplier = quantActive ? 3 : 1;
+      const candidateCount = numLineups * candidateMultiplier;
       let usedPuLP = false;
       try {
         console.log('🔬 Using PuLP ILP optimizer (academically-backed: Hunter et al., 2016)');
+        if (candidateMultiplier > 1) {
+          console.log(`📊 Quant active: requesting ${candidateCount} candidates (${candidateMultiplier}x) for portfolio selection`);
+        }
         const pythonResult = await callPythonOptimizer({
           players: selectedPlayers,
-          numLineups,
+          numLineups: candidateCount,
           minSalary: minSalary || 48000,
           maxSalary,
           stackSettings,
           teamSelections,
           teamExposures,
+          playerExposures,
           uniquePlayers,
           maxExposure,
           onProgress: (progress) => {
@@ -997,78 +1156,134 @@ app.post('/api/optimize', async (req, res) => {
         nbaWarnings = ['PuLP ILP unavailable, used JS heuristic fallback'];
       }
 
-      // Step 2: When quant is enabled, layer on JS quant metrics (MC, Sharpe, VaR, portfolio)
+      // Step 2: When quant is enabled, run MC + active portfolio selection (Haugh & Singal, 2021)
       // This is POST-OPTIMIZATION evaluation — projections are never modified
       if (quantActive && results.length > 0) {
         console.log('📊 Applying JS quant scoring to PuLP results (post-optimization evaluation)');
-        const quant = new QuantEngine(advancedQuantSettings);
+        const quant = new QuantEngine({ ...advancedQuantSettings, sport: currentSport });
 
-        for (const lineup of results) {
-          if (lineup.players && lineup.players.length > 0 && !lineup.quantMetrics) {
-            const mcResult = quant.monteCarloLineup(lineup.players);
-            lineup.quantMetrics = {
-              simMean: mcResult.mean,
-              simStdDev: mcResult.stdDev,
-              sharpeRatio: mcResult.sharpeRatio,
-              valueAtRisk: mcResult.valueAtRisk,
-              conditionalVaR: mcResult.conditionalVaR,
-              ceilingProbability: mcResult.ceilingProbability,
-              percentiles: mcResult.percentiles,
-              simulations: mcResult.simulations
-            };
-          }
+        if (candidateMultiplier > 1 && results.length > numLineups) {
+          console.log(`🎯 Active portfolio selection: ${results.length} candidates → ${numLineups} optimal`);
         }
 
-        // Sort by Sharpe ratio when quant active
-        results.sort((a, b) => {
-          const aScore = a.quantMetrics ? a.quantMetrics.sharpeRatio : 0;
-          const bScore = b.quantMetrics ? b.quantMetrics.sharpeRatio : 0;
-          return bScore - aScore;
-        });
+        const portfolio = quant.portfolioOptimize(results, numLineups, contestMode, selectedPlayers);
+        results = portfolio.selected;
+        nbaPortfolioMetrics = portfolio.portfolioMetrics;
 
-        nbaPortfolioMetrics = quant.analyzePortfolio(results);
+        console.log(`   Selected ${results.length} lineups for optimal portfolio`);
         console.log('📈 Portfolio metrics:', nbaPortfolioMetrics);
       }
 
       var optimizerWarnings = nbaWarnings;
       var portfolioMetrics = nbaPortfolioMetrics;
     } else {
+      // MLB: Same two-tier architecture as NBA
+      // 1. PuLP ILP solver (Python) as primary optimizer
+      // 2. QuantEngine (JS) as post-optimization evaluation layer
+      // 3. JS MLBOptimizer as fallback only
       console.log('⚾ Using MLB Optimizer');
       if (advancedQuantSettings && Object.keys(advancedQuantSettings).length > 0) {
         console.log('📊 Advanced Quant Settings:', JSON.stringify(advancedQuantSettings, null, 2));
       }
-      optimizer = new MLBOptimizer();
-      results = await optimizer.optimize({
-        players: selectedPlayers,
-        numLineups,
-        minSalary: minSalary || 45000, // MLB default
-        maxSalary,
-        stackSettings,
-        uniquePlayers,
-        maxExposure,
-        monteCarloIterations,
-        sortingMethod,
-        minUniquePlayersBetweenLineups,
-        enableRiskManagement,
-        disableKellySizing,
-        stackTypes,
-        exposureSettings,
-        riskTolerance,
-        bankroll,
-        advancedQuantSettings,
-        onProgress: (progress) => {
-          broadcast({
-            type: 'OPTIMIZATION_PROGRESS',
-            data: { id: optimizationId, progress, timestamp: new Date().toISOString() }
-          });
+
+      const quantActive = advancedQuantSettings && advancedQuantSettings.enabled;
+      let mlbPortfolioMetrics = null;
+      let mlbWarnings = [];
+
+      // Step 1: Generate lineups via PuLP ILP (immutable projections + exclusion constraints)
+      const candidateMultiplier = quantActive ? 3 : 1;
+      const candidateCount = numLineups * candidateMultiplier;
+      let usedPuLP = false;
+      try {
+        console.log('🔬 Using PuLP ILP optimizer for MLB (academically-backed: Hunter et al., 2016)');
+        if (candidateMultiplier > 1) {
+          console.log(`📊 Quant active: requesting ${candidateCount} candidates (${candidateMultiplier}x) for portfolio selection`);
         }
-      });
-      var portfolioMetrics = results.portfolioMetrics || null;
-      var optimizerWarnings = [];
+        const pythonResult = await callPythonOptimizer({
+          players: selectedPlayers,
+          numLineups: candidateCount,
+          minSalary: minSalary || 45000,
+          maxSalary,
+          stackSettings,
+          teamSelections,
+          teamExposures,
+          playerExposures,
+          uniquePlayers,
+          maxExposure,
+          sport: 'MLB',
+          onProgress: (progress) => {
+            broadcast({
+              type: 'OPTIMIZATION_PROGRESS',
+              data: { id: optimizationId, progress, timestamp: new Date().toISOString() }
+            });
+          }
+        });
+        results = pythonResult.lineups;
+        mlbWarnings = pythonResult.warnings || [];
+        usedPuLP = true;
+        console.log(`✅ PuLP ILP generated ${results.length} MLB lineups`);
+      } catch (pythonError) {
+        console.warn('⚠️ PuLP ILP failed for MLB, falling back to JS MLBOptimizer:', pythonError.message);
+        optimizer = new MLBOptimizer();
+        results = await optimizer.optimize({
+          players: selectedPlayers,
+          numLineups,
+          minSalary: minSalary || 45000,
+          maxSalary,
+          stackSettings,
+          uniquePlayers,
+          maxExposure,
+          monteCarloIterations,
+          sortingMethod,
+          minUniquePlayersBetweenLineups,
+          enableRiskManagement,
+          disableKellySizing,
+          stackTypes,
+          exposureSettings,
+          riskTolerance,
+          contestMode,
+          bankroll,
+          advancedQuantSettings,
+          onProgress: (progress) => {
+            broadcast({
+              type: 'OPTIMIZATION_PROGRESS',
+              data: { id: optimizationId, progress, timestamp: new Date().toISOString() }
+            });
+          }
+        });
+        mlbWarnings = ['PuLP ILP unavailable, used JS heuristic fallback'];
+      }
+
+      // Step 2: When quant is enabled, run MC + active portfolio selection (Haugh & Singal, 2021)
+      if (quantActive && results.length > 0) {
+        console.log('📊 Applying JS quant scoring to MLB PuLP results (post-optimization evaluation)');
+        const quant = new QuantEngine({ ...advancedQuantSettings, sport: 'MLB' });
+
+        if (candidateMultiplier > 1 && results.length > numLineups) {
+          console.log(`🎯 Active portfolio selection: ${results.length} candidates → ${numLineups} optimal`);
+        }
+
+        const portfolio = quant.portfolioOptimize(results, numLineups, contestMode, selectedPlayers);
+        results = portfolio.selected;
+        mlbPortfolioMetrics = portfolio.portfolioMetrics;
+
+        console.log(`   Selected ${results.length} MLB lineups for optimal portfolio`);
+        console.log('📈 MLB Portfolio metrics:', mlbPortfolioMetrics);
+      }
+
+      var optimizerWarnings = mlbWarnings;
+      var portfolioMetrics = mlbPortfolioMetrics;
     }
     
+    // Ensure every lineup has a value field (pts per $1K salary)
+    results.forEach(lineup => {
+      if (lineup.value == null && lineup.totalSalary > 0) {
+        lineup.value = lineup.totalProjection / lineup.totalSalary * 1000;
+      }
+    });
+
     optimizationResults = results;
-    
+
     broadcast({
       type: 'OPTIMIZATION_COMPLETED',
       data: { 
@@ -1168,10 +1383,10 @@ app.get('/api/export/:format', (req, res) => {
   
   try {
     if (format === 'draftkings') {
-      // DraftKings format - different for MLB vs NFL
+      // DraftKings format - different for MLB vs NFL vs NBA
       const dkData = optimizationResults.map((lineup, index) => {
         const players = lineup.players;
-        
+
         if (sport === 'NFL') {
           // NFL DraftKings format
           return {
@@ -1184,6 +1399,47 @@ app.get('/api/export/:format', (req, res) => {
             'TE': players.find(p => p.position === 'TE')?.name || '',
             'FLEX': players[7]?.name || '', // 8th player (0-indexed position 7)
             'DST': players.find(p => p.position === 'DST')?.name || ''
+          };
+        } else if (sport === 'NBA') {
+          // NBA DraftKings format — PG/SG/SF/PF/C/G/F/UTIL with player names
+          const slots = { PG: '', SG: '', SF: '', PF: '', C: '', G: '', F: '', UTIL: '' };
+          const used = new Set();
+
+          // Phase 1: Assign primary positions (most constrained first)
+          for (const pos of ['C', 'PG', 'SG', 'SF', 'PF']) {
+            const p = players.find(p => !used.has(p.name) && (p.rosterPosition || p.position || '').toUpperCase().includes(pos));
+            if (p) { slots[pos] = p.name; used.add(p.name); }
+          }
+          // Phase 2: G slot — any unused guard-eligible player
+          const gPlayer = players.find(p => !used.has(p.name) && /PG|SG/.test((p.rosterPosition || p.position || '').toUpperCase()));
+          if (gPlayer) { slots.G = gPlayer.name; used.add(gPlayer.name); }
+          // Phase 3: F slot — any unused forward-eligible player
+          const fPlayer = players.find(p => !used.has(p.name) && /SF|PF/.test((p.rosterPosition || p.position || '').toUpperCase()));
+          if (fPlayer) { slots.F = fPlayer.name; used.add(fPlayer.name); }
+          // Phase 4: UTIL — anyone remaining
+          const utilPlayer = players.find(p => !used.has(p.name));
+          if (utilPlayer) { slots.UTIL = utilPlayer.name; used.add(utilPlayer.name); }
+
+          // Phase 5: Backfill any empty slots with remaining players
+          for (const pos of ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']) {
+            if (!slots[pos]) {
+              const remaining = players.find(p => !used.has(p.name));
+              if (remaining) { slots[pos] = remaining.name; used.add(remaining.name); }
+            }
+          }
+
+          return {
+            'Lineup': `Lineup_${index + 1}`,
+            'PG': slots.PG,
+            'SG': slots.SG,
+            'SF': slots.SF,
+            'PF': slots.PF,
+            'C': slots.C,
+            'G': slots.G,
+            'F': slots.F,
+            'UTIL': slots.UTIL,
+            'Total Salary': lineup.totalSalary,
+            'Projected Points': lineup.totalProjection.toFixed(2)
           };
         } else {
           // MLB DraftKings format
@@ -1207,14 +1463,14 @@ app.get('/api/export/:format', (req, res) => {
           };
         }
       });
-      
-      const parser = new Parser({ 
+
+      const parser = new Parser({
         fields: Object.keys(dkData[0]),
         delimiter: ','
       });
       const csv = parser.parse(dkData);
-      
-      const filename = sport === 'NFL' ? 'nfl_draftkings_lineups.csv' : 'mlb_draftkings_lineups.csv';
+
+      const filename = sport === 'NFL' ? 'nfl_draftkings_lineups.csv' : sport === 'NBA' ? 'nba_draftkings_lineups.csv' : 'mlb_draftkings_lineups.csv';
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
       res.send(csv);
@@ -1249,6 +1505,98 @@ app.get('/api/export/:format', (req, res) => {
   } catch (error) {
     console.error('Export error:', error);
     res.status(500).json({ error: 'Error generating export' });
+  }
+});
+
+// Export risk report CSV with quant metrics per lineup + portfolio summary
+app.post('/api/export-risk-report', (req, res) => {
+  if (optimizationResults.length === 0) {
+    return res.status(400).json({ error: 'No optimization results to export' });
+  }
+
+  try {
+    const rows = [];
+
+    // Per-lineup rows
+    optimizationResults.forEach((lineup, index) => {
+      const players = (lineup.players || []).map(p => p.name || p.player || '').join(' | ');
+      const qm = lineup.quantMetrics || {};
+      rows.push({
+        'Lineup': index + 1,
+        'Players': players,
+        'TotalProjection': (lineup.totalProjection || lineup.totalPoints || lineup.points || 0).toFixed(2),
+        'TotalSalary': lineup.totalSalary || lineup.salary || 0,
+        'Sharpe': qm.sharpeRatio != null ? qm.sharpeRatio.toFixed(3) : 'N/A',
+        'VaR95': qm.valueAtRisk != null ? qm.valueAtRisk.toFixed(2) : 'N/A',
+        'CVaR95': qm.conditionalVaR != null ? qm.conditionalVaR.toFixed(2) : 'N/A',
+        'CeilingProb': qm.ceilingProbability != null ? (qm.ceilingProbability * 100).toFixed(1) + '%' : 'N/A',
+        'SimMean': qm.simMean != null ? qm.simMean.toFixed(2) : 'N/A',
+        'SimStdDev': qm.simStdDev != null ? qm.simStdDev.toFixed(2) : 'N/A',
+      });
+    });
+
+    // Blank separator row
+    rows.push({
+      'Lineup': '', 'Players': '', 'TotalProjection': '', 'TotalSalary': '',
+      'Sharpe': '', 'VaR95': '', 'CVaR95': '', 'CeilingProb': '', 'SimMean': '', 'SimStdDev': '',
+    });
+
+    // Portfolio summary section
+    const lineupsWithQuant = optimizationResults.filter(l => l.quantMetrics);
+    if (lineupsWithQuant.length > 0) {
+      const avgSharpe = lineupsWithQuant.reduce((s, l) => s + (l.quantMetrics.sharpeRatio || 0), 0) / lineupsWithQuant.length;
+      const avgVaR = lineupsWithQuant.reduce((s, l) => s + (l.quantMetrics.valueAtRisk || 0), 0) / lineupsWithQuant.length;
+      const avgCVaR = lineupsWithQuant.reduce((s, l) => s + (l.quantMetrics.conditionalVaR || 0), 0) / lineupsWithQuant.length;
+      const avgCeiling = lineupsWithQuant.reduce((s, l) => s + (l.quantMetrics.ceilingProbability || 0), 0) / lineupsWithQuant.length;
+
+      rows.push({
+        'Lineup': 'PORTFOLIO SUMMARY', 'Players': `${optimizationResults.length} lineups`,
+        'TotalProjection': '', 'TotalSalary': '',
+        'Sharpe': avgSharpe.toFixed(3), 'VaR95': avgVaR.toFixed(2),
+        'CVaR95': avgCVaR.toFixed(2), 'CeilingProb': (avgCeiling * 100).toFixed(1) + '%',
+        'SimMean': '', 'SimStdDev': '',
+      });
+
+      // Add portfolio-level metrics from request body if provided
+      const pm = req.body.portfolioMetrics;
+      if (pm) {
+        rows.push({
+          'Lineup': 'Portfolio Sharpe', 'Players': pm.sharpeRatio != null ? pm.sharpeRatio.toFixed(3) : 'N/A',
+          'TotalProjection': '', 'TotalSalary': '',
+          'Sharpe': '', 'VaR95': '', 'CVaR95': '', 'CeilingProb': '', 'SimMean': '', 'SimStdDev': '',
+        });
+        rows.push({
+          'Lineup': 'Avg Uniqueness', 'Players': pm.avgUniqueness != null ? (pm.avgUniqueness * 100).toFixed(1) + '%' : 'N/A',
+          'TotalProjection': '', 'TotalSalary': '',
+          'Sharpe': '', 'VaR95': '', 'CVaR95': '', 'CeilingProb': '', 'SimMean': '', 'SimStdDev': '',
+        });
+        rows.push({
+          'Lineup': 'Max Exposure', 'Players': pm.maxExposure != null ? pm.maxExposure.toFixed(1) + '%' : 'N/A',
+          'TotalProjection': '', 'TotalSalary': '',
+          'Sharpe': '', 'VaR95': '', 'CVaR95': '', 'CeilingProb': '', 'SimMean': '', 'SimStdDev': '',
+        });
+        rows.push({
+          'Lineup': 'Concentration (HHI)', 'Players': pm.exposureConcentration != null ? pm.exposureConcentration.toFixed(4) : 'N/A',
+          'TotalProjection': '', 'TotalSalary': '',
+          'Sharpe': '', 'VaR95': '', 'CVaR95': '', 'CeilingProb': '', 'SimMean': '', 'SimStdDev': '',
+        });
+      }
+    }
+
+    const parser = new Parser({
+      fields: ['Lineup', 'Players', 'TotalProjection', 'TotalSalary', 'Sharpe', 'VaR95', 'CVaR95', 'CeilingProb', 'SimMean', 'SimStdDev'],
+      delimiter: ','
+    });
+    const csv = parser.parse(rows);
+
+    const sportLabel = (currentSport || 'dfs').toLowerCase();
+    const dateStr = new Date().toISOString().split('T')[0];
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=${sportLabel}_risk_report_${dateStr}.csv`);
+    res.send(csv);
+  } catch (error) {
+    console.error('Risk report export error:', error);
+    res.status(500).json({ error: 'Error generating risk report' });
   }
 });
 
@@ -1353,9 +1701,13 @@ function formatLineupPositionsOnly(players, playerNameToIdMap) {
 
   // Build position eligibility pools
   sortedPlayers.forEach(player => {
-    const rosterPos = (player.rosterPosition || player.position || '').toUpperCase();
+    // Use BOTH rosterPosition (assigned slot) and position (eligible positions) for full eligibility
+    const rosterPos = (player.rosterPosition || '').toUpperCase();
+    const origPos = (player.position || '').toUpperCase();
+    // Combine both for eligibility checking — e.g. rosterPosition="UTIL" but position="C"
+    const combinedPos = rosterPos + '/' + origPos;
     const playerName = (player.name || player.Name || '').trim();
-    
+
     // Get DK ID with case-insensitive matching
     let dkId = playerNameToIdMap[playerName];
     if (!dkId) {
@@ -1373,19 +1725,24 @@ function formatLineupPositionsOnly(players, playerNameToIdMap) {
       return;
     }
 
-    // Build position eligibility (matching desktop logic)
+    // Build position eligibility using combined position info
     const posEligible = [];
-    
-    if (rosterPos.includes('PG')) posEligible.push('PG', 'G', 'UTIL');
-    if (rosterPos.includes('SG')) posEligible.push('SG', 'G', 'UTIL');
-    if (rosterPos.includes('SF')) posEligible.push('SF', 'F', 'UTIL');
-    if (rosterPos.includes('PF')) posEligible.push('PF', 'F', 'UTIL');
-    if (rosterPos.includes('C')) posEligible.push('C', 'UTIL');
-    if (rosterPos.includes('G') && !rosterPos.includes('PG') && !rosterPos.includes('SG')) {
+
+    if (combinedPos.includes('PG')) posEligible.push('PG', 'G', 'UTIL');
+    if (combinedPos.includes('SG')) posEligible.push('SG', 'G', 'UTIL');
+    if (combinedPos.includes('SF')) posEligible.push('SF', 'F', 'UTIL');
+    if (combinedPos.includes('PF')) posEligible.push('PF', 'F', 'UTIL');
+    if (combinedPos.includes('C') && !combinedPos.includes('SC')) posEligible.push('C', 'UTIL');
+    if (combinedPos.includes('G') && !combinedPos.includes('PG') && !combinedPos.includes('SG')) {
       posEligible.push('G', 'UTIL');
     }
-    if (rosterPos.includes('F') && !rosterPos.includes('SF') && !rosterPos.includes('PF')) {
+    if (combinedPos.includes('F') && !combinedPos.includes('SF') && !combinedPos.includes('PF')) {
       posEligible.push('F', 'UTIL');
+    }
+
+    // Fallback: if no eligibility matched (e.g. rosterPosition="UTIL" with no specific position), add to UTIL
+    if (posEligible.length === 0) {
+      posEligible.push('UTIL');
     }
 
     // Add player to ALL eligible position pools
@@ -1419,8 +1776,8 @@ function formatLineupPositionsOnly(players, playerNameToIdMap) {
   function isPlayerEligibleForSlot(playerId, slotIndex) {
     const slotNames = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL'];
     const slotName = slotNames[slotIndex];
-    
-    // Find player's position
+
+    // Find player's position (combine rosterPosition + position for full eligibility)
     let playerPos = '';
     for (const player of sortedPlayers) {
       const name = (player.name || player.Name || '').trim();
@@ -1435,23 +1792,25 @@ function formatLineupPositionsOnly(players, playerNameToIdMap) {
         }
       }
       if (checkId === playerId) {
-        playerPos = (player.rosterPosition || player.position || '').toUpperCase();
+        const rp = (player.rosterPosition || '').toUpperCase();
+        const op = (player.position || '').toUpperCase();
+        playerPos = rp + '/' + op;
         break;
       }
     }
 
     if (!playerPos) return false;
 
-    // DraftKings eligibility rules
+    // DraftKings eligibility rules (using combined position string)
     if (slotName === 'PG') return playerPos.includes('PG');
     if (slotName === 'SG') return playerPos.includes('SG');
     if (slotName === 'SF') return playerPos.includes('SF');
     if (slotName === 'PF') return playerPos.includes('PF');
-    if (slotName === 'C') return playerPos.includes('C');
+    if (slotName === 'C') return playerPos.includes('C') && !playerPos.includes('SC');
     if (slotName === 'G') return playerPos.includes('PG') || playerPos.includes('SG') || playerPos.includes('G');
     if (slotName === 'F') return playerPos.includes('SF') || playerPos.includes('PF') || playerPos.includes('F');
     if (slotName === 'UTIL') return true;
-    
+
     return false;
   }
 
@@ -1616,11 +1975,26 @@ app.post('/api/export-dk-entries', (req, res) => {
       });
     }
 
+    // If no DK IDs found, create identity map (name→name) so we can still export with names
     if (Object.keys(playerNameToIdMap).length === 0) {
-      return res.status(400).json({ 
-        error: 'No DraftKings player IDs found. Please load a DK entries file or ensure player data includes DK_ID or DraftKingsID fields.' 
+      console.log('⚠️ No DK IDs found — exporting with player names instead');
+      // Build name→name identity map from all lineup players
+      lineups.forEach(lineup => {
+        const players = lineup.players || lineup.lineup?.players || lineup || [];
+        if (Array.isArray(players)) {
+          players.forEach(player => {
+            const name = (player.name || player.Name || '').trim();
+            if (name) playerNameToIdMap[name] = name;
+          });
+        }
       });
     }
+
+    // Build reverse map: ID → Name (for converting IDs back to names in output)
+    const idToNameMap = {};
+    Object.entries(playerNameToIdMap).forEach(([name, id]) => {
+      idToNameMap[id] = name;
+    });
 
     // PRIORITY 1: Extract contest info from DK entries file (matching desktop)
     let finalContestName = contestName;
@@ -1695,8 +2069,11 @@ app.post('/api/export-dk-entries', (req, res) => {
         // Use desktop algorithm to format positions
         const positionAssignments = formatLineupPositionsOnly(players, playerNameToIdMap);
 
+        // Convert IDs back to player names for readable output
+        const nameAssignments = positionAssignments.map(id => idToNameMap[id] || id);
+
         // Validate all positions are filled
-        const allFilled = positionAssignments.every(id => id && id.trim() !== '');
+        const allFilled = nameAssignments.every(val => val && val.trim() !== '');
         if (!allFilled) {
           console.warn(`⚠️ Lineup ${index + 1} missing positions after formatting, skipping`);
           return;
@@ -1711,20 +2088,20 @@ app.post('/api/export-dk-entries', (req, res) => {
         } else {
           entryId = String(baseEntryId + index);
         }
-        
+
         const entry = [
           entryId,
           finalContestName,
           finalContestId,
           finalEntryFee,
-          positionAssignments[0], // PG
-          positionAssignments[1], // SG
-          positionAssignments[2], // SF
-          positionAssignments[3], // PF
-          positionAssignments[4], // C
-          positionAssignments[5], // G
-          positionAssignments[6], // F
-          positionAssignments[7]  // UTIL
+          nameAssignments[0], // PG
+          nameAssignments[1], // SG
+          nameAssignments[2], // SF
+          nameAssignments[3], // PF
+          nameAssignments[4], // C
+          nameAssignments[5], // G
+          nameAssignments[6], // F
+          nameAssignments[7]  // UTIL
         ];
 
         dkEntries.push(entry);
@@ -2074,10 +2451,16 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../client/build/index.html'));
 });
 
-// Error handling middleware
+// Error handling middleware (multer and general)
 app.use((error, req, res, next) => {
+  if (error.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ error: 'File too large. Maximum size is 50MB.' });
+  }
+  if (error.message === 'Only CSV files are allowed') {
+    return res.status(400).json({ error: 'Only CSV files are allowed.' });
+  }
   console.error('Server error:', error);
-  res.status(500).json({ error: 'Internal server error' });
+  res.status(500).json({ error: error.message || 'Internal server error' });
 });
 
 // Start server

@@ -57,7 +57,10 @@ __pycache__/
 .Python
 env/
 venv/
+.venv-whisper/
+.venv-selenium/
 ENV/
+.venv*/
 *.egg-info/
 
 # Uploads
@@ -95,3 +98,25 @@ demntia mlin/
 # Historical data caches (local only)
 *_historical_cache/
 nba_training_data.csv
+
+# Audio/media files
+*.mp3
+*.wav
+*.mp4
+
+# Output files
+output*.txt
+
+# Virtual environments (all)
+.venv*/
+
+# Screenplay/personal files
+scripts/screenplay_*
+scripts/the_gate_*
+scripts/mp3_to_text.py
+"INT. TEMPLE*"
+"scripts/INT*"
+
+# Training output artifacts
+1_CORE_TRAINING/output/
+2_NBA_TRAINING/output/

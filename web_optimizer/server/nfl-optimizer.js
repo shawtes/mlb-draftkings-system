@@ -58,7 +58,7 @@ class NFLOptimizer {
 
     // Initialize quant engine
     const quantEnabled = advancedQuantSettings && advancedQuantSettings.enabled;
-    const quant = quantEnabled ? new QuantEngine(advancedQuantSettings) : null;
+    const quant = quantEnabled ? new QuantEngine({ ...advancedQuantSettings, sport: 'NFL' }) : null;
 
     if (quantEnabled) {
       console.log('📊 NFL Quant Engine ACTIVE:', {
@@ -81,35 +81,20 @@ class NFLOptimizer {
     // Try Python optimizer first (preferred for production)
     if (this.pythonOptimizerPath) {
       try {
-        let results = await this.optimizeWithPython(config);
+        // Generate 3x candidates when quant enabled for portfolio selection
+        const candidateMultiplier = quantEnabled ? 3 : 1;
+        const candidateConfig = { ...config, numLineups: numLineups * candidateMultiplier };
+        let results = await this.optimizeWithPython(candidateConfig);
 
-        // Post-hoc quant: run MC on Python-generated lineups when quant enabled
+        // Post-hoc quant: MC + portfolio optimization when quant enabled
         if (quantEnabled && quant && results && results.length > 0) {
-          for (const result of results) {
-            if (result.players && result.players.length > 0) {
-              const mcResult = quant.monteCarloLineup(result.players);
-              result.quantMetrics = {
-                simMean: mcResult.mean,
-                simStdDev: mcResult.stdDev,
-                sharpeRatio: mcResult.sharpeRatio,
-                valueAtRisk: mcResult.valueAtRisk,
-                conditionalVaR: mcResult.conditionalVaR,
-                ceilingProbability: mcResult.ceilingProbability,
-                percentiles: mcResult.percentiles,
-                simulations: mcResult.simulations
-              };
-            }
+          if (candidateMultiplier > 1) {
+            console.log(`📊 NFL portfolio selection: ${results.length} candidates → ${numLineups} optimal`);
           }
-
-          // Sort by Sharpe ratio when quant enabled
-          results.sort((a, b) => {
-            const aScore = a.quantMetrics ? a.quantMetrics.sharpeRatio : 0;
-            const bScore = b.quantMetrics ? b.quantMetrics.sharpeRatio : 0;
-            return bScore - aScore;
-          });
-
-          // Compute portfolio-level metrics
-          const portfolioMetrics = quant.analyzePortfolio(results);
+          const { selected, portfolioMetrics } = quant.portfolioOptimize(
+            results, numLineups, contestMode, players
+          );
+          results = selected;
           console.log('📈 NFL Portfolio Metrics (Python path):', portfolioMetrics);
           results.portfolioMetrics = portfolioMetrics;
         }
@@ -345,7 +330,7 @@ class NFLOptimizer {
 
     // Initialize quant engine for JS path
     const quantEnabled = advancedQuantSettings && advancedQuantSettings.enabled;
-    const quant = quantEnabled ? new QuantEngine(advancedQuantSettings) : null;
+    const quant = quantEnabled ? new QuantEngine({ ...advancedQuantSettings, sport: 'NFL' }) : null;
     const quantScores = quantEnabled ? quant.scorePlayersQuant(players, contestMode) : null;
     const kellyLimits = (quantEnabled && advancedQuantSettings.strategy !== 'equal_weight')
       ? quant.kellyExposureLimits(players, maxExposure)
@@ -395,18 +380,22 @@ class NFLOptimizer {
       }
     }
 
+    // Generate 3x candidates when quant enabled for portfolio selection
+    const candidateMultiplier = quantEnabled ? 3 : 1;
+    const candidateCount = numLineups * candidateMultiplier;
+
     // Generate lineups with diversity
     const lineupPool = new Set();
     const exposureTracker = new Map();
-    
-    for (let i = 0; i < numLineups; i++) {
-      if (onProgress && i % Math.max(1, Math.floor(numLineups / 10)) === 0) {
-        onProgress(Math.round((i / numLineups) * 100));
+
+    for (let i = 0; i < candidateCount; i++) {
+      if (onProgress && i % Math.max(1, Math.floor(candidateCount / 10)) === 0) {
+        onProgress(Math.round((i / candidateCount) * 80)); // reserve 80-100% for portfolio selection
       }
 
       // Rotate strategies for diversity
       const strategy = this.strategies[i % this.strategies.length];
-      
+
       let lineup;
       let attempts = 0;
       const maxAttempts = 50;
@@ -428,7 +417,7 @@ class NFLOptimizer {
         );
         attempts++;
       } while (
-        attempts < maxAttempts && 
+        attempts < maxAttempts &&
         (lineup === null || this.isDuplicateLineup(lineup, lineupPool, uniquePlayers))
       );
 
@@ -453,21 +442,6 @@ class NFLOptimizer {
           timestamp: new Date().toISOString()
         };
 
-        // Run Monte Carlo simulation and add quant metrics when enabled
-        if (quantEnabled && quant) {
-          const mcResult = quant.monteCarloLineup(lineup.players);
-          result.quantMetrics = {
-            simMean: mcResult.mean,
-            simStdDev: mcResult.stdDev,
-            sharpeRatio: mcResult.sharpeRatio,
-            valueAtRisk: mcResult.valueAtRisk,
-            conditionalVaR: mcResult.conditionalVaR,
-            ceilingProbability: mcResult.ceilingProbability,
-            percentiles: mcResult.percentiles,
-            simulations: mcResult.simulations
-          };
-        }
-
         results.push(result);
       }
 
@@ -475,29 +449,28 @@ class NFLOptimizer {
       await new Promise(resolve => setTimeout(resolve, 10));
     }
 
-    // Sort by quant-adjusted score when enabled, otherwise by projection
-    if (quantEnabled) {
-      results.sort((a, b) => {
-        const aScore = a.quantMetrics ? a.quantMetrics.sharpeRatio : 0;
-        const bScore = b.quantMetrics ? b.quantMetrics.sharpeRatio : 0;
-        return bScore - aScore;
-      });
-    } else {
-      results.sort((a, b) => b.totalProjection - a.totalProjection);
-    }
-
-    // Compute portfolio-level metrics when quant is enabled
+    // Portfolio optimization: MC + selection when quant enabled, else just sort
     let portfolioMetrics = null;
     if (quantEnabled && quant && results.length > 0) {
-      portfolioMetrics = quant.analyzePortfolio(results);
+      if (candidateMultiplier > 1) {
+        console.log(`📊 NFL portfolio selection: ${results.length} candidates → ${numLineups} optimal`);
+      }
+      const portfolio = quant.portfolioOptimize(results, numLineups, contestMode, players);
+      const selected = portfolio.selected;
+      portfolioMetrics = portfolio.portfolioMetrics;
       console.log('📈 NFL Portfolio Metrics:', portfolioMetrics);
+
+      if (onProgress) onProgress(100);
+      console.log(`✅ Generated ${selected.length} NFL lineups (quant-optimized from ${results.length} candidates)`);
+      selected.portfolioMetrics = portfolioMetrics;
+      return selected;
     }
 
+    results.sort((a, b) => b.totalProjection - a.totalProjection);
+
     if (onProgress) onProgress(100);
+    console.log(`✅ Generated ${results.length} NFL lineups`);
 
-    console.log(`✅ Generated ${results.length} NFL lineups${quantEnabled ? ' (quant-optimized)' : ''}`);
-
-    // Attach portfolio metrics to results array for the API response
     results.portfolioMetrics = portfolioMetrics;
     return results;
   }

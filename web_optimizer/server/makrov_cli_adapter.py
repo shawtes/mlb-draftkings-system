@@ -43,23 +43,49 @@ except Exception as e:
     sys.exit(1)
 
 # NBA position requirements (from makrovchain_optimizer.py)
-POSITION_LIMITS = {
+NBA_POSITION_LIMITS = {
     'PG': 1, 'SG': 1, 'SF': 1, 'PF': 1, 'C': 1,
     'G': 1, 'F': 1, 'UTIL': 1
 }
-SALARY_CAP = 50000
+NBA_ROSTER_SIZE = 8
+NBA_SALARY_CAP = 50000
 GUARD_POSITIONS = ['PG', 'SG']
 FORWARD_POSITIONS = ['SF', 'PF']
 
+# MLB position requirements (DraftKings Classic)
+MLB_POSITION_LIMITS = {
+    'P': 2, 'C': 1, '1B': 1, '2B': 1, '3B': 1, 'SS': 1, 'OF': 3
+}
+MLB_ROSTER_SIZE = 10
+MLB_SALARY_CAP = 50000
+
+# Legacy alias
+POSITION_LIMITS = NBA_POSITION_LIMITS
+SALARY_CAP = 50000
+
 
 def optimize_using_makrov_logic(df_filtered, num_lineups, min_salary, stack_settings,
-                                  team_selections, max_exposure, team_exposures=None):
+                                  team_selections, max_exposure, team_exposures=None,
+                                  player_exposures=None, sport='NBA'):
     """
     This is the EXACT optimization logic from makrovchain_optimizer.py
     Extracted from the OptimizationWorker.optimize_lineups() method
+    Supports NBA (8 players) and MLB (10 players) via sport parameter.
     """
-    
-    print(f"🏀 Using EXACT makrovchain_optimizer.py logic", file=sys.stderr)
+
+    # Select sport-specific configuration
+    if sport == 'MLB':
+        position_limits = MLB_POSITION_LIMITS
+        roster_size = MLB_ROSTER_SIZE
+        salary_cap = MLB_SALARY_CAP
+        sport_emoji = '⚾'
+    else:
+        position_limits = NBA_POSITION_LIMITS
+        roster_size = NBA_ROSTER_SIZE
+        salary_cap = NBA_SALARY_CAP
+        sport_emoji = '🏀'
+
+    print(f"{sport_emoji} Using EXACT makrovchain_optimizer.py logic ({sport}, {roster_size} players)", file=sys.stderr)
     
     # Skip Markov adjustments to match desktop behavior (desktop shows 300+ projections)
     # The desktop app likely doesn't have historical cache working, so uses raw projections
@@ -147,9 +173,10 @@ def optimize_using_makrov_logic(df_filtered, num_lineups, min_salary, stack_sett
                             stack_type=stack_type,
                             team_selections=team_specific_selections,
                             min_salary=min_salary,
-                            salary_cap=SALARY_CAP,
-                            position_limits=POSITION_LIMITS,
-                            exclusion_sets=exclusion_sets
+                            salary_cap=salary_cap,
+                            position_limits=position_limits,
+                            exclusion_sets=exclusion_sets,
+                            sport=sport
                         )
 
                         if lineup is not None and not lineup.empty:
@@ -174,9 +201,10 @@ def optimize_using_makrov_logic(df_filtered, num_lineups, min_salary, stack_sett
                         stack_type=stack_type,
                         team_selections=team_selections,
                         min_salary=min_salary,
-                        salary_cap=SALARY_CAP,
-                        position_limits=POSITION_LIMITS,
-                        exclusion_sets=exclusion_sets
+                        salary_cap=salary_cap,
+                        position_limits=position_limits,
+                        exclusion_sets=exclusion_sets,
+                        sport=sport
                     )
 
                     if lineup is not None and not lineup.empty:
@@ -193,14 +221,57 @@ def optimize_using_makrov_logic(df_filtered, num_lineups, min_salary, stack_sett
 
     print(f"✅ Generated {len(all_lineups)} candidate lineups via iterative ILP", file=sys.stderr)
 
+    # Generate additional candidates with min-exposure players locked in (ILP constraint)
+    # This is the academically correct way to enforce minimum exposure — hard constraint in the ILP
+    if player_exposures:
+        min_exp_players = {name: cfg for name, cfg in player_exposures.items() if cfg.get('min', 0) > 0}
+        if min_exp_players:
+            print(f"🔒 Generating locked candidates for {len(min_exp_players)} min-exposure players", file=sys.stderr)
+            for player_name, exp_cfg in min_exp_players.items():
+                required_count = max(1, int(exp_cfg['min'] / 100.0 * num_lineups))
+                # Find player index in df
+                player_indices = df_filtered.index[df_filtered['Name'].astype(str) == player_name].tolist()
+                if not player_indices:
+                    print(f"  ⚠️ Player '{player_name}' not found in data, skipping lock", file=sys.stderr)
+                    continue
+                print(f"  🔒 {player_name}: generating {required_count} locked lineups (minExp={exp_cfg['min']}%)", file=sys.stderr)
+                # Use 'all' teams for locked lineups (no specific stack type)
+                lock_exclusion_sets = []
+                for lock_idx in range(required_count):
+                    try:
+                        lineup = optimize_single_lineup_pulp(
+                            df_filtered,
+                            stack_type='No Stacks',
+                            team_selections=team_selections,
+                            min_salary=min_salary,
+                            salary_cap=salary_cap,
+                            position_limits=position_limits,
+                            exclusion_sets=lock_exclusion_sets,
+                            locked_player_indices=player_indices,
+                            sport=sport
+                        )
+                        if lineup is not None and not lineup.empty:
+                            all_lineups.append(('min-exposure-lock', lineup))
+                            lock_exclusion_sets.append(set(lineup.index.tolist()))
+                            print(f"    ✓ Locked lineup {lock_idx+1}: {lineup['Predicted_DK_Points'].sum():.1f} pts", file=sys.stderr)
+                        else:
+                            print(f"    ✗ Could not generate locked lineup for {player_name}", file=sys.stderr)
+                            break
+                    except Exception as e:
+                        print(f"    ✗ Exception generating locked lineup: {e}", file=sys.stderr)
+                        break
+            print(f"✅ Total candidates after min-exposure locks: {len(all_lineups)}", file=sys.stderr)
+
     # Select best diverse lineups from candidate pool (Haugh & Singal, 2021 — portfolio selection)
-    final_lineups = select_diverse_lineups(all_lineups, num_lineups, max_exposure)
+    final_lineups = select_diverse_lineups(all_lineups, num_lineups, max_exposure,
+                                            player_exposures=player_exposures)
 
     return final_lineups, team_exposure, stack_exposure
 
 
 def optimize_single_lineup_pulp(df, stack_type, team_selections, min_salary,
-                                 salary_cap, position_limits, exclusion_sets=None):
+                                 salary_cap, position_limits, exclusion_sets=None,
+                                 locked_player_indices=None, sport='NBA'):
     """
     Single lineup optimization using PuLP ILP.
 
@@ -213,9 +284,15 @@ def optimize_single_lineup_pulp(df, stack_type, team_selections, min_salary,
         exclusion_sets: list of sets of player indices from previous lineups.
                         For each set S, we add constraint: SUM(x_i for i in S) <= |S| - 1
                         This guarantees at least 1 different player from each prior lineup.
+        locked_player_indices: list of player indices that MUST be included (x_i >= 1).
+                               Used for min-exposure enforcement.
+        sport: 'NBA' or 'MLB' — determines roster size and position constraints.
     """
 
-    if df.empty or len(df) < 8:
+    roster_size = MLB_ROSTER_SIZE if sport == 'MLB' else NBA_ROSTER_SIZE
+    min_players_needed = roster_size
+
+    if df.empty or len(df) < min_players_needed:
         return None
 
     # Reset index to ensure clean indexing
@@ -225,45 +302,55 @@ def optimize_single_lineup_pulp(df, stack_type, team_selections, min_salary,
     # Diversity is achieved through exclusion constraints below
 
     # Create PuLP problem
-    prob = pulp.LpProblem("NBA_Lineup", pulp.LpMaximize)
-    
+    prob = pulp.LpProblem(f"{sport}_Lineup", pulp.LpMaximize)
+
     # Decision variables
     player_vars = [pulp.LpVariable(f"player_{i}", cat='Binary') for i in range(len(df))]
-    
+
     # Objective: maximize projected points
     prob += pulp.lpSum([
         player_vars[i] * df.iloc[i]['Predicted_DK_Points']
         for i in range(len(df))
     ])
-    
-    # Constraint: exactly 8 players
-    prob += pulp.lpSum(player_vars) == 8
-    
+
+    # Constraint: exactly roster_size players
+    prob += pulp.lpSum(player_vars) == roster_size
+
     # Salary constraints
     prob += pulp.lpSum([player_vars[i] * df.iloc[i]['Salary'] for i in range(len(df))]) <= salary_cap
     prob += pulp.lpSum([player_vars[i] * df.iloc[i]['Salary'] for i in range(len(df))]) >= min_salary
-    
-    # Position constraints
-    for pos in ['PG', 'SG', 'SF', 'PF', 'C']:
-        eligible = [i for i in range(len(df)) if pos in str(df.iloc[i]['Position'])]
-        if eligible:
-            prob += pulp.lpSum([player_vars[i] for i in eligible]) >= position_limits[pos]
-    
-    # Guard constraint (PG/SG for G slot)
-    guard_eligible = [i for i in range(len(df))
-                     if any(g in str(df.iloc[i]['Position']) for g in GUARD_POSITIONS)]
-    if guard_eligible:
-        prob += pulp.lpSum([player_vars[i] for i in guard_eligible]) >= (
-            position_limits['PG'] + position_limits['SG'] + position_limits['G']
-        )
-    
-    # Forward constraint (SF/PF for F slot)
-    forward_eligible = [i for i in range(len(df))
-                       if any(f in str(df.iloc[i]['Position']) for f in FORWARD_POSITIONS)]
-    if forward_eligible:
-        prob += pulp.lpSum([player_vars[i] for i in forward_eligible]) >= (
-            position_limits['SF'] + position_limits['PF'] + position_limits['F']
-        )
+
+    if sport == 'MLB':
+        # MLB position constraints: P>=2, C>=1, 1B>=1, 2B>=1, 3B>=1, SS>=1, OF>=3
+        # No flex positions — simpler constraint set than NBA
+        for pos, required in position_limits.items():
+            eligible = [i for i in range(len(df)) if pos in str(df.iloc[i]['Position'])]
+            if eligible:
+                prob += pulp.lpSum([player_vars[i] for i in eligible]) >= required
+            else:
+                print(f"    ⚠️ No eligible players for MLB position {pos}", file=sys.stderr)
+    else:
+        # NBA position constraints (original logic)
+        for pos in ['PG', 'SG', 'SF', 'PF', 'C']:
+            eligible = [i for i in range(len(df)) if pos in str(df.iloc[i]['Position'])]
+            if eligible:
+                prob += pulp.lpSum([player_vars[i] for i in eligible]) >= position_limits[pos]
+
+        # Guard constraint (PG/SG for G slot)
+        guard_eligible = [i for i in range(len(df))
+                         if any(g in str(df.iloc[i]['Position']) for g in GUARD_POSITIONS)]
+        if guard_eligible:
+            prob += pulp.lpSum([player_vars[i] for i in guard_eligible]) >= (
+                position_limits['PG'] + position_limits['SG'] + position_limits['G']
+            )
+
+        # Forward constraint (SF/PF for F slot)
+        forward_eligible = [i for i in range(len(df))
+                           if any(f in str(df.iloc[i]['Position']) for f in FORWARD_POSITIONS)]
+        if forward_eligible:
+            prob += pulp.lpSum([player_vars[i] for i in forward_eligible]) >= (
+                position_limits['SF'] + position_limits['PF'] + position_limits['F']
+            )
     
     # Team stacking constraints (if applicable) - MATCHING DESKTOP LOGIC
     print(f"    🔍 Stack constraint check: stack_type={stack_type} (type: {type(stack_type)}), team_selections keys={list(team_selections.keys()) if team_selections else 'None'}", file=sys.stderr)
@@ -342,9 +429,9 @@ def optimize_single_lineup_pulp(df, stack_type, team_selections, min_salary,
                             other_team_players_idx = df[df['Team'] == other_team].index.tolist()
                             if len(other_team_players_idx) >= stack_size:
                                 # If NOT selected (binary = 0), limit to stack_size-1
-                                # If selected (binary = 1), allow stack_size+ (9 is large enough to allow any reasonable stack)
-                                prob += pulp.lpSum([player_vars[idx] for idx in other_team_players_idx]) <= stack_size - 1 + (8 - stack_size + 1) * team_binary_vars[other_team]
-                                print(f"    🚫 LIMITING: {other_team} to max {stack_size-1} unless selected (binary=1, then max 8)", file=sys.stderr)
+                                # If selected (binary = 1), allow up to roster_size (Big-M relaxation)
+                                prob += pulp.lpSum([player_vars[idx] for idx in other_team_players_idx]) <= stack_size - 1 + (roster_size - stack_size + 1) * team_binary_vars[other_team]
+                                print(f"    🚫 LIMITING: {other_team} to max {stack_size-1} unless selected (binary=1, then max {roster_size})", file=sys.stderr)
                         else:
                             # For non-valid teams, always limit to stack_size-1
                             other_team_players_idx = df[df['Team'] == other_team].index.tolist()
@@ -358,6 +445,13 @@ def optimize_single_lineup_pulp(df, stack_type, team_selections, min_salary,
         for ex_idx, prev_set in enumerate(exclusion_sets):
             prob += pulp.lpSum([player_vars[i] for i in prev_set if i < len(player_vars)]) <= len(prev_set) - 1, f"exclude_lineup_{ex_idx}"
 
+    # LOCKED PLAYER CONSTRAINTS for min-exposure enforcement
+    # Force specific players into the lineup (x_i >= 1)
+    if locked_player_indices:
+        for lock_idx in locked_player_indices:
+            if lock_idx < len(player_vars):
+                prob += player_vars[lock_idx] >= 1, f"lock_player_{lock_idx}"
+
     # Solve
     prob.solve(pulp.PULP_CBC_CMD(msg=0))
     
@@ -365,17 +459,20 @@ def optimize_single_lineup_pulp(df, stack_type, team_selections, min_salary,
         print(f"    ⚠️ PuLP solve failed with status: {pulp.LpStatus[prob.status]}", file=sys.stderr)
         print(f"       Checking constraints...", file=sys.stderr)
         print(f"       Total players: {len(df)}", file=sys.stderr)
-        print(f"       PG available: {len([i for i in range(len(df)) if 'PG' in str(df.iloc[i]['Position'])])}", file=sys.stderr)
-        print(f"       SG available: {len([i for i in range(len(df)) if 'SG' in str(df.iloc[i]['Position'])])}", file=sys.stderr)
-        print(f"       SF available: {len([i for i in range(len(df)) if 'SF' in str(df.iloc[i]['Position'])])}", file=sys.stderr)
-        print(f"       PF available: {len([i for i in range(len(df)) if 'PF' in str(df.iloc[i]['Position'])])}", file=sys.stderr)
-        print(f"       C available: {len([i for i in range(len(df)) if 'C' in str(df.iloc[i]['Position'])])}", file=sys.stderr)
+        if sport == 'MLB':
+            for pos in ['P', 'C', '1B', '2B', '3B', 'SS', 'OF']:
+                count = len([i for i in range(len(df)) if pos in str(df.iloc[i]['Position'])])
+                print(f"       {pos} available: {count}", file=sys.stderr)
+        else:
+            for pos in ['PG', 'SG', 'SF', 'PF', 'C']:
+                count = len([i for i in range(len(df)) if pos in str(df.iloc[i]['Position'])])
+                print(f"       {pos} available: {count}", file=sys.stderr)
         return None
-    
+
     # Extract selected players
     selected_indices = [i for i in range(len(df)) if player_vars[i].varValue > 0.5]
-    
-    if len(selected_indices) != 8:
+
+    if len(selected_indices) != roster_size:
         return None
     
     # Debug: Check team distribution
@@ -398,53 +495,96 @@ def optimize_single_lineup_pulp(df, stack_type, team_selections, min_salary,
     return selected_df
 
 
-def select_diverse_lineups(all_lineups, num_lineups, max_exposure):
+def select_diverse_lineups(all_lineups, num_lineups, max_exposure, player_exposures=None):
     """
-    Select diverse lineups from candidates
-    Logic from makrovchain_optimizer.py
+    Select diverse lineups from candidates.
+    Enforces per-player min AND max exposure (from player_exposures) with fallback to global max_exposure.
+
+    Two-phase selection:
+      Phase 1: Satisfy min-exposure constraints by selecting best lineups containing required players
+      Phase 2: Fill remaining slots with highest-projection lineups (respecting max exposure)
     """
-    
+
     if not all_lineups:
         return []
-    
+
     selected = []
     exposure_tracker = defaultdict(int)
     used_lineup_keys = set()
-    
+
     # Sort by total projection
     all_lineups.sort(key=lambda x: x[1]['Predicted_DK_Points'].sum(), reverse=True)
-    
-    for stack_type, lineup_df in all_lineups:
-        if len(selected) >= num_lineups:
-            break
-        
-        # Check uniqueness - use player names
-        lineup_key = '|'.join(sorted(lineup_df['Name'].astype(str).tolist()))
-        
-        if lineup_key in used_lineup_keys:
-            continue
-        
-        # Check exposure
-        over_exposed = False
+
+    def _check_max_exposure(lineup_df):
+        """Return (ok, blocking_player) — checks no player exceeds their max exposure."""
         for _, row in lineup_df.iterrows():
-            player_id = str(row['Name'])
-            if exposure_tracker[player_id] >= (max_exposure / 100.0 * num_lineups):
-                over_exposed = True
-                break
-        
-        if over_exposed:
-            continue
-        
-        # Add lineup
+            player_name = str(row['Name'])
+            exp_config = (player_exposures or {}).get(player_name, {})
+            player_max = exp_config.get('max', max_exposure)
+            max_appearances = max(1, int(player_max / 100.0 * num_lineups))
+            if exposure_tracker[player_name] >= max_appearances:
+                return False, player_name
+        return True, None
+
+    def _add_lineup(stack_type, lineup_df, phase_label):
+        """Add a lineup to selected, update exposure tracker."""
+        lineup_key = '|'.join(sorted(lineup_df['Name'].astype(str).tolist()))
+        if lineup_key in used_lineup_keys:
+            return False
+        ok, blocker = _check_max_exposure(lineup_df)
+        if not ok:
+            return False
         used_lineup_keys.add(lineup_key)
         for _, row in lineup_df.iterrows():
-            player_id = str(row['Name'])
-            exposure_tracker[player_id] += 1
-        
+            exposure_tracker[str(row['Name'])] += 1
         selected.append((stack_type, lineup_df))
-        
-        print(f"  ✓ Lineup {len(selected)}: {lineup_df['Predicted_DK_Points'].sum():.1f} pts, ${lineup_df['Salary'].sum()}", file=sys.stderr)
-    
+        print(f"  ✓ [{phase_label}] Lineup {len(selected)}: {lineup_df['Predicted_DK_Points'].sum():.1f} pts, ${lineup_df['Salary'].sum()}", file=sys.stderr)
+        return True
+
+    # ── Phase 1: Satisfy min-exposure requirements ──
+    min_exp_needs = {}
+    if player_exposures:
+        for player_name, exp_config in player_exposures.items():
+            min_exp = exp_config.get('min', 0)
+            if min_exp > 0:
+                required_count = max(1, int(min_exp / 100.0 * num_lineups))
+                min_exp_needs[player_name] = required_count
+
+    if min_exp_needs:
+        print(f"  📌 Phase 1: Satisfying min exposure for {len(min_exp_needs)} players", file=sys.stderr)
+        for player_name, required_count in min_exp_needs.items():
+            print(f"     {player_name}: need {required_count} lineups", file=sys.stderr)
+
+        # Keep iterating until all min requirements met or we run out of candidates
+        for stack_type, lineup_df in all_lineups:
+            if len(selected) >= num_lineups:
+                break
+            # Check if any unsatisfied min-exp player is in this lineup
+            lineup_players = set(lineup_df['Name'].astype(str).tolist())
+            has_needed_player = False
+            for pname, needed in min_exp_needs.items():
+                if pname in lineup_players and exposure_tracker.get(pname, 0) < needed:
+                    has_needed_player = True
+                    break
+            if not has_needed_player:
+                continue
+            _add_lineup(stack_type, lineup_df, 'min-exp')
+
+        # Report on min exposure satisfaction
+        for player_name, required_count in min_exp_needs.items():
+            actual = exposure_tracker.get(player_name, 0)
+            status = '✅' if actual >= required_count else '⚠️'
+            print(f"  {status} Min exposure: {player_name} in {actual}/{required_count} lineups", file=sys.stderr)
+
+    # ── Phase 2: Fill remaining slots with best projection lineups ──
+    remaining = num_lineups - len(selected)
+    if remaining > 0:
+        print(f"  📌 Phase 2: Filling {remaining} remaining slots by projection", file=sys.stderr)
+        for stack_type, lineup_df in all_lineups:
+            if len(selected) >= num_lineups:
+                break
+            _add_lineup(stack_type, lineup_df, 'proj')
+
     return selected
 
 
@@ -460,11 +600,41 @@ def _map_player_for_frontend(row, roster_position):
     player['projection'] = proj_value
     player['projectedPoints'] = proj_value
     player['rosterPosition'] = roster_position
+
+    # Pass through quant profile fields (snake_case → camelCase for JS frontend)
+    _QUANT_FIELD_MAP = {
+        'garch_volatility': 'garchVolatility',
+        'garch_conditional_volatility': 'garchConditionalVolatility',
+        'volatility_regime': 'volatilityRegime',
+        'bull_regime': 'bullRegime',
+        'regime_strength': 'regimeStrength',
+        'momentum_regime': 'momentumRegime',
+        'consistency_regime': 'consistencyRegime',
+        'entropy': 'entropy',
+        'hurst_exponent': 'hurstExponent',
+        'rolling_sharpe': 'rollingSharpe',
+        'avg_player_correlation': 'avgPlayerCorrelation',
+        'correlation_volatility': 'correlationVolatility',
+        'evt_return_level': 'evtReturnLevel',
+        'exceedance_prob': 'exceedanceProb',
+    }
+    for snake, camel in _QUANT_FIELD_MAP.items():
+        val = player.get(snake)
+        if val is not None:
+            player[camel] = val
+
     return player
 
 
-def assign_roster_positions(lineup_df):
-    """Assign roster positions to lineup"""
+def assign_roster_positions(lineup_df, sport='NBA'):
+    """Assign roster positions to lineup. Routes to sport-specific logic."""
+    if sport == 'MLB':
+        return assign_roster_positions_mlb(lineup_df)
+    return assign_roster_positions_nba(lineup_df)
+
+
+def assign_roster_positions_nba(lineup_df):
+    """Assign NBA roster positions (PG/SG/SF/PF/C/G/F/UTIL)."""
     roster = {}
     used_indices = set()
 
@@ -497,25 +667,141 @@ def assign_roster_positions(lineup_df):
     return list(roster.values())
 
 
+def assign_roster_positions_mlb(lineup_df):
+    """Assign MLB roster positions (P, P, C, 1B, 2B, 3B, SS, OF, OF, OF)."""
+    roster = {}
+    used_indices = set()
+
+    lineup_df = lineup_df.reset_index(drop=True)
+
+    def assign_first_match(roster_pos, eligible_positions):
+        """Find first unused player matching eligible positions and assign to roster_pos."""
+        for i in range(len(lineup_df)):
+            if i in used_indices:
+                continue
+            pos_str = str(lineup_df.iloc[i]['Position'])
+            if not any(p in pos_str for p in eligible_positions):
+                continue
+            roster[roster_pos] = _map_player_for_frontend(lineup_df.iloc[i], roster_pos)
+            used_indices.add(i)
+            return
+
+    # Pitchers — P1 and P2 (DK uses "P" for both slots)
+    assign_first_match('P', ['P'])
+    assign_first_match('P', ['P'])  # second pitcher goes to same roster key—use unique keys
+    # Re-do: need unique keys for the dict
+    roster.clear()
+    used_indices.clear()
+
+    # MLB DK Classic roster slots
+    mlb_slots = [
+        ('P', ['P', 'SP', 'RP']),
+        ('P', ['P', 'SP', 'RP']),
+        ('C', ['C']),
+        ('1B', ['1B']),
+        ('2B', ['2B']),
+        ('3B', ['3B']),
+        ('SS', ['SS']),
+        ('OF', ['OF']),
+        ('OF', ['OF']),
+        ('OF', ['OF']),
+    ]
+
+    result_players = []
+    for roster_pos, eligible in mlb_slots:
+        for i in range(len(lineup_df)):
+            if i in used_indices:
+                continue
+            pos_str = str(lineup_df.iloc[i]['Position'])
+            if not any(p in pos_str for p in eligible):
+                continue
+            result_players.append(_map_player_for_frontend(lineup_df.iloc[i], roster_pos))
+            used_indices.add(i)
+            break
+
+    # Any remaining unassigned players get UTIL-like assignment
+    for i in range(len(lineup_df)):
+        if i not in used_indices:
+            result_players.append(_map_player_for_frontend(lineup_df.iloc[i], 'UTIL'))
+            used_indices.add(i)
+
+    return result_players
+
+
 def monte_carlo_lineup(lineup_df, num_sims=2000):
     """
     Monte Carlo simulation for lineup evaluation (Markowitz, 1952; Michaud, 1998).
 
-    Simulates each player's outcome from Normal(projection, stdDev) independently,
-    sums to lineup score. Returns distribution statistics for VaR, Sharpe, etc.
+    Uses GARCH-derived volatility when available (from training pipeline quant profile),
+    and Cholesky-decomposed correlation for same-team players.
 
     This is POST-OPTIMIZATION evaluation — projections are NEVER modified for optimization.
     """
+    n_players = len(lineup_df)
     projections = lineup_df['Predicted_DK_Points'].values.astype(float)
-    # Estimate stdDev as 30% of projection (typical DFS variance)
-    std_devs = projections * 0.30
 
-    # Run simulations
-    scores = np.zeros(num_sims)
-    for sim in range(num_sims):
-        player_outcomes = np.random.normal(projections, std_devs)
-        player_outcomes = np.maximum(player_outcomes, 0)  # floor at 0
-        scores[sim] = player_outcomes.sum()
+    # --- StdDev: use GARCH if available, else flat 30% of projection ---
+    std_devs = np.zeros(n_players)
+    garch_used = 0
+    for i in range(n_players):
+        row = lineup_df.iloc[i]
+        garch_val = None
+        for col in ['garch_conditional_volatility', 'garch_volatility']:
+            if col in row.index:
+                v = row[col]
+                if v is not None and not (isinstance(v, float) and np.isnan(v)) and float(v) > 0:
+                    garch_val = float(v)
+                    break
+        if garch_val is not None:
+            # GARCH value is a return-scale volatility; scale by projection
+            std_devs[i] = garch_val * projections[i]
+            garch_used += 1
+        else:
+            std_devs[i] = projections[i] * 0.30
+
+    # Clamp stdDev: minimum 5% of projection, maximum 80% of projection
+    std_devs = np.clip(std_devs, projections * 0.05, projections * 0.80)
+
+    # --- Correlation matrix: same-team players get correlated outcomes ---
+    teams = lineup_df['Team'].values if 'Team' in lineup_df.columns else [None] * n_players
+    corr_matrix = np.eye(n_players)
+
+    for i in range(n_players):
+        for j in range(i + 1, n_players):
+            if teams[i] is not None and teams[j] is not None and teams[i] == teams[j]:
+                # Same-team correlation from avg_player_correlation if available
+                rho_i = 0.0
+                rho_j = 0.0
+                if 'avg_player_correlation' in lineup_df.columns:
+                    vi = lineup_df.iloc[i]['avg_player_correlation']
+                    vj = lineup_df.iloc[j]['avg_player_correlation']
+                    if vi is not None and not (isinstance(vi, float) and np.isnan(vi)):
+                        rho_i = float(vi)
+                    if vj is not None and not (isinstance(vj, float) and np.isnan(vj)):
+                        rho_j = float(vj)
+                rho = max(0.20, (rho_i + rho_j) / 2.0) if (rho_i + rho_j) > 0 else 0.25
+                rho = min(rho, 0.60)  # cap at 0.60
+                corr_matrix[i, j] = rho
+                corr_matrix[j, i] = rho
+
+    # --- Cholesky decomposition for correlated sampling ---
+    try:
+        L = np.linalg.cholesky(corr_matrix)
+        correlated = True
+    except np.linalg.LinAlgError:
+        # Matrix not positive-definite — fall back to independent sampling
+        L = np.eye(n_players)
+        correlated = False
+
+    # --- Run simulations ---
+    # Generate all random numbers at once for efficiency (num_sims x n_players)
+    Z_independent = np.random.standard_normal((num_sims, n_players))
+    Z_correlated = Z_independent @ L.T  # Apply Cholesky factor
+
+    # Scale: outcome = projection + stdDev * correlated_Z, clamped >= 0
+    outcomes = projections[np.newaxis, :] + std_devs[np.newaxis, :] * Z_correlated
+    outcomes = np.maximum(outcomes, 0.0)
+    scores = outcomes.sum(axis=1)
 
     scores.sort()
     mean = float(np.mean(scores))
@@ -550,7 +836,9 @@ def monte_carlo_lineup(lineup_df, num_sims=2000):
             'p75': round(float(scores[int(num_sims * 0.75)]), 2),
             'p90': round(float(scores[int(num_sims * 0.90)]), 2),
         },
-        'simulations': num_sims
+        'simulations': num_sims,
+        'garchPlayersUsed': garch_used,
+        'correlatedSampling': correlated,
     }
 
 
@@ -574,24 +862,64 @@ def main():
         df['Salary'] = df['salary']
         df['Predicted_DK_Points'] = df['projection']
         df['Team'] = df.get('team', 'UNK')
-        
+
+        # Map camelCase quant fields from server to snake_case for Python path
+        _CAMEL_TO_SNAKE = {
+            'garchVolatility': 'garch_volatility',
+            'garchConditionalVolatility': 'garch_conditional_volatility',
+            'volatilityRegime': 'volatility_regime',
+            'bullRegime': 'bull_regime',
+            'regimeStrength': 'regime_strength',
+            'momentumRegime': 'momentum_regime',
+            'consistencyRegime': 'consistency_regime',
+            'entropy': 'entropy',
+            'hurstExponent': 'hurst_exponent',
+            'rollingSharpe': 'rolling_sharpe',
+            'avgPlayerCorrelation': 'avg_player_correlation',
+            'correlationVolatility': 'correlation_volatility',
+            'evtReturnLevel': 'evt_return_level',
+            'exceedanceProb': 'exceedance_prob',
+        }
+        quant_found = 0
+        for camel, snake in _CAMEL_TO_SNAKE.items():
+            if camel in df.columns:
+                df[snake] = pd.to_numeric(df[camel], errors='coerce')
+                quant_found += 1
+        if quant_found > 0:
+            print(f"📊 Mapped {quant_found} quant fields from server (camelCase → snake_case)", file=sys.stderr)
+
+        # Detect sport (default NBA for backward compatibility)
+        sport = input_data.get('sport', 'NBA').upper()
+        if sport not in ('NBA', 'MLB'):
+            sport = 'NBA'
+
         # Filter
         df = df[df['Predicted_DK_Points'] > 0].copy()
-        
-        if len(df) < 8:
-            raise ValueError("Not enough players")
-        
-        print(f"📊 Loaded {len(df)} players", file=sys.stderr)
-        
+
+        min_players_needed = MLB_ROSTER_SIZE if sport == 'MLB' else NBA_ROSTER_SIZE
+        if len(df) < min_players_needed:
+            raise ValueError(f"Not enough players for {sport} (need {min_players_needed}, got {len(df)})")
+
+        sport_emoji = '⚾' if sport == 'MLB' else '🏀'
+        print(f"{sport_emoji} Loaded {len(df)} players for {sport}", file=sys.stderr)
+
         # Parse settings
         num_lineups = input_data.get('numLineups', 10)
-        min_salary = input_data.get('minSalary', 48000)
+        default_min_salary = 45000 if sport == 'MLB' else 48000
+        min_salary = input_data.get('minSalary', default_min_salary)
         max_exposure = input_data.get('maxExposure', 100)
         stack_settings_input = input_data.get('stackSettings', {})
         team_selections_input = input_data.get('teamSelections', {})
         team_exposures = input_data.get('teamExposures', {})
+        player_exposures = input_data.get('playerExposures', {})
 
         print(f"📊 Team exposures received: {team_exposures}", file=sys.stderr)
+        if player_exposures:
+            print(f"📊 Per-player exposures received for {len(player_exposures)} players:", file=sys.stderr)
+            for pname, pcfg in player_exposures.items():
+                print(f"   {pname}: min={pcfg.get('min',0)}%, max={pcfg.get('max',100)}%", file=sys.stderr)
+        else:
+            print(f"📊 No per-player exposures (all defaults)", file=sys.stderr)
 
         # Parse requestedStackSizes if available (explicit contract from frontend)
         requested_stack_sizes = stack_settings_input.get('requestedStackSizes', [])
@@ -735,16 +1063,16 @@ def main():
             print(f"⚠️ Feasibility warnings: {warnings}", file=sys.stderr)
 
         # Run optimization using EXACT makrovchain logic
-        print(f"🚀 Starting optimization with stack_settings={stack_settings}, team_selections={team_selections}", file=sys.stderr)
+        print(f"🚀 Starting {sport} optimization with stack_settings={stack_settings}, team_selections={team_selections}", file=sys.stderr)
         lineups, team_exp, stack_exp = optimize_using_makrov_logic(
             df, num_lineups, min_salary, stack_settings, team_selections, max_exposure,
-            team_exposures=team_exposures
+            team_exposures=team_exposures, player_exposures=player_exposures, sport=sport
         )
         
         # Format output with Monte Carlo evaluation (Markowitz, 1952; Michaud, 1998)
         output_lineups = []
         for stack_type, lineup_df in lineups:
-            players_list = assign_roster_positions(lineup_df)
+            players_list = assign_roster_positions(lineup_df, sport=sport)
             total_proj = lineup_df['Predicted_DK_Points'].sum()
             total_sal = lineup_df['Salary'].sum()
 

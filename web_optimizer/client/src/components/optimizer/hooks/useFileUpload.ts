@@ -105,6 +105,22 @@ export function useFileUpload(props: UseFileUploadProps) {
           projectedPoints: p.projection || p.projectedPoints || 0, minExp: p.minExposure ?? 0, maxExp: p.maxExposure ?? 100,
           selected: Boolean(p.selected), ownership: p.ownership || 0, locked: Boolean(p.locked), excluded: Boolean(p.excluded),
           ceiling: p.ceiling || undefined, floor: p.floor || undefined, stdDev: p.stdDev || undefined, opponent: p.opponent || undefined,
+          probOver5: p.probOver5 || undefined, probOver10: p.probOver10 || undefined, probOver15: p.probOver15 || undefined,
+          probOver20: p.probOver20 || undefined, probOver25: p.probOver25 || undefined, probOver30: p.probOver30 || undefined,
+          garchVolatility: p.garchVolatility || undefined,
+          garchConditionalVolatility: p.garchConditionalVolatility || undefined,
+          volatilityRegime: p.volatilityRegime ?? undefined,
+          bullRegime: p.bullRegime ?? undefined,
+          regimeStrength: p.regimeStrength || undefined,
+          momentumRegime: p.momentumRegime ?? undefined,
+          consistencyRegime: p.consistencyRegime ?? undefined,
+          entropy: p.entropy || undefined,
+          hurstExponent: p.hurstExponent || undefined,
+          rollingSharpe: p.rollingSharpe || undefined,
+          avgPlayerCorrelation: p.avgPlayerCorrelation || undefined,
+          correlationVolatility: p.correlationVolatility || undefined,
+          evtReturnLevel: p.evtReturnLevel || undefined,
+          exceedanceProb: p.exceedanceProb || undefined,
         }));
         onPlayerDataChange(transformedPlayers);
         onSelectedPlayersChange(transformedPlayers.map(p => p.id));

@@ -8,6 +8,15 @@ function createEmptyTeamSelections(): Record<number | 'all', string[]> {
 
 function initializeStackSettings(sport: Sport): StackType[] {
   const config = SPORT_CONFIGS[sport];
+  if (config.stackTypeDefinitions && config.stackTypeDefinitions.length > 0) {
+    return config.stackTypeDefinitions.map((def) => ({
+      id: def.id,
+      label: def.label,
+      minExp: 0,
+      maxExp: 100,
+      enabled: def.defaultEnabled,
+    }));
+  }
   return config.stackTypes.map((stackType, index) => ({
     id: `stack-${index}`,
     label: stackType,
@@ -29,6 +38,7 @@ function createBuildState(id: string, name: string, sport: BuildSport): BuildSta
     teamExposures: {},
     stackSettings: sport ? initializeStackSettings(sport) : [],
     advancedQuantSettings: { ...DEFAULT_ADVANCED_QUANT_SETTINGS },
+    contestMode: 'gpp',
     results: [],
     minSalary: sport ? SPORT_CONFIGS[sport].defaultMinSalary : null,
   };
@@ -91,6 +101,7 @@ export function useBuildManager() {
       teamExposures: {},
       stackSettings: initializeStackSettings(sport),
       advancedQuantSettings: { ...DEFAULT_ADVANCED_QUANT_SETTINGS },
+      contestMode: 'gpp',
       results: [],
       minSalary: SPORT_CONFIGS[sport].defaultMinSalary,
     });
